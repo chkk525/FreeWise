@@ -54,7 +54,6 @@ def render_book_highlights_sections(request: Request, book_id: int, session: Ses
 class HighlightCreate(BaseModel):
     """Request model for creating a highlight."""
     text: str
-    source: Optional[str] = None
     next_review: Optional[datetime] = None
     user_id: int = 1  # Default to user 1 for single-user mode
 
@@ -62,7 +61,6 @@ class HighlightCreate(BaseModel):
 class HighlightUpdate(BaseModel):
     """Request model for updating a highlight."""
     text: Optional[str] = None
-    source: Optional[str] = None
     next_review: Optional[datetime] = None
 
 
@@ -79,7 +77,6 @@ def create_highlight(
     """Create a new highlight."""
     highlight = Highlight(
         text=highlight_data.text,
-        source=highlight_data.source,
         next_review=highlight_data.next_review,
         user_id=highlight_data.user_id
     )
@@ -125,15 +122,13 @@ def update_highlight(
     highlight_data: HighlightUpdate,
     session: Session = Depends(get_session)
 ):
-    """Update a highlight's text, source, or next_review."""
+    """Update a highlight's text or next_review."""
     highlight = session.get(Highlight, id)
     if not highlight:
         raise HTTPException(status_code=404, detail="Highlight not found")
     
     if highlight_data.text is not None:
         highlight.text = highlight_data.text
-    if highlight_data.source is not None:
-        highlight.source = highlight_data.source
     if highlight_data.next_review is not None:
         highlight.next_review = highlight_data.next_review
     
@@ -644,7 +639,6 @@ async def save_highlight_edit(
     id: int,
     text: str = Form(...),
     note: Optional[str] = Form(None),
-    source: Optional[str] = Form(None),
     context: Optional[str] = Form(None),
     session: Session = Depends(get_session),
     review_session_id: Optional[str] = Cookie(None)
@@ -656,7 +650,6 @@ async def save_highlight_edit(
     
     highlight.text = text
     highlight.note = note if note else None
-    highlight.source = source if source else None
     
     session.add(highlight)
     session.commit()

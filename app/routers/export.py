@@ -86,8 +86,8 @@ async def export_highlights_csv(
         row = [
             # Readwise-compatible columns
             highlight.text or '',                                           # Highlight
-            book.title if book else (highlight.source or ''),              # Book Title
-            book.author if book else (highlight.author or ''),             # Book Author
+            book.title if book else '',              # Book Title
+            book.author if book else '',              # Book Author
             '',                                                             # Amazon Book ID (not used)
             highlight.note or '',                                           # Note
             '',                                                             # Color (not used)

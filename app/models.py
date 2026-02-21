@@ -4,6 +4,7 @@ from sqlmodel import SQLModel, Field, Relationship
 
 
 class User(SQLModel, table=True):
+    # TODO: implement auth
     """User model for single-user or multi-user setup."""
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(index=True, unique=True)
@@ -38,9 +39,7 @@ class Highlight(SQLModel, table=True):
     """Highlight model for storing text excerpts with review scheduling."""
     id: Optional[int] = Field(default=None, primary_key=True)
     text: str = Field(index=True)
-    source: Optional[str] = None  # Deprecated: use book_id instead
     note: Optional[str] = None  # Additional notes or annotations
-    author: Optional[str] = None  # Deprecated: use book.author instead
     book_id: Optional[int] = Field(default=None, foreign_key="book.id", index=True)
     created_at: Optional[datetime] = Field(default=None, index=True)  # When the highlight was made (None if unknown)
     location_type: Optional[str] = Field(default=None)  # "page" or "order" from Readwise
@@ -69,6 +68,7 @@ class Tag(SQLModel, table=True):
 
 
 class HighlightTag(SQLModel, table=True):
+    # TODO: add highlight-level tag UI
     """Many-to-many relationship between highlights and tags."""
     highlight_id: int = Field(foreign_key="highlight.id", primary_key=True)
     tag_id: int = Field(foreign_key="tag.id", primary_key=True)

@@ -347,8 +347,6 @@ async def process_custom_import(
             # Create highlight
             highlight = Highlight(
                 text=highlight_text,
-                source=book_title_val if book_title_val else None,
-                author=book_author_val if book_author_val else None,
                 book_id=book.id if book else None,
                 note=note_val if note_val else None,
                 created_at=created_at,
@@ -552,8 +550,6 @@ async def process_readwise_import(
             # Create highlight with appropriate boolean flags
             highlight = Highlight(
                 text=highlight_text,
-                source=book_title if book_title else None,  # Keep for backwards compatibility
-                author=book_author if book_author else None,  # Keep for backwards compatibility
                 book_id=book.id if book else None,
                 note=note if note else None,
                 created_at=created_at,
