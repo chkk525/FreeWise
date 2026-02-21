@@ -5,18 +5,11 @@ from typing import List
 from fastapi import APIRouter, Depends, Response, HTTPException
 from sqlmodel import Session, select
 
-from app.db import get_engine
+from app.db import get_session
 from app.models import Highlight, Book, Tag, HighlightTag
 
 
 router = APIRouter(prefix="/export", tags=["export"])
-
-
-def get_session():
-    """Dependency to provide database session."""
-    engine = get_engine()
-    with Session(engine) as session:
-        yield session
 
 
 @router.get("/csv")
@@ -85,8 +78,7 @@ async def export_highlights_csv(
         regular_tags = [tag for tag in tag_results if tag.lower() not in ['favorite', 'discard']]
         tags_str = ', '.join(regular_tags) if regular_tags else ''
         
-        # Determine favorite status (check both fields for backwards compatibility)
-        is_favorited = highlight.is_favorited or (highlight.favorite if hasattr(highlight, 'favorite') and highlight.favorite else False)
+        is_favorited = highlight.is_favorited
         
         # Format timestamps in ISO format for consistency
         highlighted_at = highlight.created_at.isoformat() if highlight.created_at else ''

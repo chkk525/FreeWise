@@ -10,7 +10,7 @@ import uuid
 import aiofiles
 import httpx
 
-from app.db import get_engine
+from app.db import get_session, get_settings
 from app.models import Book, Highlight, Settings
 
 
@@ -21,13 +21,6 @@ COVER_UPLOAD_DIR = os.path.join("app", "static", "uploads", "covers")
 ALLOWED_COVER_TYPES = {"image/jpeg", "image/png", "image/webp"}
 ALLOWED_COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_COVER_SIZE_BYTES = 5 * 1024 * 1024
-
-
-def get_session():
-    """Dependency to provide database session."""
-    engine = get_engine()
-    with Session(engine) as session:
-        yield session
 
 
 @router.get("/ui", response_class=HTMLResponse)
@@ -44,9 +37,8 @@ async def ui_library(
     Order options: asc, desc
     """
     # Get settings for theme
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     # Get all books with aggregated data
     highlight_count_col = func.count(Highlight.id).label("highlight_count")
     last_highlight_col = func.max(Highlight.created_at).label("last_highlight_date")
@@ -119,9 +111,8 @@ async def ui_book_detail(
 ):
     """Display all highlights from a specific book."""
     # Get settings for theme
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     # Get book
     book = session.get(Book, book_id)
     if not book:

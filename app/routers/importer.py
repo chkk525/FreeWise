@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from app.db import get_engine
+from app.db import get_session, get_settings
 from app.models import Highlight, Tag, HighlightTag, Settings, Book
 from app.utils.tags import parse_tags, join_tags
 
@@ -16,12 +16,6 @@ from app.utils.tags import parse_tags, join_tags
 router = APIRouter(prefix="/import", tags=["import"])
 templates = Jinja2Templates(directory="app/templates")
 
-
-def get_session():
-    """Dependency to provide database session."""
-    engine = get_engine()
-    with Session(engine) as session:
-        yield session
 
 def parse_readwise_datetime(dt_str: str) -> Optional[datetime]:
     """Parse various datetime formats from Readwise CSV.
@@ -117,9 +111,8 @@ async def ui_import(
 ):
     """Render main import page with source selection."""
     # Get settings for theme
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     return templates.TemplateResponse("import_main.html", {
         "request": request,
         "settings": settings
@@ -133,9 +126,8 @@ async def ui_import_readwise(
 ):
     """Render Readwise import page."""
     # Get settings for theme
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     return templates.TemplateResponse("import_readwise.html", {
         "request": request,
         "settings": settings
@@ -149,9 +141,8 @@ async def ui_import_custom(
 ):
     """Render custom CSV import page."""
     # Get settings for theme
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     return templates.TemplateResponse("import_custom.html", {
         "request": request,
         "settings": settings
@@ -194,9 +185,8 @@ async def ui_import_custom_preview(
         csv_data_b64 = base64.b64encode(csv_text.encode('utf-8')).decode('utf-8')
         
         # Get settings for theme
-        settings_stmt = select(Settings)
-        settings = session.exec(settings_stmt).first()
-        
+        settings = get_settings(session)
+
         return templates.TemplateResponse("import_custom.html", {
             "request": request,
             "settings": settings,
@@ -364,16 +354,14 @@ async def process_custom_import(
                 created_at=created_at,
                 location=location_int,
                 user_id=1,
-                status="discarded" if is_discarded else "active",
                 is_favorited=is_favorited,
                 is_discarded=is_discarded,
-                favorite=is_favorited
             )
-            
+
             session.add(highlight)
             session.commit()
             session.refresh(highlight)
-            
+
             # Process tags
             for tag_name in regular_tags:
                 tag = get_or_create_tag(session, tag_name)
@@ -390,9 +378,8 @@ async def process_custom_import(
             imported_count += 1
         
         # Get settings for theme
-        settings_stmt = select(Settings)
-        settings = session.exec(settings_stmt).first()
-        
+        settings = get_settings(session)
+
         # Return success page on custom import page
         return templates.TemplateResponse("import_custom.html", {
             "request": request,
@@ -573,10 +560,8 @@ async def process_readwise_import(
                 location_type=location_type,
                 location=location,
                 user_id=1,  # Default user for single-user mode
-                status="discarded" if is_discarded else "active",
                 is_favorited=is_favorited,
                 is_discarded=is_discarded,
-                favorite=is_favorited  # Set the favorite alias field too
             )
             
             session.add(highlight)
@@ -600,9 +585,8 @@ async def process_readwise_import(
             imported_count += 1
         
         # Get settings for theme
-        settings_stmt = select(Settings)
-        settings = session.exec(settings_stmt).first()
-        
+        settings = get_settings(session)
+
         # Return success page
         return templates.TemplateResponse("import_readwise.html", {
             "request": request,

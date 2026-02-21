@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 from datetime import datetime, date, timedelta
 
-from app.db import get_engine
+from app.db import get_session, get_settings
 from app.models import Book, Highlight, Settings, ReviewSession
 
 
@@ -15,13 +15,6 @@ templates = Jinja2Templates(directory="app/templates")
 # Simple in-memory storage for review tracking (per session)
 # In production, this should be stored in database or Redis
 review_sessions = {}
-
-
-def get_session():
-    """Dependency to provide database session."""
-    engine = get_engine()
-    with Session(engine) as session:
-        yield session
 
 
 @router.get("/ui", response_class=HTMLResponse)
@@ -35,9 +28,8 @@ async def ui_dashboard(
     Render dashboard page with statistics overview and review CTA.
     """
     # Get settings for theme and daily review count
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     daily_review_count = settings.daily_review_count if settings else 5
     
     # Check if user has completed review today
@@ -72,7 +64,7 @@ async def ui_dashboard(
     
     # Get total favorited highlights
     favorited_stmt = select(func.count(Highlight.id)).where(
-        (Highlight.favorite == True) | (Highlight.is_favorited == True)
+        Highlight.is_favorited == True
     )
     total_favorited = session.exec(favorited_stmt).one()
     

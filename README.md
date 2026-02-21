@@ -86,3 +86,6 @@ Nice to haves:
 restore highlights
 - [X] Download theme, icons and fonts and serve them locally to reduce dependency on external sources.
 - [ ] Make sure it works well on mobile devices.
+- [ ] Fix dark mode dashboard (heatmaps + colored text should be black)
+- [ ] Turn it into a web-app installable through browser (e.g., safari to iPhone or chrome to computer)
+- [ ] For import allow "Diagnostic mode" to be turned off, with a simple switch, speeding up import.

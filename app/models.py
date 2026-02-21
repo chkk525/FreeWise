@@ -45,10 +45,8 @@ class Highlight(SQLModel, table=True):
     created_at: Optional[datetime] = Field(default=None, index=True)  # When the highlight was made (None if unknown)
     location_type: Optional[str] = Field(default=None)  # "page" or "order" from Readwise
     location: Optional[int] = Field(default=None, index=True)  # Page number or order in book
-    status: str = Field(default="active")  # active | discarded
-    favorite: bool = Field(default=False, index=True)
-    is_favorited: bool = Field(default=False, index=True)  # Alias for favorite
-    is_discarded: bool = Field(default=False, index=True)  # Derived from status
+    is_favorited: bool = Field(default=False, index=True)
+    is_discarded: bool = Field(default=False, index=True)
     next_review: Optional[datetime] = Field(default=None, index=True)
     last_reviewed_at: Optional[datetime] = Field(default=None, index=True)
     review_count: int = Field(default=0)

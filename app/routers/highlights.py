@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
-from app.db import get_engine
+from app.db import get_session, get_settings
 from app.models import Highlight, Settings, ReviewSession
 
 
@@ -20,13 +20,6 @@ templates = Jinja2Templates(directory="app/templates")
 # In-memory session storage for review queues
 # Format: {session_id: {"highlight_ids": [int], "current_index": int, "timestamp": datetime}}
 review_sessions: Dict[str, Dict] = {}
-
-
-def get_session():
-    """Dependency to provide database session."""
-    engine = get_engine()
-    with Session(engine) as session:
-        yield session
 
 
 def render_book_highlights_sections(request: Request, book_id: int, session: Session) -> HTMLResponse:
@@ -105,8 +98,10 @@ def list_highlights(
     """List highlights with optional filtering by status and limit."""
     statement = select(Highlight).order_by(Highlight.created_at.desc())
     
-    if status:
-        statement = statement.where(Highlight.status == status)
+    if status == "discarded":
+        statement = statement.where(Highlight.is_discarded == True)
+    elif status == "active":
+        statement = statement.where(Highlight.is_discarded == False)
     
     if limit:
         statement = statement.limit(limit)
@@ -163,8 +158,7 @@ def toggle_favorite(
     if favorite_data.favorite and highlight.is_discarded:
         raise HTTPException(status_code=400, detail="Cannot favorite a discarded highlight. Restore it first.")
     
-    highlight.favorite = favorite_data.favorite
-    highlight.is_favorited = favorite_data.favorite  # keep alias in sync
+    highlight.is_favorited = favorite_data.favorite
     session.add(highlight)
     session.commit()
     session.refresh(highlight)
@@ -179,11 +173,8 @@ def discard_highlight(id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Highlight not found")
 
     # Auto-unfavorite when discarding
-    if highlight.favorite or getattr(highlight, "is_favorited", False):
-        highlight.favorite = False
+    if highlight.is_favorited:
         highlight.is_favorited = False
-    
-    highlight.status = "discarded"
     highlight.is_discarded = True
     session.add(highlight)
     session.commit()
@@ -203,8 +194,7 @@ def get_review_highlights(
     """
     # Load n from settings if not provided
     if n is None:
-        settings_stmt = select(Settings)
-        settings = session.exec(settings_stmt).first()
+        settings = get_settings(session)
         n = settings.daily_review_count if settings else 5
     
     now = datetime.utcnow()
@@ -212,7 +202,6 @@ def get_review_highlights(
     # Fetch all active highlights (exclude discarded)
     statement = (
         select(Highlight)
-        .where(Highlight.status == "active")
         .where(Highlight.is_discarded == False)
     )
     highlights = list(session.exec(statement).all())
@@ -309,9 +298,8 @@ async def ui_review(
 ):
     """Render HTML page with single highlight for review."""
     # Get settings for theme and daily review count
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     # Use daily_review_count from settings
     n = settings.daily_review_count if settings else 5
     
@@ -563,9 +551,8 @@ async def ui_favorites(
 ):
     """Render HTML page with all favorite highlights."""
     # Get settings for theme
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     # Query all favorited highlights, ordered by most recent first
     statement = (
         select(Highlight)
@@ -588,9 +575,8 @@ async def ui_discarded(
 ):
     """Render HTML page with all discarded highlights."""
     # Get settings for theme
-    settings_stmt = select(Settings)
-    settings = session.exec(settings_stmt).first()
-    
+    settings = get_settings(session)
+
     # Query all discarded highlights, ordered by most recent first
     statement = (
         select(Highlight)
@@ -760,12 +746,11 @@ async def toggle_favorite_html(
     if favorite and highlight.is_discarded:
         raise HTTPException(status_code=400, detail="Cannot favorite a discarded highlight. Restore it first.")
     
-    highlight.favorite = favorite
-    highlight.is_favorited = favorite  # keep alias in sync
+    highlight.is_favorited = favorite
     session.add(highlight)
     session.commit()
     session.refresh(highlight)
-    
+
     # Update ReviewSession counter if favoriting during review
     if context == "review" and review_session_id and favorite:
         stmt = select(ReviewSession).where(ReviewSession.session_uuid == review_session_id)
@@ -818,12 +803,9 @@ async def discard_highlight_html(
     
     # Toggle the is_discarded field
     new_state = not highlight.is_discarded
-    if new_state and (highlight.favorite or getattr(highlight, "is_favorited", False)):
-        highlight.favorite = False
+    if new_state and highlight.is_favorited:
         highlight.is_favorited = False
-
     highlight.is_discarded = new_state
-    highlight.status = "discarded" if new_state else "active"
     session.add(highlight)
     session.commit()
     session.refresh(highlight)

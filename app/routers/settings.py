@@ -5,32 +5,12 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
-from app.db import get_engine
+from app.db import get_session, get_settings
 from app.models import Settings, Highlight
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 templates = Jinja2Templates(directory="app/templates")
-
-
-def get_session():
-    """Dependency to provide database session."""
-    engine = get_engine()
-    with Session(engine) as session:
-        yield session
-
-
-def get_settings(session: Session) -> Settings:
-    """Helper function to get the settings record."""
-    statement = select(Settings)
-    settings = session.exec(statement).first()
-    if not settings:
-        # Create default settings if none exist
-        settings = Settings()
-        session.add(settings)
-        session.commit()
-        session.refresh(settings)
-    return settings
 
 
 class SettingsUpdate(BaseModel):
