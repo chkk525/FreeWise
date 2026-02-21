@@ -182,6 +182,22 @@ def discard_highlight(id: int, session: Session = Depends(get_session)):
     return highlight
 
 
+def _weighted_pick(
+    items: list[tuple[Highlight, float, Optional[int]]]
+) -> tuple[Highlight, float, Optional[int]]:
+    """Weighted random selection from a list of (highlight, score, book_id) tuples."""
+    total = sum(item[1] for item in items)
+    if total <= 0:
+        return random.choice(items)
+    r = random.random() * total
+    upto = 0.0
+    for item in items:
+        upto += item[1]
+        if upto >= r:
+            return item
+    return items[-1]
+
+
 @router.get("/review/", response_model=List[Highlight])
 def get_review_highlights(
     n: Optional[int] = None,
@@ -254,25 +270,13 @@ def get_review_highlights(
     selected = []
     book_counts: Dict[Optional[int], int] = defaultdict(int)
 
-    def weighted_pick(items: list[tuple[Highlight, float, Optional[int]]]) -> tuple[Highlight, float, Optional[int]]:
-        total = sum(item[1] for item in items)
-        if total <= 0:
-            return random.choice(items)
-        r = random.random() * total
-        upto = 0.0
-        for item in items:
-            upto += item[1]
-            if upto >= r:
-                return item
-        return items[-1]
-
     remaining = candidates[:]
 
     while len(selected) < n and remaining:
         eligible = [c for c in remaining if book_counts[c[2]] < max_per_book]
         if not eligible:
             break
-        pick = weighted_pick(eligible)
+        pick = _weighted_pick(eligible)
         selected.append(pick[0])
         book_counts[pick[2]] += 1
         remaining.remove(pick)
@@ -280,7 +284,7 @@ def get_review_highlights(
     # Fill remaining slots ignoring per-book cap if needed
     if len(selected) < n and remaining:
         while len(selected) < n and remaining:
-            pick = weighted_pick(remaining)
+            pick = _weighted_pick(remaining)
             selected.append(pick[0])
             remaining.remove(pick)
 
@@ -433,20 +437,7 @@ async def ui_review_next(
             
             # Review complete - clean up session and show completion message
             del review_sessions[review_session_id]
-            return HTMLResponse(content="""<div class="text-center">
-                <div class="mb-6">
-                    <i data-lucide="check-circle" class="w-20 h-20 mx-auto text-green-500"></i>
-                </div>
-                <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Review Complete!</h2>
-                <p class="text-lg text-gray-600 dark:text-gray-400 mb-8">
-                    Great job! You've reviewed all your highlights for today.
-                </p>
-                <a href="/dashboard/ui?reviewed=complete" class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-4 rounded-lg transition-colors text-lg font-semibold">
-                    <i data-lucide="arrow-left" class="w-6 h-6"></i>
-                    <span>Back to Dashboard</span>
-                </a>
-            </div>
-        """)
+            return templates.TemplateResponse("_review_complete.html", {"request": request})
         
         # Get next highlight from session
         next_highlight_id = highlight_ids[current_index]
@@ -732,8 +723,6 @@ async def toggle_favorite_html(
     id: int,
     favorite: bool = Form(...),
     context: Optional[str] = Form(None),
-    reviews_completed: int = Form(0),
-    total_reviews: int = Form(0),
     session: Session = Depends(get_session),
     review_session_id: Optional[str] = Cookie(None)
 ):
@@ -791,8 +780,6 @@ async def discard_highlight_html(
     request: Request,
     id: int,
     context: Optional[str] = Form(None),
-    reviews_completed: int = Form(0),
-    total_reviews: int = Form(0),
     session: Session = Depends(get_session),
     review_session_id: Optional[str] = Cookie(None)
 ):
@@ -843,20 +830,7 @@ async def discard_highlight_html(
             
             # Review complete - clean up session
             del review_sessions[review_session_id]
-            return HTMLResponse(content="""<div class="text-center">
-                    <div class="mb-6">
-                        <i data-lucide="check-circle" class="w-20 h-20 mx-auto text-green-500"></i>
-                    </div>
-                    <h2 class="text-3xl font-bold text-gray-900 dark:text-white mb-4">Review Complete!</h2>
-                    <p class="text-lg text-gray-600 dark:text-gray-400 mb-8">
-                        Great job! You've reviewed all your highlights for today.
-                    </p>
-                    <a href="/dashboard/ui?reviewed=complete" class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-4 rounded-lg transition-colors text-lg font-semibold">
-                        <i data-lucide="arrow-left" class="w-6 h-6"></i>
-                        <span>Back to Dashboard</span>
-                    </a>
-                </div>
-            """)
+            return templates.TemplateResponse("_review_complete.html", {"request": request})
         
         # Get next highlight from session
         next_highlight_id = highlight_ids[current_index]
