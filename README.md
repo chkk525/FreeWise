@@ -74,13 +74,13 @@ Nice to haves:
     - [X] Always have the navigation header at the top of the page and under it potentially a title (e.g., "Library"), except for daily review page and book view page.
     - [X] Use fonts more appropriate for reading/books (more pleasing and less "computer-like")
         - [X] Use title font for "Daily Review" 
-- [ ] Investigate the logic and and scripts one by one to see whether there are any optimizations possible to reduce code redundancy and improve efficiency.
+- [X] Investigate the logic and and scripts one by one to see whether there are any optimizations possible to reduce code redundancy and improve efficiency.
 - [X] Also show page numbers for favorite and discarded html views.
 - [X] Think about how to best order higlights in book view (e.g., by date added, by location in book, by favorite status)
 - [ ] Sort higlights in favorite and discarded by the date they were favorited/discarded (more recent up top)
 - [ ] Daily Review page
     - [X] Add feedback button in between "Discard " and "Done" buttons to allow users to provide feedback on how often they would like to see this higlight. This should link to a variable that gives a weight to the highlight (low or high) that influences how often it is shown in future reviews.
-        - [ ] Also add this button on the highlight edit box used for the book detail page, favorite page, and discard page.
+        - [ ] Also add this button on the highlight edit box used for the book detail page, favorite page, and discard page; and show the current state too (with number or slider).
     - [X] Add cover image to higlights shown in daily review.
 - [X] Book import - The Book title should also be required column and the required boxes should not be red anymore if there is a selection made.
 restore highlights
@@ -89,4 +89,4 @@ restore highlights
 - [ ] Fix dark mode dashboard (heatmaps + colored text should be black)
 - [ ] Turn it into a web-app installable through browser (e.g., safari to iPhone or chrome to computer)
 - [ ] For import allow "Diagnostic mode" to be turned off, with a simple switch, speeding up import.
-- [ ] Make daily review text smaller in general, but also resize if there is a lot of text (also for mobile).
+- [ ] Make daily review text and icons smaller in general, but also resize if there is a lot of text (also for mobile).

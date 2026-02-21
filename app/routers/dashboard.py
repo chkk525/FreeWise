@@ -1,6 +1,6 @@
 from typing import Dict
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 from datetime import datetime, date, timedelta

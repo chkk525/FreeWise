@@ -4,13 +4,13 @@ import base64
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.db import get_session, get_settings
 from app.models import Highlight, Tag, HighlightTag, Settings, Book
-from app.utils.tags import parse_tags, join_tags
+from app.utils.tags import parse_tags
 
 
 router = APIRouter(prefix="/import", tags=["import"])

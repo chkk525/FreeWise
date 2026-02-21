@@ -1,17 +1,17 @@
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 from typing import Optional, List, Dict
 from collections import defaultdict
 import math
 import random
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from app.db import get_session, get_settings
-from app.models import Highlight, Settings, ReviewSession
+from app.models import Highlight, ReviewSession
 
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
@@ -389,8 +389,6 @@ async def ui_review(
 async def ui_review_next(
     request: Request,
     current_id: int = Form(...),
-    reviews_completed: int = Form(0),
-    total_reviews: int = Form(0),
     session: Session = Depends(get_session),
     review_session_id: Optional[str] = Cookie(None)
 ):
