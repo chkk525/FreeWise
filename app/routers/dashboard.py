@@ -1,5 +1,5 @@
-from typing import Optional, Dict
-from fastapi import APIRouter, Depends, Request, Cookie
+from typing import Dict
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
@@ -12,17 +12,12 @@ from app.models import Book, Highlight, Settings, ReviewSession
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
 
-# Simple in-memory storage for review tracking (per session)
-# In production, this should be stored in database or Redis
-review_sessions = {}
 
 
 @router.get("/ui", response_class=HTMLResponse)
 async def ui_dashboard(
     request: Request,
     session: Session = Depends(get_session),
-    reviewed: Optional[str] = None,
-    session_id: Optional[str] = Cookie(None)
 ):
     """
     Render dashboard page with statistics overview and review CTA.
@@ -32,27 +27,16 @@ async def ui_dashboard(
 
     daily_review_count = settings.daily_review_count if settings else 5
     
-    # Check if user has completed review today
-    today = date.today().isoformat()
-    reviewed_today = False
-    highlights_reviewed_count = 0
-    
-    # Check if the 'reviewed' query parameter indicates completion
-    if reviewed == "complete":
-        reviewed_today = True
-        highlights_reviewed_count = daily_review_count
-        
-        # Store in session tracking
-        if session_id:
-            if session_id not in review_sessions:
-                review_sessions[session_id] = {}
-            review_sessions[session_id][today] = highlights_reviewed_count
-    
-    # Check session storage
-    if session_id and session_id in review_sessions:
-        if today in review_sessions[session_id]:
-            reviewed_today = True
-            highlights_reviewed_count = review_sessions[session_id][today]
+    # Check if user has completed review today via DB
+    today_date = date.today()
+    completed_today_stmt = (
+        select(ReviewSession)
+        .where(ReviewSession.session_date == today_date)
+        .where(ReviewSession.is_completed == True)
+    )
+    completed_today = session.exec(completed_today_stmt).first()
+    reviewed_today = completed_today is not None
+    highlights_reviewed_count = completed_today.highlights_reviewed if completed_today else 0
     
     # Get total books count
     books_count_stmt = select(func.count(Book.id))
@@ -82,21 +66,15 @@ async def ui_dashboard(
     discarded_percentage = (total_discarded / total_highlights * 100) if total_highlights > 0 else 0
     active_percentage = (active_highlights / total_highlights * 100) if total_highlights > 0 else 0
     
-    # Generate heatmap data: group highlights by date (created_at)
-    # Query all highlights with created_at dates
-    highlights_stmt = select(Highlight).where(Highlight.created_at != None)
-    highlights_with_dates = session.exec(highlights_stmt).all()
-    
-    # Group by date and count
-    heatmap_data: Dict[str, int] = {}
-    for highlight in highlights_with_dates:
-        if highlight.created_at:
-            date_key = highlight.created_at.date().isoformat()
-            heatmap_data[date_key] = heatmap_data.get(date_key, 0) + 1
-    
-    # If no data, create empty dict for template compatibility
-    if not heatmap_data:
-        heatmap_data = {}
+    # Generate heatmap data via SQL GROUP BY — no full table scan
+    heatmap_stmt = (
+        select(func.date(Highlight.created_at), func.count(Highlight.id))
+        .where(Highlight.created_at != None)
+        .group_by(func.date(Highlight.created_at))
+    )
+    heatmap_data: Dict[str, int] = {
+        str(row[0]): row[1] for row in session.exec(heatmap_stmt).all()
+    }
     
     # Get review session data for review activity heatmap
     review_sessions_stmt = select(ReviewSession).where(ReviewSession.is_completed == True)
@@ -117,7 +95,6 @@ async def ui_dashboard(
         sorted_dates = sorted([rs.session_date for rs in completed_sessions], reverse=True)
         
         # Calculate current streak
-        today_date = date.today()
         yesterday = today_date - timedelta(days=1)
         
         # Check if there's a session today or yesterday to start the streak
