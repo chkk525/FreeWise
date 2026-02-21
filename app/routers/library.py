@@ -115,7 +115,6 @@ async def ui_book_detail(
     # Get book
     book = session.get(Book, book_id)
     if not book:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Book not found")
     
     # Get all highlights for this book, ordered by location if available, then by date
@@ -342,7 +341,6 @@ async def ui_book_update(
     """Update book metadata and return updated header."""
     book = session.get(Book, book_id)
     if not book:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Book not found")
     
     # Update book metadata
@@ -371,7 +369,6 @@ async def ui_book_cancel_edit(
     """Cancel editing and return normal book header."""
     book = session.get(Book, book_id)
     if not book:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Book not found")
     
     # Get highlight count for the book
@@ -391,7 +388,6 @@ async def ui_book_add_tag_form(
     """Return inline form for adding a new tag."""
     book = session.get(Book, book_id)
     if not book:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Book not found")
     
     form_html = f"""
@@ -423,7 +419,6 @@ async def ui_book_add_tag(
     """Add a new tag to the book and return updated tags section."""
     book = session.get(Book, book_id)
     if not book:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Book not found")
     
     # Add new tag
@@ -456,7 +451,6 @@ async def ui_book_remove_tag(
     """Remove a tag from the book and return updated tags section."""
     book = session.get(Book, book_id)
     if not book:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Book not found")
     
     # Remove tag
@@ -492,7 +486,6 @@ async def ui_book_delete(
     """Delete a book and all its highlights from the library."""
     book = session.get(Book, book_id)
     if not book:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Book not found")
     
     # Delete all highlights associated with this book

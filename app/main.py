@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.db import get_engine
+from app.db import get_engine, get_settings
 from app.models import SQLModel, Settings
 from app.routers import highlights, settings, importer, library, dashboard, export
 
