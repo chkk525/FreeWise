@@ -89,3 +89,4 @@ restore highlights
 - [ ] Fix dark mode dashboard (heatmaps + colored text should be black)
 - [ ] Turn it into a web-app installable through browser (e.g., safari to iPhone or chrome to computer)
 - [ ] For import allow "Diagnostic mode" to be turned off, with a simple switch, speeding up import.
+- [ ] Make daily review text smaller in general, but also resize if there is a lot of text (also for mobile).

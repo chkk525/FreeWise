@@ -1,0 +1,29 @@
+{% if not query %}
+<div class="text-sm text-gray-500 dark:text-gray-400 text-center">Enter a search query to find covers.</div>
+{% elif not results %}
+<div class="text-sm text-gray-500 dark:text-gray-400 text-center">No covers found. Try a different search.</div>
+{% else %}
+<div class="space-y-3">
+    {% for item in results %}
+    {% set cover_url = "https://covers.openlibrary.org/b/id/" ~ item.cover_id ~ "-L.jpg" %}
+    <div class="flex items-center gap-4 p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+        <img src="{{ cover_url }}" alt="Cover" class="w-12 h-16 object-cover rounded" />
+        <div class="flex-1">
+            <div class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {{ item.title }}
+                {% if item.year %}<span class="text-xs text-gray-500 dark:text-gray-400">({{ item.year }})</span>{% endif %}
+            </div>
+            <div class="text-xs text-gray-600 dark:text-gray-400">{{ item.author }}</div>
+        </div>
+        <form
+            hx-post="/library/ui/book/{{ book_id }}/cover/select"
+            hx-target="#cover-section"
+            hx-swap="outerHTML"
+            hx-indicator="#cover-download-indicator">
+            <input type="hidden" name="cover_url" value="{{ cover_url }}">
+            <button type="submit" class="px-3 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-md">Use</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
