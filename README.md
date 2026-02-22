@@ -80,7 +80,7 @@ Nice to haves:
 - [ ] Sort higlights in favorite and discarded by the date they were favorited/discarded (more recent up top)
 - [ ] Daily Review page
     - [X] Add feedback button in between "Discard " and "Done" buttons to allow users to provide feedback on how often they would like to see this higlight. This should link to a variable that gives a weight to the highlight (low or high) that influences how often it is shown in future reviews.
-        - [ ] Similar to how there is a feedback button of higlight frequency on the daily review cards, with a weight, add a feedback this button on the highlight edit box used for the book detail page, favorite page, and discard page; and show the current weight state too (with number or slider).
+        - [X] Similar to how there is a feedback button of higlight frequency on the daily review cards, with a weight, add a feedback this button on the highlight edit box used for the book detail page, favorite page, and discard page; and show the current weight state too.
     - [X] Add cover image to higlights shown in daily review.
 - [X] Book import - The Book title should also be required column and the required boxes should not be red anymore if there is a selection made.
 restore highlights

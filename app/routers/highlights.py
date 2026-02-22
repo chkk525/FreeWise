@@ -630,6 +630,7 @@ async def save_highlight_edit(
     id: int,
     text: str = Form(...),
     note: Optional[str] = Form(None),
+    highlight_weight: Optional[float] = Form(None),
     context: Optional[str] = Form(None),
     session: Session = Depends(get_session),
     review_session_id: Optional[str] = Cookie(None)
@@ -641,6 +642,8 @@ async def save_highlight_edit(
     
     highlight.text = text
     highlight.note = note if note else None
+    if highlight_weight is not None:
+        highlight.highlight_weight = min(2.0, max(0.0, float(highlight_weight)))
     
     session.add(highlight)
     session.commit()
