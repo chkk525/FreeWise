@@ -213,6 +213,7 @@ async def process_custom_import(
     document_tags: Optional[str] = Form(None),
     highlighted_at: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
+    diagnostic: str = Form("true"),
     session: Session = Depends(get_session)
 ):
     """Process custom CSV with user-defined column mapping."""
@@ -240,7 +241,8 @@ async def process_custom_import(
         skipped_count = 0
         duplicate_count = 0
         skipped_rows = []
-        
+        is_diagnostic = (diagnostic == "true")
+
         for idx, row in enumerate(reader, start=1):
             # Map columns
             highlight_text = row.get(column_mapping['highlight'], '').strip() if column_mapping['highlight'] else ''
@@ -248,13 +250,14 @@ async def process_custom_import(
             # Skip empty rows
             if not highlight_text:
                 skipped_count += 1
-                skipped_rows.append({
-                    "row": idx,
-                    "reason": "Empty highlight",
-                    "highlight": highlight_text,
-                    "note": "",
-                    "book_title": ""
-                })
+                if is_diagnostic:
+                    skipped_rows.append({
+                        "row": idx,
+                        "reason": "Empty highlight",
+                        "highlight": highlight_text,
+                        "note": "",
+                        "book_title": ""
+                    })
                 continue
             
             # Extract mapped data
@@ -265,25 +268,27 @@ async def process_custom_import(
             # Require book title
             if not book_title_val:
                 skipped_count += 1
-                skipped_rows.append({
-                    "row": idx,
-                    "reason": "Missing book title",
-                    "highlight": highlight_text,
-                    "note": note_val,
-                    "book_title": book_title_val
-                })
+                if is_diagnostic:
+                    skipped_rows.append({
+                        "row": idx,
+                        "reason": "Missing book title",
+                        "highlight": highlight_text,
+                        "note": note_val,
+                        "book_title": book_title_val
+                    })
                 continue
             
             # Skip header marker notes
             if note_val.lower() in {'.h1', '.h2', '.h3', '.h4', '.h5', '.h6'}:
                 skipped_count += 1
-                skipped_rows.append({
-                    "row": idx,
-                    "reason": "Header marker note (.h1-.h6)",
-                    "highlight": highlight_text,
-                    "note": note_val,
-                    "book_title": book_title_val
-                })
+                if is_diagnostic:
+                    skipped_rows.append({
+                        "row": idx,
+                        "reason": "Header marker note (.h1-.h6)",
+                        "highlight": highlight_text,
+                        "note": note_val,
+                        "book_title": book_title_val
+                    })
                 continue
             
             tags_val = row.get(column_mapping['tags'], '').strip() if column_mapping['tags'] else ''
@@ -327,13 +332,14 @@ async def process_custom_import(
             existing_highlight = session.exec(existing_stmt).first()
             if existing_highlight:
                 duplicate_count += 1
-                skipped_rows.append({
-                    "row": idx,
-                    "reason": "Duplicate highlight",
-                    "highlight": highlight_text,
-                    "note": note_val,
-                    "book_title": book_title_val
-                })
+                if is_diagnostic:
+                    skipped_rows.append({
+                        "row": idx,
+                        "reason": "Duplicate highlight",
+                        "highlight": highlight_text,
+                        "note": note_val,
+                        "book_title": book_title_val
+                    })
                 continue
             
             # Parse location
@@ -357,8 +363,11 @@ async def process_custom_import(
             )
 
             session.add(highlight)
-            session.commit()
-            session.refresh(highlight)
+            if is_diagnostic:
+                session.commit()
+                session.refresh(highlight)
+            else:
+                session.flush()
 
             # Process tags
             for tag_name in regular_tags:
@@ -370,11 +379,14 @@ async def process_custom_import(
                     )
                     session.add(highlight_tag)
             
-            if regular_tags:
+            if regular_tags and is_diagnostic:
                 session.commit()
             
             imported_count += 1
         
+        if not is_diagnostic:
+            session.commit()
+
         # Get settings for theme
         settings = get_settings(session)
 
@@ -397,6 +409,7 @@ async def process_custom_import(
 async def process_readwise_import(
     request: Request,
     file: UploadFile = File(...),
+    diagnostic: str = Form("true"),
     session: Session = Depends(get_session)
 ):
     """
@@ -438,18 +451,20 @@ async def process_readwise_import(
         skipped_count = 0
         duplicate_count = 0
         skipped_rows = []
-        
+        is_diagnostic = (diagnostic == "true")
+
         for idx, row in enumerate(reader, start=1):
             # Skip empty rows
             if not row.get('Highlight', '').strip():
                 skipped_count += 1
-                skipped_rows.append({
-                    "row": idx,
-                    "reason": "Empty highlight",
-                    "highlight": row.get('Highlight', '').strip(),
-                    "note": row.get('Note', '').strip(),
-                    "book_title": row.get('Book Title', '').strip()
-                })
+                if is_diagnostic:
+                    skipped_rows.append({
+                        "row": idx,
+                        "reason": "Empty highlight",
+                        "highlight": row.get('Highlight', '').strip(),
+                        "note": row.get('Note', '').strip(),
+                        "book_title": row.get('Book Title', '').strip()
+                    })
                 continue
             
             # Extract data from CSV - support both Readwise and extended format
@@ -459,13 +474,14 @@ async def process_readwise_import(
             note = row.get('Note', '').strip()
             if note.lower() in {'.h1', '.h2', '.h3', '.h4', '.h5', '.h6'}:
                 skipped_count += 1
-                skipped_rows.append({
-                    "row": idx,
-                    "reason": "Header marker note (.h1-.h6)",
-                    "highlight": highlight_text,
-                    "note": note,
-                    "book_title": book_title
-                })
+                if is_diagnostic:
+                    skipped_rows.append({
+                        "row": idx,
+                        "reason": "Header marker note (.h1-.h6)",
+                        "highlight": highlight_text,
+                        "note": note,
+                        "book_title": book_title
+                    })
                 continue
             tags_str = row.get('Tags', '').strip()
             document_tags_str = row.get('Document tags', '').strip()
@@ -527,13 +543,14 @@ async def process_readwise_import(
             existing_highlight = session.exec(existing_stmt).first()
             if existing_highlight:
                 duplicate_count += 1
-                skipped_rows.append({
-                    "row": idx,
-                    "reason": "Duplicate highlight",
-                    "highlight": highlight_text,
-                    "note": note,
-                    "book_title": book_title
-                })
+                if is_diagnostic:
+                    skipped_rows.append({
+                        "row": idx,
+                        "reason": "Duplicate highlight",
+                        "highlight": highlight_text,
+                        "note": note,
+                        "book_title": book_title
+                    })
                 continue
 
             # Parse location if provided
@@ -561,8 +578,11 @@ async def process_readwise_import(
             )
             
             session.add(highlight)
-            session.commit()
-            session.refresh(highlight)
+            if is_diagnostic:
+                session.commit()
+                session.refresh(highlight)
+            else:
+                session.flush()
             
             # Process regular tags (excluding favorite/discard which are now boolean fields)
             for tag_name in regular_tags:
@@ -575,11 +595,14 @@ async def process_readwise_import(
                     )
                     session.add(highlight_tag)
             
-            if regular_tags:
+            if regular_tags and is_diagnostic:
                 session.commit()
             
             imported_count += 1
         
+        if not is_diagnostic:
+            session.commit()
+
         # Get settings for theme
         settings = get_settings(session)
 
@@ -610,4 +633,4 @@ async def process_import_legacy(
     session: Session = Depends(get_session)
 ):
     """Legacy import route - redirects to Readwise import for backward compatibility."""
-    return await process_readwise_import(request, file, session)
+    return await process_readwise_import(request, file, diagnostic="true", session=session)

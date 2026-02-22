@@ -167,6 +167,19 @@
             </p>
         </div>
 
+        <!-- Diagnostic Mode -->
+        <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg mb-6">
+            <div>
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">Diagnostic mode</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Log skipped rows after import</p>
+            </div>
+            <input type="hidden" name="diagnostic" id="diagnostic-value" value="true">
+            <button type="button" onclick="toggleDiagnostic(this)" role="switch" aria-checked="true"
+                style="position:relative;width:2.75rem;height:1.5rem;border-radius:9999px;background:#22c55e;border:0;cursor:pointer;transition:background-color 0.2s;outline:none;flex-shrink:0;">
+                <span style="position:absolute;top:2px;left:2px;width:1.25rem;height:1.25rem;border-radius:9999px;background:white;box-shadow:0 1px 2px rgba(0,0,0,0.25);transform:translateX(20px);transition:transform 0.2s;display:block;"></span>
+            </button>
+        </div>
+
         <!-- Action Buttons -->
         <div class="flex gap-3">
             <button type="submit" id="submit-btn" class="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
@@ -182,6 +195,16 @@
 </div>
 
 <script>
+    function toggleDiagnostic(btn) {
+        const val = document.getElementById('diagnostic-value');
+        const thumb = btn.querySelector('span');
+        const on = val.value !== 'true';
+        val.value = on ? 'true' : 'false';
+        btn.style.backgroundColor = on ? '#22c55e' : '#d1d5db';
+        btn.setAttribute('aria-checked', String(on));
+        thumb.style.transform = on ? 'translateX(20px)' : 'translateX(0px)';
+    }
+
     function showProgress() {
         document.getElementById('submit-btn').disabled = true;
         document.getElementById('submit-btn').style.opacity = '0.5';
