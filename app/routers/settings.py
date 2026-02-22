@@ -40,7 +40,7 @@ async def update_settings_ui(
     """Update settings from form submission."""
     settings = get_settings(session)
     
-    settings.daily_review_count = daily_review_count
+    settings.daily_review_count = max(1, min(15, daily_review_count))
     settings.theme = theme
     
     session.add(settings)

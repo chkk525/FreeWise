@@ -23,24 +23,31 @@
                 <i data-lucide="zap" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
             </div>
             <div class="flex-1">
-                <label for="daily_review_count" class="block text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <label for="daily_review_count" class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white mb-2">
                     Daily Review Count
+                    <span id="review-count-display" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-bold text-sm">
+                        {{ settings.daily_review_count }}
+                    </span>
                 </label>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Number of highlights to show in your daily review session
                 </p>
-                <input 
-                    type="number" 
-                    id="daily_review_count" 
-                    name="daily_review_count" 
+                <input
+                    type="range"
+                    id="daily_review_count"
+                    name="daily_review_count"
                     value="{{ settings.daily_review_count }}"
                     min="1"
-                    max="50"
-                    required
-                    class="w-full max-w-xs px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all">
-                <small class="text-xs text-gray-500 dark:text-gray-400 mt-2 block">
-                    Minimum: 1 | Maximum: 50
-                </small>
+                    max="15"
+                    step="1"
+                    style="accent-color: #2563eb;"
+                    class="w-full cursor-pointer"
+                    oninput="document.getElementById('review-count-display').textContent = this.value">
+                <div class="relative mt-1.5 h-4 select-none">
+                    <span style="position:absolute;left:0%;" class="text-xs text-gray-400 dark:text-gray-500">1</span>
+                    <span style="position:absolute;left:28.57%;transform:translateX(-50%);" class="text-xs text-gray-400 dark:text-gray-500">5</span>
+                    <span style="position:absolute;right:0%;" class="text-xs text-gray-400 dark:text-gray-500">15</span>
+                </div>
             </div>
         </div>
     </div>
