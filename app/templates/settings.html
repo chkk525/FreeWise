@@ -52,6 +52,42 @@
         </div>
     </div>
 
+    <!-- Highlight Recency Setting -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-start gap-4">
+            <div class="pt-1">
+                <i data-lucide="bar-chart-2" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+            </div>
+            <div class="flex-1">
+                <label for="highlight_recency" class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                    Highlight Recency
+                    <span id="recency-display" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-bold text-sm">
+                        {{ settings.highlight_recency }}
+                    </span>
+                </label>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Bias daily review toward older or more recent highlights
+                </p>
+                <input
+                    type="range"
+                    id="highlight_recency"
+                    name="highlight_recency"
+                    value="{{ settings.highlight_recency }}"
+                    min="0"
+                    max="10"
+                    step="1"
+                    style="accent-color: #2563eb;"
+                    class="w-full cursor-pointer"
+                    oninput="document.getElementById('recency-display').textContent = this.value">
+                <div class="relative mt-1.5 h-4 select-none">
+                    <span style="position:absolute;left:0%;" class="text-xs text-gray-400 dark:text-gray-500">Older</span>
+                    <span style="position:absolute;left:50%;transform:translateX(-50%);" class="text-xs text-gray-400 dark:text-gray-500">Neutral</span>
+                    <span style="position:absolute;right:0%;" class="text-xs text-gray-400 dark:text-gray-500">Newer</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Theme Setting -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex items-start gap-4">

@@ -34,6 +34,7 @@ async def ui_settings(
 async def update_settings_ui(
     request: Request,
     daily_review_count: int = Form(...),
+    highlight_recency: int = Form(...),
     theme: str = Form(...),
     session: Session = Depends(get_session)
 ):
@@ -41,6 +42,7 @@ async def update_settings_ui(
     settings = get_settings(session)
     
     settings.daily_review_count = max(1, min(15, daily_review_count))
+    settings.highlight_recency = max(0, min(10, highlight_recency))
     settings.theme = theme
     
     session.add(settings)

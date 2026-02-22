@@ -29,4 +29,9 @@ def get_settings(session: Session):
         session.add(settings)
         session.commit()
         session.refresh(settings)
+    if settings.highlight_recency is None:
+        settings.highlight_recency = 5
+        session.add(settings)
+        session.commit()
+        session.refresh(settings)
     return settings

@@ -203,9 +203,9 @@ def get_review_highlights(
     
     If n is not provided, uses Settings.daily_review_count.
     """
-    # Load n from settings if not provided
+    # Always load settings (needed for highlight_recency and daily_review_count)
+    settings = get_settings(session)
     if n is None:
-        settings = get_settings(session)
         n = settings.daily_review_count if settings else 5
     
     now = datetime.utcnow()
@@ -256,6 +256,37 @@ def get_review_highlights(
             continue
         book_id = h.book_id
         candidates.append((h, score, book_id))
+
+    if not candidates:
+        return []
+
+    # Recency bias: shift scores toward older or newer highlights per settings
+    highlight_recency = settings.highlight_recency if settings else 5
+    alpha = (highlight_recency - 5) / 5.0  # [-1.0, +1.0]; 0 = no change
+    if alpha != 0.0:
+        # Collect creation-age in days for each candidate (h.created_at only)
+        def _age_days(h: Highlight) -> Optional[float]:
+            if h.created_at is None:
+                return None
+            return max(0.0, (now - h.created_at).total_seconds() / 86400.0)
+
+        raw_ages = [_age_days(c[0]) for c in candidates]
+        known = [a for a in raw_ages if a is not None]
+        fallback = sorted(known)[len(known) // 2] if known else 0.0  # median
+        ages = [a if a is not None else fallback for a in raw_ages]
+
+        age_min = min(ages)
+        age_max = max(ages)
+        span = max(age_max - age_min, 1.0)
+
+        new_candidates = []
+        for (h, score, book_id), age in zip(candidates, ages):
+            norm = (age - age_min) / span  # 0 = newest, 1 = oldest
+            recency_mult = math.exp(alpha * (0.5 - norm) * 4)
+            new_score = score * recency_mult
+            if new_score > 0.0:
+                new_candidates.append((h, new_score, book_id))
+        candidates = new_candidates
 
     if not candidates:
         return []
