@@ -62,3 +62,14 @@ body {
      @layer components { .my-class { ... } }
      @layer utilities  { .my-utility { ... } }
    ─────────────────────────────────────────────────────────────────────────── */
+
+/* Filled state for the streak zap icon.
+   Lucide SVGs render with fill="none" on inner shapes; this overrides that
+   once the .zap-filled class is present on the <svg> (copied from <i> by
+   lucide.createIcons). */
+.zap-filled polygon,
+.zap-filled path,
+.zap-filled polyline {
+  fill: currentColor;
+  stroke: none;
+}

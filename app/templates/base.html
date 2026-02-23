@@ -60,7 +60,7 @@
                 <div class="flex items-center gap-1.5 flex-shrink-0">
                     {% set streak = request.state.streak | default(0) %}
                     <i data-lucide="zap"
-                       class="w-5 h-5 {% if streak >= 1 %}text-amber-500{% else %}text-gray-400 dark:text-gray-600{% endif %}"></i>
+                       class="w-6 h-6 zap-filled {% if streak >= 1 %}text-amber-500{% else %}text-gray-400 dark:text-gray-600{% endif %}"></i>
                     {% if streak > 1 %}
                     <span class="text-sm font-semibold text-amber-500 dark:text-amber-400">{{ streak }}</span>
                     {% endif %}
