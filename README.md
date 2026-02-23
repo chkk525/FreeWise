@@ -97,7 +97,7 @@ For the daily review cards, sometimes the highlights and/or comments are very lo
 - [X] At the bottom of the setttings tab, add a complete reset of library button to the settings page that resets/deletes the entire database, with a danger field, saying something like that there is no going back and that everything will be permanently deleted. This should
 - [X] Add a thunderbolt symbol to the top right of the pages with the navigation header, which should be filled in with gold/orange/yellow (whatever is best) if there is at least a one day streak. And if the streak is multiple days, there should be a number to its right indicating the length of the streak in days.
 - [X] Test all functionalities of the recommendation algorithm using diagnostic tests
-- [ ] Make sure it works well on mobile devices.
+- [X] Make sure it works well on mobile devices.
 - [ ] Turn this application into a Dockerfile and docker-compose.yml
 - [ ] Design a whole suite of tests, to test all important fuctionalities of this web app in a rigorous manner, allowing for automatic checking with a "checkmark"/pass upon success on GitHub.
 
