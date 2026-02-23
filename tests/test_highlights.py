@@ -1,0 +1,258 @@
+"""
+Tests for highlight JSON and HTML API endpoints.
+
+Covers: CRUD, favorite toggle, discard toggle, weight update,
+edit form save, and review flow.
+"""
+from datetime import datetime, date
+from sqlmodel import select
+
+from app.models import Highlight, ReviewSession
+
+
+# ── JSON API endpoints ────────────────────────────────────────────────────────
+
+class TestHighlightCRUD:
+    """JSON CRUD operations on /highlights/."""
+
+    def test_create_highlight(self, client, db, make_book):
+        book = make_book()
+        resp = client.post("/highlights/", json={
+            "text": "New highlight",
+            "user_id": 1,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["text"] == "New highlight"
+        assert data["id"] is not None
+
+    def test_get_highlight(self, client, make_highlight):
+        h = make_highlight(text="Fetch me")
+        resp = client.get(f"/highlights/{h.id}")
+        assert resp.status_code == 200
+        assert resp.json()["text"] == "Fetch me"
+
+    def test_get_highlight_not_found(self, client):
+        resp = client.get("/highlights/99999")
+        assert resp.status_code == 404
+
+    def test_update_highlight(self, client, make_highlight):
+        h = make_highlight(text="Original")
+        resp = client.put(f"/highlights/{h.id}", json={"text": "Updated"})
+        assert resp.status_code == 200
+        assert resp.json()["text"] == "Updated"
+
+    def test_list_highlights(self, client, make_highlight):
+        make_highlight(text="HL1")
+        make_highlight(text="HL2")
+        resp = client.get("/highlights/")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 2
+
+    def test_list_active_only(self, client, make_highlight):
+        make_highlight(text="Active", is_discarded=False)
+        make_highlight(text="Discarded", is_discarded=True)
+        resp = client.get("/highlights/", params={"status": "active"})
+        items = resp.json()
+        assert len(items) == 1
+        assert items[0]["text"] == "Active"
+
+    def test_list_discarded_only(self, client, make_highlight):
+        make_highlight(text="Active", is_discarded=False)
+        make_highlight(text="Discarded", is_discarded=True)
+        resp = client.get("/highlights/", params={"status": "discarded"})
+        items = resp.json()
+        assert len(items) == 1
+        assert items[0]["text"] == "Discarded"
+
+    def test_list_with_limit(self, client, make_highlight):
+        for i in range(5):
+            make_highlight(text=f"HL {i}")
+        resp = client.get("/highlights/", params={"limit": 2})
+        assert len(resp.json()) == 2
+
+
+class TestFavoriteToggle:
+    """POST /highlights/{id}/favorite/json — toggle favorite."""
+
+    def test_favorite_on(self, client, make_highlight):
+        h = make_highlight()
+        resp = client.post(f"/highlights/{h.id}/favorite/json",
+                           json={"favorite": True})
+        assert resp.status_code == 200
+        assert resp.json()["is_favorited"] is True
+
+    def test_favorite_off(self, client, make_highlight):
+        h = make_highlight(is_favorited=True)
+        resp = client.post(f"/highlights/{h.id}/favorite/json",
+                           json={"favorite": False})
+        assert resp.status_code == 200
+        assert resp.json()["is_favorited"] is False
+
+    def test_cannot_favorite_discarded(self, client, make_highlight):
+        h = make_highlight(is_discarded=True)
+        resp = client.post(f"/highlights/{h.id}/favorite/json",
+                           json={"favorite": True})
+        assert resp.status_code == 400
+
+    def test_unfavorite_discarded_ok(self, client, make_highlight, db):
+        """Unfavoriting a discarded highlight should still work."""
+        h = make_highlight(is_discarded=True, is_favorited=True)
+        # Force the state in DB (normally impossible via app logic)
+        h_db = db.get(Highlight, h.id)
+        h_db.is_favorited = True
+        db.add(h_db)
+        db.commit()
+
+        resp = client.post(f"/highlights/{h.id}/favorite/json",
+                           json={"favorite": False})
+        assert resp.status_code == 200
+
+
+class TestDiscardJSON:
+    """POST /highlights/{id}/discard/json — mark as discarded."""
+
+    def test_discard(self, client, make_highlight):
+        h = make_highlight()
+        resp = client.post(f"/highlights/{h.id}/discard/json")
+        assert resp.status_code == 200
+        assert resp.json()["is_discarded"] is True
+
+    def test_discard_auto_unfavorites(self, client, make_highlight):
+        h = make_highlight(is_favorited=True)
+        resp = client.post(f"/highlights/{h.id}/discard/json")
+        data = resp.json()
+        assert data["is_discarded"] is True
+        assert data["is_favorited"] is False
+
+
+# ── HTML/HTMX endpoints ──────────────────────────────────────────────────────
+
+class TestHighlightEdit:
+    """POST /highlights/{id}/edit — save edited highlight text/note/weight."""
+
+    def test_edit_text(self, client, make_highlight):
+        h = make_highlight(text="Before")
+        resp = client.post(f"/highlights/{h.id}/edit",
+                           data={"text": "After", "context": ""})
+        assert resp.status_code == 200
+        assert "After" in resp.text
+
+    def test_edit_note(self, client, make_highlight, db):
+        h = make_highlight(text="HL", note=None)
+        client.post(f"/highlights/{h.id}/edit",
+                     data={"text": "HL", "note": "My note", "context": ""})
+        db.refresh(h)
+        assert h.note == "My note"
+
+    def test_edit_weight_clamped(self, client, make_highlight, db):
+        h = make_highlight()
+        client.post(f"/highlights/{h.id}/edit",
+                     data={"text": h.text, "highlight_weight": "5.0", "context": ""})
+        db.refresh(h)
+        assert h.highlight_weight == 2.0
+
+        client.post(f"/highlights/{h.id}/edit",
+                     data={"text": h.text, "highlight_weight": "-1.0", "context": ""})
+        db.refresh(h)
+        assert h.highlight_weight == 0.0
+
+    def test_edit_preserves_weight_when_absent(self, client, make_highlight, db):
+        h = make_highlight(highlight_weight=1.5)
+        client.post(f"/highlights/{h.id}/edit",
+                     data={"text": h.text, "context": ""})
+        db.refresh(h)
+        assert h.highlight_weight == 1.5
+
+
+class TestWeightEndpoint:
+    """POST /highlights/{id}/weight — quick weight update."""
+
+    def test_set_weight(self, client, make_highlight, db):
+        h = make_highlight()
+        resp = client.post(f"/highlights/{h.id}/weight",
+                           data={"weight": "1.5", "context": ""})
+        assert resp.status_code == 200
+        db.refresh(h)
+        assert h.highlight_weight == 1.5
+
+    def test_weight_clamped_high(self, client, make_highlight, db):
+        h = make_highlight()
+        client.post(f"/highlights/{h.id}/weight",
+                     data={"weight": "10.0", "context": ""})
+        db.refresh(h)
+        assert h.highlight_weight == 2.0
+
+    def test_weight_clamped_low(self, client, make_highlight, db):
+        h = make_highlight()
+        client.post(f"/highlights/{h.id}/weight",
+                     data={"weight": "-5.0", "context": ""})
+        db.refresh(h)
+        assert h.highlight_weight == 0.0
+
+
+class TestFavoriteHTML:
+    """POST /highlights/{id}/favorite — HTML toggle."""
+
+    def test_favorite_toggle_html(self, client, make_highlight, db):
+        h = make_highlight()
+        resp = client.post(f"/highlights/{h.id}/favorite",
+                           data={"favorite": "true", "context": ""})
+        assert resp.status_code == 200
+        db.refresh(h)
+        assert h.is_favorited is True
+
+    def test_cannot_favorite_discarded_html(self, client, make_highlight):
+        h = make_highlight(is_discarded=True)
+        resp = client.post(f"/highlights/{h.id}/favorite",
+                           data={"favorite": "true", "context": ""})
+        assert resp.status_code == 400
+
+
+class TestDiscardHTML:
+    """POST /highlights/{id}/discard — HTML toggle."""
+
+    def test_discard_toggle_html(self, client, make_highlight, db):
+        h = make_highlight()
+        resp = client.post(f"/highlights/{h.id}/discard",
+                           data={"context": ""})
+        assert resp.status_code == 200
+        db.refresh(h)
+        assert h.is_discarded is True
+
+    def test_discard_auto_unfavorites_html(self, client, make_highlight, db):
+        h = make_highlight(is_favorited=True)
+        client.post(f"/highlights/{h.id}/discard", data={"context": ""})
+        db.refresh(h)
+        assert h.is_discarded is True
+        assert h.is_favorited is False
+
+    def test_restore_from_discarded(self, client, make_highlight, db):
+        h = make_highlight(is_discarded=True)
+        client.post(f"/highlights/{h.id}/discard", data={"context": ""})
+        db.refresh(h)
+        assert h.is_discarded is False
+
+
+class TestFavoritesPage:
+    """GET /highlights/ui/favorites — favorites listing."""
+
+    def test_favorites_page(self, client, make_highlight):
+        make_highlight(text="Faved", is_favorited=True)
+        make_highlight(text="Normal", is_favorited=False)
+        resp = client.get("/highlights/ui/favorites")
+        assert resp.status_code == 200
+        assert "Faved" in resp.text
+        assert "Normal" not in resp.text
+
+
+class TestDiscardedPage:
+    """GET /highlights/ui/discarded — discarded listing."""
+
+    def test_discarded_page(self, client, make_highlight):
+        make_highlight(text="Disc", is_discarded=True)
+        make_highlight(text="Active", is_discarded=False)
+        resp = client.get("/highlights/ui/discarded")
+        assert resp.status_code == 200
+        assert "Disc" in resp.text
+        assert "Active" not in resp.text

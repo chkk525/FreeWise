@@ -617,6 +617,8 @@ async def process_readwise_import(
             "skipped_rows": skipped_rows
         })
     
+    except HTTPException:
+        raise  # Let FastAPI handle HTTP exceptions directly
     except csv.Error as e:
         raise HTTPException(status_code=400, detail=f"Invalid CSV format: {str(e)}")
     except UnicodeDecodeError:
