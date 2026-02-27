@@ -6,6 +6,7 @@ aiofiles
 aiosmtplib
 python-multipart
 httpx
+beautifulsoup4
 pytest
 pytest-asyncio
 apscheduler

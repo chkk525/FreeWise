@@ -149,6 +149,122 @@ async def ui_import_custom(
     })
 
 
+# ── Meebook / Haoqing HTML import ────────────────────────────────────────────
+
+@router.get("/ui/meebook", response_class=HTMLResponse)
+async def ui_import_meebook(
+    request: Request,
+    session: Session = Depends(get_session)
+):
+    """Render Meebook HTML import page."""
+    settings = get_settings(session)
+    return templates.TemplateResponse("import_meebook.html", {
+        "request": request,
+        "settings": settings,
+    })
+
+
+@router.post("/ui/meebook", response_class=HTMLResponse)
+async def process_meebook_import(
+    request: Request,
+    file: UploadFile = File(...),
+    diagnostic: str = Form("true"),
+    session: Session = Depends(get_session),
+):
+    """Process an uploaded Haoqing HTML file and import highlights directly."""
+    from app.utils.meebook import extract_highlights
+
+    # Validate file type
+    if not file.filename.endswith(".html") and not file.filename.endswith(".htm"):
+        raise HTTPException(status_code=400, detail="File must be an HTML file (.html or .htm)")
+
+    try:
+        contents = await file.read()
+        html_text = contents.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File encoding error. Please ensure the file is UTF-8 encoded.")
+
+    try:
+        highlights = extract_highlights(html_text)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse HTML: {e}")
+
+    if not highlights:
+        settings = get_settings(session)
+        return templates.TemplateResponse("import_meebook.html", {
+            "request": request,
+            "settings": settings,
+            "success_message": "No highlights found in the uploaded file.",
+            "imported_count": 0,
+            "skipped_count": 0,
+            "duplicate_count": 0,
+            "skipped_rows": [],
+        })
+
+    imported_count = 0
+    duplicate_count = 0
+    skipped_rows = []
+    is_diagnostic = (diagnostic == "true")
+
+    for idx, h in enumerate(highlights, start=1):
+        # Get or create book
+        book = get_or_create_book(
+            session=session,
+            title=h["title"],
+            author=h["author"],
+        )
+
+        # Deduplicate
+        existing_stmt = select(Highlight).where(
+            Highlight.text == h["text"],
+            Highlight.note == h["note"],
+            Highlight.book_id == (book.id if book else None),
+        )
+        if session.exec(existing_stmt).first():
+            duplicate_count += 1
+            if is_diagnostic:
+                skipped_rows.append({
+                    "row": idx,
+                    "reason": "Duplicate highlight",
+                    "highlight": h["text"][:120],
+                    "note": (h["note"] or "")[:80],
+                    "book_title": h["title"],
+                })
+            continue
+
+        highlight = Highlight(
+            text=h["text"],
+            book_id=book.id if book else None,
+            note=h["note"],
+            created_at=h["created_at"],
+            location=h["location"],
+            location_type=h["location_type"],
+            user_id=1,
+        )
+        session.add(highlight)
+        if is_diagnostic:
+            session.commit()
+            session.refresh(highlight)
+        else:
+            session.flush()
+
+        imported_count += 1
+
+    if not is_diagnostic:
+        session.commit()
+
+    settings = get_settings(session)
+    return templates.TemplateResponse("import_meebook.html", {
+        "request": request,
+        "settings": settings,
+        "success_message": f"Successfully imported {imported_count} highlights. Deduplicated {duplicate_count} duplicates.",
+        "imported_count": imported_count,
+        "skipped_count": 0,
+        "duplicate_count": duplicate_count,
+        "skipped_rows": skipped_rows,
+    })
+
+
 @router.post("/ui/custom/preview", response_class=HTMLResponse)
 async def ui_import_custom_preview(
     request: Request,
@@ -213,6 +329,7 @@ async def process_custom_import(
     document_tags: Optional[str] = Form(None),
     highlighted_at: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
+    location_type: Optional[str] = Form(None),
     diagnostic: str = Form("true"),
     session: Session = Depends(get_session)
 ):
@@ -226,6 +343,9 @@ async def process_custom_import(
         reader = csv.DictReader(csv_file)
         
         # Build column mapping
+        # Validate location_type — only accept the two known values
+        valid_location_type = location_type if location_type in ('page', 'order') else None
+
         column_mapping = {
             'highlight': highlight,
             'book_title': book_title if book_title else None,
@@ -357,6 +477,7 @@ async def process_custom_import(
                 note=note_val if note_val else None,
                 created_at=created_at,
                 location=location_int,
+                location_type=valid_location_type if location_int is not None else None,
                 user_id=1,
                 is_favorited=is_favorited,
                 is_discarded=is_discarded,

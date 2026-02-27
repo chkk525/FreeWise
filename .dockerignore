@@ -1,0 +1,43 @@
+# ── Version control ───────────────────────────────────────────────────
+.git
+.gitignore
+
+# ── Python artifacts ──────────────────────────────────────────────────
+**/__pycache__
+*.py[cod]
+*.pyo
+.venv/
+.env
+*.egg-info/
+
+# ── Node (only used in the CSS-build stage, never in the runtime) ────
+node_modules/
+
+# ── Tests ─────────────────────────────────────────────────────────────
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Data & databases (user data lives in Docker volumes) ──────────────
+db/
+*.db
+*.csv
+
+# ── IDE / editor ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Docker meta (don't send these into the build context) ─────────────
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# ── Docs & misc ───────────────────────────────────────────────────────
+README.md
+LICENSE
+debug_rendered.html
+tools/
+.github/

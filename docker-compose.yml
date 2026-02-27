@@ -1,5 +1,16 @@
-version: '3.8'
-
 services:
-  app:
-    # TODO: Configure app service
+  freewise:
+    build: .
+    container_name: freewise
+    ports:
+      - "8000:8000"
+    volumes:
+      - freewise-db:/srv/freewise/db
+      - freewise-covers:/srv/freewise/app/static/uploads/covers
+    environment:
+      - FREEWISE_DB_URL=sqlite:///./db/freewise.db
+    restart: unless-stopped
+
+volumes:
+  freewise-db:
+  freewise-covers:
