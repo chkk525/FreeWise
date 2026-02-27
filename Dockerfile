@@ -56,9 +56,9 @@ RUN mkdir -p db app/static/uploads/covers \
 
 USER freewise
 
-EXPOSE 8000
+EXPOSE 8063
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/ || exit 1
+    CMD curl -f http://localhost:8063/ || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8063"]

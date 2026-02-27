@@ -3,7 +3,7 @@ services:
     build: .
     container_name: freewise
     ports:
-      - "8000:8000"
+      - "8063:8063"
     volumes:
       - freewise-db:/srv/freewise/db
       - freewise-covers:/srv/freewise/app/static/uploads/covers
