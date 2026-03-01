@@ -10,6 +10,8 @@
 
 Wisdom should not be locked behind a paywall and no company should be able to collect (and potentially sell) your data and build a profile of the ideas and passages that matter most to you. FreeWise is free and open-source software (FOSS) built with **FastAPI**, **SQLModel**, **HTMX**, and **TailwindCSS**, and runs entirely in a single Docker container with no external dependencies.
 
+This project was also an experiment in using **VS Code Agents** (powered by **Claude Sonnet 4.6** and **Claude Opus 4.6**) to build a fully functional web application from scratch — as someone with coding experience but no formal software development background. In the spirit of transparency: while every core feature has been covered by a `pytest` test suite and manually stress-tested, bugs and inefficiencies may still exist.
+
 > [!NOTE]
 > A complete version of this app is out now, but this project is still under active development. Contributions, issues, and pull requests are welcome.
 
