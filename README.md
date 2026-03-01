@@ -8,10 +8,13 @@
 
 > A minimal, self-hosted web app for managing and reviewing book and article highlights — inspired by [Readwise](https://readwise.io/), without the subscription.
 
-Wisdom should not be locked behind a paywall. FreeWise is built with **FastAPI**, **SQLModel**, **HTMX**, and **TailwindCSS**, and runs entirely in a single Docker container with no external dependencies.
+Wisdom should not be locked behind a paywall and no company should be able to collect (and potentially sell) your data and build a profile of the ideas and passages that matter most to you. FreeWise is free and open-source software (FOSS) built with **FastAPI**, **SQLModel**, **HTMX**, and **TailwindCSS**, and runs entirely in a single Docker container with no external dependencies.
 
 > [!NOTE]
-> This project is under active development. Contributions, issues, and pull requests are welcome.
+> A complete version of this app is out now, but this project is still under active development. Contributions, issues, and pull requests are welcome.
+
+> [!TIP]
+> Want to see what FreeWise looks like before installing? Check out the screenshots in the [`web_app_preview/`](web_app_preview/) folder for a preview of the app's interface.
 
 ---
 
@@ -209,4 +212,4 @@ For larger changes or new features, please open an issue first to discuss the ap
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [CC0 License](LICENSE).
