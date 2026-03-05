@@ -10,7 +10,7 @@
 
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border-2 border-gray-200 dark:border-gray-700">
         <!-- Button Bar at Top -->
-        <div class="bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800 px-8 py-4 rounded-t-2xl flex items-center justify-between">
+        <div class="bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800 px-5 sm:px-8 py-4 rounded-t-2xl flex items-center justify-between">
             <span class="text-base font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
                 <i data-lucide="pencil" class="w-5 h-5"></i>
                 Editing Highlight
@@ -34,7 +34,7 @@
         </div>
         
         <!-- Edit Form -->
-        <form id="review-edit-form-{{ highlight.id }}" class="p-8 md:p-12"
+        <form id="review-edit-form-{{ highlight.id }}" class="p-5 sm:p-8 md:p-12"
               hx-post="/highlights/{{ highlight.id }}/edit"
               hx-target="#review-container"
               hx-swap="innerHTML">
@@ -62,7 +62,7 @@
                 <textarea 
                     name="text"
                     rows="1"
-                    class="w-full px-4 py-3 font-serif leading-relaxed border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none overflow-hidden" style="font-size: 1.375rem"
+                    class="w-full px-4 py-3 font-serif leading-relaxed text-[1.375rem] border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none overflow-hidden"
                     oninput="this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px'"
                     required>{{ highlight.text }}</textarea>
             </div>

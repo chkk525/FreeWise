@@ -71,7 +71,7 @@
    smaller viewports so the UI feels proportional on mobile.
    Mobile (<640px): 14px  |  sm (640-767px): 15px  |  md+ (≥768px): 16px */
 html {
-  font-size: 14px;
+  font-size: 11px;
 }
 @media (min-width: 640px) {
   html { font-size: 15px; }
