@@ -19,6 +19,19 @@ class User(SQLModel, table=True):
         return f"User(id={self.id}, email={self.email})"
 
 
+class ApiToken(SQLModel, table=True):
+    """API token for programmatic access (Readwise-compatible API)."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    token: str = Field(index=True, unique=True)
+    name: str  # human label, e.g. "chrome-extension-laptop"
+    user_id: int = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    last_used_at: Optional[datetime] = Field(default=None, index=True)
+
+    def __repr__(self) -> str:
+        return f"ApiToken(id={self.id}, name={self.name!r})"
+
+
 class Book(SQLModel, table=True):
     """Book model for organizing highlights by source."""
     id: Optional[int] = Field(default=None, primary_key=True)

@@ -1,6 +1,7 @@
 """
 Tests for database models, default values, constraints, and relationships.
 """
+import pytest
 from datetime import datetime, date
 from sqlmodel import Session, select
 
@@ -124,3 +125,28 @@ class TestTagModel:
         ).first()
         assert found is not None
         assert found.tag_id == tag.id
+
+
+class TestApiToken:
+    def test_create_api_token(self, db):
+        from app.models import ApiToken
+        token = ApiToken(
+            token="freewise_abc123def456",
+            name="chrome-extension-laptop",
+            user_id=1,
+        )
+        db.add(token)
+        db.commit()
+        db.refresh(token)
+
+        assert token.id is not None
+        assert token.token == "freewise_abc123def456"
+        assert token.created_at is not None  # auto-set by default
+
+    def test_api_token_unique(self, db):
+        from app.models import ApiToken
+        db.add(ApiToken(token="dup", name="a", user_id=1))
+        db.commit()
+        db.add(ApiToken(token="dup", name="b", user_id=1))
+        with pytest.raises(Exception):  # IntegrityError
+            db.commit()
