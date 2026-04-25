@@ -235,7 +235,12 @@ def _import_book(
             errors.append(msg)
             return None
 
-    # Always merge ASIN tag (covers existing rows that pre-date kindle tagging).
+    # Always set kindle_asin (Phase 3 column), and keep the document_tags
+    # mirror in lockstep so older readers (until everything is migrated) still
+    # see the asin tag.
+    if book.kindle_asin != asin:
+        book.kindle_asin = asin
+        session.add(book)
     merged_tags = _merge_asin_tag(book.document_tags, asin)
     if merged_tags != (book.document_tags or ""):
         book.document_tags = merged_tags
@@ -275,17 +280,27 @@ def _find_existing_book(
 
 
 def _find_existing_book_by_asin(session: Session, *, asin: str) -> Optional[Book]:
-    """Return the existing Book whose document_tags contains ``asin:<asin>``.
+    """Return the existing Book matching ``asin``.
 
-    document_tags is a free-form comma-separated string in the current schema
-    (a dedicated kindle_asin column is on the Phase 3 wishlist). The token
-    boundaries we care about are ``,`` and start/end of string; we do that
-    matching in Python rather than SQL because (a) SQLite has no portable
-    string-list operator, (b) the table is small enough that a single
-    ``LIKE '%asin:%'`` filter + Python check is plenty fast.
+    Lookup order:
+      1. Dedicated ``kindle_asin`` column (Phase 3 — added by the lightweight
+         schema migration in ``app.db.ensure_schema_migrations``).
+      2. Legacy ``document_tags`` entry shaped ``asin:<value>``. This handles
+         rows that pre-date the migration on a long-lived deployment where
+         the import has run before the FreeWise binary was upgraded.
+
+    Tag-based matching uses ``LIKE '%asin:%'`` then verifies token boundaries
+    in Python so e.g. ``asin:B07F`` does not collide with ``asin:B07FCMBLM6XX``.
     """
     if not asin:
         return None
+
+    by_column = session.exec(
+        select(Book).where(Book.kindle_asin == asin)
+    ).first()
+    if by_column is not None:
+        return by_column
+
     needle = f"asin:{asin}"
     stmt = select(Book).where(Book.document_tags.is_not(None)).where(  # type: ignore[union-attr]
         Book.document_tags.contains(needle)  # type: ignore[union-attr]

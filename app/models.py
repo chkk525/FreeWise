@@ -41,6 +41,10 @@ class Book(SQLModel, table=True):
     review_weight: float = Field(default=1.0, index=True)  # 0.0 (Never) to 2.0 (More)
     cover_image_url: Optional[str] = Field(default=None)
     cover_image_source: Optional[str] = Field(default=None)
+    # Kindle ASIN. Used as the primary dedup key for Kindle imports — survives
+    # title rewrites in Amazon's library. Backfilled from `document_tags` on
+    # startup; see app.db.ensure_schema_migrations.
+    kindle_asin: Optional[str] = Field(default=None, index=True)
     highlights: list["Highlight"] = Relationship(back_populates="book")
     
     def __repr__(self) -> str:

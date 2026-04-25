@@ -7,7 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session
 
-from app.db import get_engine, get_settings, get_current_streak
+from app.db import (
+    ensure_schema_migrations,
+    get_current_streak,
+    get_engine,
+    get_settings,
+)
 from app.models import SQLModel
 from app.routers import highlights, settings, importer, library, dashboard, export
 from app.services import kindle_import_watcher
@@ -24,6 +29,7 @@ async def lifespan(app: FastAPI):
     os.makedirs("./app/static/uploads/covers", exist_ok=True)
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
+    ensure_schema_migrations(engine)
 
     # Initialize default settings if not exists
     with Session(engine) as session:

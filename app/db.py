@@ -1,4 +1,6 @@
+import logging
 import os
+from sqlalchemy import text
 from sqlmodel import create_engine, SQLModel, Session, select
 
 # Module-level engine singleton — created once when the module is first imported.
@@ -8,10 +10,56 @@ _engine = create_engine(
     connect_args={"check_same_thread": False},
 )
 
+_log = logging.getLogger(__name__)
+
 
 def get_engine():
     """Return the module-level SQLAlchemy engine singleton."""
     return _engine
+
+
+def ensure_schema_migrations(engine=None) -> None:
+    """Apply lightweight forward-only schema migrations.
+
+    SQLite + a single-user app means we can get away with a tiny ALTER TABLE
+    helper instead of a full alembic dependency. Each migration:
+    - Inspects PRAGMA table_info(book) to find missing columns
+    - Adds them with ADD COLUMN if absent
+    - Backfills from existing data where it makes sense
+
+    Called once during the FastAPI lifespan, immediately after
+    ``SQLModel.metadata.create_all`` so brand-new DBs get the column from
+    the model definition AND existing DBs get the column added in place.
+
+    Idempotent: re-running on an already-migrated DB is a no-op.
+    """
+    engine = engine or _engine
+    with engine.begin() as conn:
+        cols = {row[1] for row in conn.execute(text("PRAGMA table_info(book)")).all()}
+        if "kindle_asin" not in cols:
+            _log.info("migration: adding book.kindle_asin column")
+            conn.execute(text("ALTER TABLE book ADD COLUMN kindle_asin VARCHAR"))
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_book_kindle_asin ON book (kindle_asin)")
+            )
+            # Backfill from document_tags entries shaped `asin:<value>`.
+            rows = conn.execute(
+                text("SELECT id, document_tags FROM book WHERE document_tags LIKE '%asin:%'")
+            ).all()
+            backfilled = 0
+            for row_id, tags in rows:
+                for tag in (tags or "").split(","):
+                    t = tag.strip()
+                    if t.startswith("asin:") and len(t) > 5:
+                        asin = t[5:]
+                        conn.execute(
+                            text("UPDATE book SET kindle_asin = :a WHERE id = :id AND kindle_asin IS NULL"),
+                            {"a": asin, "id": row_id},
+                        )
+                        backfilled += 1
+                        break
+            if backfilled:
+                _log.info("migration: backfilled kindle_asin on %d book rows", backfilled)
 
 
 def get_session():

@@ -76,7 +76,7 @@ is also upgraded.
 | `book.title` | `Book.title` |
 | `book.author` | `Book.author` |
 | `book.cover_url` | `Book.cover_image_url` (+ `cover_image_source = "kindle"`) |
-| `book.asin` | `Book.document_tags` += `"asin:<value>"` (v1; dedicated column later) |
+| `book.asin` | `Book.kindle_asin` (Phase 3, lightweight migration on startup) + `Book.document_tags` mirrors `"asin:<value>"` for legacy readers |
 | `highlight.text` | `Highlight.text` |
 | `highlight.note` | `Highlight.note` |
 | `highlight.location` | `Highlight.location` (`location_type = "kindle_location"`) |
@@ -87,7 +87,11 @@ is also upgraded.
 
 ## Dedup rules
 
-- **Book**: match existing `Book` row by `(title, author)` first (current FreeWise behavior). If `asin` is present and a future schema adds a dedicated column, prefer ASIN.
+- **Book**: match in this order:
+  1. `Book.kindle_asin == asin` (Phase 3, primary).
+  2. `Book.document_tags LIKE '%asin:<asin>%'` with token-boundary verification
+     in Python (legacy fallback for rows imported before the schema migration).
+  3. `(title, author)` (covers re-imports of books predating ASIN tagging).
 - **Highlight**: within a book, match by `(text, location)` to avoid duplicates on re-import. The scraper-provided `highlight.id` is NOT persisted; it is only used for the scraper's own internal change tracking.
 
 ## Validation
