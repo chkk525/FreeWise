@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "FreeWise Save Highlight",
+  "version": "0.1.0",
+  "description": "Right-click any selection on the web to save it to your FreeWise instance via the Readwise-compatible /api/v2/highlights API.",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FreeWise"
+  }
+}

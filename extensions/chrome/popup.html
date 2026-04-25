@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FreeWise</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; width: 280px; margin: 0; padding: 12px; color: #111; }
+    h1 { font-size: 14px; margin: 0 0 8px; }
+    label { display: block; font-size: 11px; color: #555; margin: 8px 0 2px; }
+    input { width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; }
+    button { margin-top: 10px; width: 100%; padding: 8px; background: #b45309; color: white; border: 0; border-radius: 4px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #92400e; }
+    .status { margin-top: 8px; font-size: 11px; color: #666; min-height: 1em; }
+    .ok { color: #047857; }
+    .err { color: #b91c1c; }
+    code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <h1>FreeWise — Save Highlight</h1>
+  <p style="font-size: 11px; color: #666; margin: 0;">
+    Right-click any web selection → <em>"Save selection to FreeWise"</em>.
+    Configure once below, then forget about it.
+  </p>
+
+  <label for="baseUrl">Base URL</label>
+  <input id="baseUrl" type="url" placeholder="https://freewise.example.com" />
+
+  <label for="token">API Token</label>
+  <input id="token" type="password" placeholder="(create at /import/api-token)" />
+
+  <button id="save" type="button">Save</button>
+  <button id="test" type="button" style="background: #4b5563;">Test connection</button>
+
+  <div id="status" class="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
