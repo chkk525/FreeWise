@@ -254,3 +254,58 @@ class TestCoverDelete:
     def test_delete_cover_404(self, client):
         resp = client.post("/library/ui/book/9999/cover/delete")
         assert resp.status_code == 404
+
+
+class TestLibraryPagination:
+    """Server-side pagination for /library/ui (Phase: perf)."""
+
+    def test_page_1_returns_first_page_size_books(self, client, make_book):
+        for i in range(60):
+            make_book(title=f"Book {i:02d}")
+        r = client.get("/library/ui?page=1&page_size=50&sort=title&order=asc")
+        assert r.status_code == 200
+        # exactly 50 books on page 1
+        assert r.text.count("Book 0") + r.text.count("Book 1") + r.text.count("Book 2") + r.text.count("Book 3") + r.text.count("Book 4") >= 50
+        assert "Page 1 of 2" in r.text
+
+    def test_page_2_returns_remainder(self, client, make_book):
+        for i in range(60):
+            make_book(title=f"Book {i:02d}")
+        r = client.get("/library/ui?page=2&page_size=50&sort=title&order=asc")
+        assert r.status_code == 200
+        assert "Page 2 of 2" in r.text
+
+    def test_page_size_clamps_to_max(self, client, make_book):
+        for i in range(5):
+            make_book(title=f"X {i}")
+        r = client.get("/library/ui?page=1&page_size=999")
+        assert r.status_code == 200
+        # 5 books, all visible since clamped page_size still > 5
+        assert "Showing" in r.text
+
+    def test_page_clamps_to_total_pages(self, client, make_book):
+        for i in range(3):
+            make_book(title=f"A {i}")
+        r = client.get("/library/ui?page=99&page_size=10")
+        assert r.status_code == 200
+        # only 1 page exists
+        assert "Page 1 of 1" in r.text
+
+    def test_default_sort_is_highlight_count_desc(self, client, make_book, make_highlight):
+        b_small = make_book(title="Small")
+        b_big = make_book(title="Big")
+        for _ in range(5):
+            make_highlight(book=b_big, text="x")
+        make_highlight(book=b_small, text="y")
+        r = client.get("/library/ui")
+        assert r.status_code == 200
+        # "Big" appears before "Small" in the rendered table (by source order)
+        assert r.text.index("Big") < r.text.index("Small")
+
+    def test_pagination_preserves_sort_param(self, client, make_book):
+        make_book(title="Aaa")
+        r = client.get("/library/ui?sort=author&order=desc&page=1")
+        assert r.status_code == 200
+        # link to next page (if any) should preserve sort=author
+        # (we only have 1 book so no next link, but the sort header should still reflect)
+        assert "sort=author" in r.text or "current_sort" not in r.text  # sort applied

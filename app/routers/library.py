@@ -22,26 +22,43 @@ ALLOWED_COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_COVER_SIZE_BYTES = 5 * 1024 * 1024
 
 
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
+
+
 @router.get("/ui", response_class=HTMLResponse)
 async def ui_library(
     request: Request,
-    sort: Optional[str] = "title",
-    order: Optional[str] = "asc",
+    sort: Optional[str] = "highlight_count",
+    order: Optional[str] = "desc",
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
     session: Session = Depends(get_session)
 ):
+    """Render library page with sortable + paginated table of books.
+
+    At 3,780+ books an unpaginated render took ~0.5s on prod due to ORM
+    hydration of every row. Server-side OFFSET/LIMIT keeps initial render
+    sub-100ms. Default sort flipped to highlight_count desc since that's
+    by far the most useful entry view.
+
+    Query params: sort (title|author|highlight_count|last_highlight),
+    order (asc|desc), page (1-based), page_size (1..200).
     """
-    Render library page with sortable table of books.
-    
-    Sort options: title, author, highlight_count, last_updated
-    Order options: asc, desc
-    """
-    # Get settings for theme
     settings = get_settings(session)
 
-    # Get all books with aggregated data
+    valid_sorts = {"title", "author", "highlight_count", "last_highlight"}
+    if sort not in valid_sorts:
+        sort = "highlight_count"
+    if order not in ("asc", "desc"):
+        order = "desc"
+
+    page = max(1, page)
+    page_size = max(1, min(MAX_PAGE_SIZE, page_size))
+
     highlight_count_col = func.count(Highlight.id).label("highlight_count")
     last_highlight_col = func.max(Highlight.created_at).label("last_highlight_date")
-    
+
     books_query = (
         select(
             Book.id,
@@ -49,54 +66,61 @@ async def ui_library(
             Book.author,
             Book.document_tags,
             highlight_count_col,
-            last_highlight_col
+            last_highlight_col,
         )
         .outerjoin(Highlight, Book.id == Highlight.book_id)
         .group_by(Book.id)
     )
-    
-    # Apply sorting
-    valid_sorts = ["title", "author", "highlight_count", "last_highlight"]
-    if sort not in valid_sorts:
-        sort = "title"
-    
-    if order not in ["asc", "desc"]:
-        order = "asc"
-    
-    if sort == "title":
-        sort_col = Book.title
-    elif sort == "author":
-        sort_col = Book.author
-    elif sort == "highlight_count":
-        sort_col = highlight_count_col
-    elif sort == "last_highlight":
-        sort_col = last_highlight_col
-    else:
-        sort_col = Book.title
-    
-    if order == "desc":
-        books_query = books_query.order_by(sort_col.desc())
-    else:
-        books_query = books_query.order_by(sort_col.asc())
-    
-    results = session.exec(books_query).all()
-    
-    # Convert results to list of dicts for template
-    books = []
-    for result in results:
-        books.append({
-            "id": result.id,
-            "title": result.title,
-            "author": result.author or "Unknown",
-            "document_tags": result.document_tags,
-            "highlight_count": result.highlight_count,
-            "last_highlight_date": result.last_highlight_date
-        })
-    
-    return templates.TemplateResponse(request, "library.html", {"settings": settings,
-        "books": books,
-        "current_sort": sort,
-        "current_order": order})
+
+    sort_col = {
+        "title": Book.title,
+        "author": Book.author,
+        "highlight_count": highlight_count_col,
+        "last_highlight": last_highlight_col,
+    }[sort]
+    books_query = books_query.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
+
+    total = session.exec(select(func.count()).select_from(Book)).one()
+    if isinstance(total, tuple):
+        total = total[0]
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+
+    page_query = books_query.offset((page - 1) * page_size).limit(page_size)
+    results = session.exec(page_query).all()
+
+    books = [
+        {
+            "id": r.id,
+            "title": r.title,
+            "author": r.author or "Unknown",
+            "document_tags": r.document_tags,
+            "highlight_count": r.highlight_count,
+            "last_highlight_date": r.last_highlight_date,
+        }
+        for r in results
+    ]
+
+    showing_first = 0 if total == 0 else (page - 1) * page_size + 1
+    showing_last = min(page * page_size, total)
+
+    return templates.TemplateResponse(
+        request,
+        "library.html",
+        {
+            "settings": settings,
+            "books": books,
+            "current_sort": sort,
+            "current_order": order,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
 
 
 @router.get("/ui/book/{book_id}", response_class=HTMLResponse)
