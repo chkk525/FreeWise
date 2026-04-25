@@ -234,6 +234,73 @@
     </a>
 </div>
 
+{% if kindle_status.enabled %}
+<!-- Latest Kindle import -->
+<div class="mb-10 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
+    <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h3 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="book-marked" class="w-6 h-6 text-amber-700 dark:text-amber-500"></i>
+            Latest Kindle import
+        </h3>
+        <form method="post" action="/import/kindle/scan-now">
+            <button type="submit" class="inline-flex items-center gap-2 bg-amber-700 hover:bg-amber-800 dark:bg-amber-700 dark:hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                Scan now
+            </button>
+        </form>
+    </div>
+
+    <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+        <div>
+            <dt class="text-gray-500 dark:text-gray-400 font-medium">Last imported at</dt>
+            <dd class="text-gray-900 dark:text-white font-mono">
+                {% if kindle_status.last_imported_at %}
+                    <span data-iso="{{ kindle_status.last_imported_at }}">{{ kindle_status.last_imported_at }}</span>
+                {% else %}
+                    <span class="text-gray-400">—</span>
+                {% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt class="text-gray-500 dark:text-gray-400 font-medium">Last file</dt>
+            <dd class="text-gray-900 dark:text-white font-mono truncate" title="{{ kindle_status.last_imported_filename or '' }}">
+                {% if kindle_status.last_imported_filename %}
+                    {{ kindle_status.last_imported_filename[:40] }}{% if kindle_status.last_imported_filename|length > 40 %}…{% endif %}
+                {% else %}
+                    <span class="text-gray-400">—</span>
+                {% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt class="text-gray-500 dark:text-gray-400 font-medium">Last batch</dt>
+            <dd class="text-gray-900 dark:text-white">
+                {% if kindle_status.last_imported_books is not none %}
+                    {{ kindle_status.last_imported_books }} book{{ 's' if kindle_status.last_imported_books != 1 else '' }},
+                    {{ kindle_status.last_imported_highlights }} highlight{{ 's' if kindle_status.last_imported_highlights != 1 else '' }}
+                {% else %}
+                    <span class="text-gray-400">—</span>
+                {% endif %}
+            </dd>
+        </div>
+        <div>
+            <dt class="text-gray-500 dark:text-gray-400 font-medium">Pending files</dt>
+            <dd class="text-gray-900 dark:text-white text-2xl font-bold">{{ kindle_status.pending_files }}</dd>
+        </div>
+        <div>
+            <dt class="text-gray-500 dark:text-gray-400 font-medium">Processed files</dt>
+            <dd class="text-gray-900 dark:text-white text-2xl font-bold">{{ kindle_status.processed_files }}</dd>
+        </div>
+        <div>
+            <dt class="text-gray-500 dark:text-gray-400 font-medium">Kindle totals</dt>
+            <dd class="text-gray-900 dark:text-white">
+                {{ kindle_status.total_kindle_books }} book{{ 's' if kindle_status.total_kindle_books != 1 else '' }},
+                {{ kindle_status.total_kindle_highlights }} highlight{{ 's' if kindle_status.total_kindle_highlights != 1 else '' }}
+            </dd>
+        </div>
+    </dl>
+</div>
+{% endif %}
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         lucide.createIcons();

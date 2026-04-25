@@ -1,4 +1,5 @@
-from typing import Dict
+from dataclasses import asdict
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -7,6 +8,7 @@ from datetime import datetime, date
 
 from app.db import get_session, get_settings, get_current_streak
 from app.models import Book, Highlight, Settings, ReviewSession
+from app.services.kindle_import_status import get_status as get_kindle_status
 
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -104,6 +106,8 @@ async def ui_dashboard(
                 else:
                     temp_streak = 1
 
+    kindle_status = get_kindle_status(session)
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "settings": settings,
@@ -121,5 +125,12 @@ async def ui_dashboard(
         "heatmap_data": heatmap_data,
         "review_heatmap_data": review_heatmap_data,
         "current_streak": current_streak,
-        "longest_streak": longest_streak
+        "longest_streak": longest_streak,
+        "kindle_status": kindle_status,
     })
+
+
+@router.get("/kindle/status")
+def kindle_status(session: Session = Depends(get_session)) -> Dict[str, Any]:
+    """Return JSON snapshot of Kindle import state for dashboards / probes."""
+    return asdict(get_kindle_status(session))
