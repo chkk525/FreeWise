@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -9,22 +10,93 @@ from sqlmodel import Session
 from app.db import get_engine, get_settings, get_current_streak
 from app.models import SQLModel
 from app.routers import highlights, settings, importer, library, dashboard, export
+from app.services import kindle_import_watcher
+
+
+_log = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create database tables on startup."""
+    """Create database tables on startup; spin the Kindle import scheduler if configured."""
     os.makedirs("./db", exist_ok=True)
     os.makedirs("./app/static", exist_ok=True)
     os.makedirs("./app/static/uploads/covers", exist_ok=True)
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
-    
+
     # Initialize default settings if not exists
-    from sqlmodel import Session
     with Session(engine) as session:
         get_settings(session)
-    
-    yield
+
+    scheduler = _maybe_start_kindle_scheduler()
+    try:
+        yield
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+
+
+def _maybe_start_kindle_scheduler():
+    """Start an APScheduler job that polls KINDLE_IMPORTS_DIR for new exports.
+
+    Returns the scheduler instance (so the caller can shut it down) or None
+    if the feature is disabled. We never crash on startup if the directory
+    is missing — the watcher itself logs and returns empty.
+    """
+
+    imports_dir = kindle_import_watcher.imports_dir_from_env()
+    if imports_dir is None:
+        _log.info("Kindle auto-import disabled (KINDLE_IMPORTS_DIR not set).")
+        return None
+    if not imports_dir.exists():
+        _log.warning(
+            "Kindle auto-import: KINDLE_IMPORTS_DIR=%s does not exist; scheduler "
+            "will start but every tick will no-op until the directory appears.",
+            imports_dir,
+        )
+
+    interval = kindle_import_watcher.interval_seconds_from_env()
+    user_id = kindle_import_watcher.user_id_from_env()
+
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    def _tick() -> None:
+        try:
+            with Session(get_engine()) as session:
+                result = kindle_import_watcher.scan_and_import(
+                    imports_dir=imports_dir, session=session, user_id=user_id
+                )
+            if result.files_scanned:
+                _log.info(
+                    "Kindle scheduler tick: scanned=%d imported=%d failed=%d "
+                    "books=%d highlights=%d",
+                    result.files_scanned,
+                    result.files_imported,
+                    result.files_failed,
+                    result.books_created + result.books_matched,
+                    result.highlights_created,
+                )
+        except Exception:  # noqa: BLE001
+            _log.exception("Kindle scheduler tick raised; continuing.")
+
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(
+        _tick,
+        "interval",
+        seconds=interval,
+        id="kindle_import_watcher",
+        next_run_time=None,  # first tick fires after `interval`, not immediately
+        replace_existing=True,
+    )
+    scheduler.start()
+    _log.info(
+        "Kindle auto-import scheduler started (every %ds, dir=%s, user_id=%d).",
+        interval,
+        imports_dir,
+        user_id,
+    )
+    return scheduler
 
 
 app = FastAPI(title="FreeWise", lifespan=lifespan)

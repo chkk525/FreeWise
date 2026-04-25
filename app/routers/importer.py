@@ -221,6 +221,45 @@ async def process_kindle_import(
     )
 
 
+@router.post("/kindle/scan-now")
+async def kindle_scan_now(
+    session: Session = Depends(get_session),
+):
+    """Manually trigger one Kindle imports-dir scan (no waiting for the scheduler).
+
+    Returns a JSON summary. Useful right after a fresh ``kindle_dl.sh`` run, or
+    in tests. Does nothing if KINDLE_IMPORTS_DIR is unset.
+    """
+    from app.services.kindle_import_watcher import (
+        imports_dir_from_env,
+        scan_and_import,
+        user_id_from_env,
+    )
+
+    imports_dir = imports_dir_from_env()
+    if imports_dir is None:
+        raise HTTPException(
+            status_code=400,
+            detail="KINDLE_IMPORTS_DIR not configured on this server.",
+        )
+
+    result = scan_and_import(
+        imports_dir=imports_dir,
+        session=session,
+        user_id=user_id_from_env(),
+    )
+    return {
+        "files_scanned": result.files_scanned,
+        "files_imported": result.files_imported,
+        "files_failed": result.files_failed,
+        "books_created": result.books_created,
+        "books_matched": result.books_matched,
+        "highlights_created": result.highlights_created,
+        "highlights_skipped_duplicates": result.highlights_skipped_duplicates,
+        "errors": list(result.errors),
+    }
+
+
 # ── Meebook / Haoqing HTML import ────────────────────────────────────────────
 
 @router.get("/ui/meebook", response_class=HTMLResponse)
