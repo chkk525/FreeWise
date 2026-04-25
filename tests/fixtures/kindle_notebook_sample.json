@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0",
+  "exported_at": "2026-04-25T12:34:56Z",
+  "source": "kindle_notebook",
+  "books": [
+    {
+      "asin": "B07FCMBLM6",
+      "title": "Sapiens: A Brief History of Humankind",
+      "author": "Yuval Noah Harari",
+      "cover_url": "https://m.media-amazon.com/images/I/sapiens.jpg",
+      "highlights": [
+        {
+          "id": "QID:sapiens-h1",
+          "text": "The cognitive revolution kicked off about 70,000 years ago.",
+          "note": "Compare to Diamond's chronology in Guns, Germs, and Steel.",
+          "color": "yellow",
+          "location": 1234,
+          "page": 45,
+          "created_at": null
+        },
+        {
+          "id": "QID:sapiens-h2",
+          "text": "Money is the most universal and most efficient system of mutual trust ever devised.",
+          "note": null,
+          "color": "blue",
+          "location": 4821,
+          "page": null,
+          "created_at": null
+        },
+        {
+          "id": "QID:sapiens-h3",
+          "text": "We did not domesticate wheat. It domesticated us.",
+          "note": "Iconic line — quote in talk.",
+          "color": "pink",
+          "location": null,
+          "page": 87,
+          "created_at": null
+        }
+      ]
+    },
+    {
+      "asin": "B00KQYTBNW",
+      "title": "Thinking, Fast and Slow",
+      "author": "Daniel Kahneman",
+      "cover_url": null,
+      "highlights": [
+        {
+          "id": "QID:tfs-h1",
+          "text": "Nothing in life is as important as you think it is, while you are thinking about it.",
+          "note": null,
+          "color": "yellow",
+          "location": 2031,
+          "page": null,
+          "created_at": null
+        }
+      ]
+    },
+    {
+      "asin": "B0BOOK3EMPTY",
+      "title": "Book Without Highlights",
+      "author": null,
+      "cover_url": null,
+      "highlights": []
+    }
+  ]
+}
