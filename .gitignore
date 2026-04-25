@@ -22,6 +22,8 @@ wheels/
 
 # Environment
 .env
+.env.qnap
+.env.*.local
 .venv
 env/
 venv/
