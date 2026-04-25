@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}API Tokens - FreeWise{% endblock %}
+
+{% block heading %}API Tokens{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <p class="text-gray-600 dark:text-gray-400 mb-6">
+        Generate tokens for the Readwise-compatible <code>/api/v2</code> API.
+        Paste the token into your Chrome extension or any other Readwise client.
+        Use the header <code>Authorization: Token &lt;your-token&gt;</code>.
+    </p>
+
+    {% if new_token %}
+    <div class="mb-6 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
+        <p class="text-sm text-amber-900 dark:text-amber-200 mb-2">
+            New token <strong>{{ new_token_name }}</strong> created. Copy it now — it will not be shown again on this page.
+        </p>
+        <pre class="p-3 bg-white dark:bg-gray-900 border border-amber-300 dark:border-amber-700 rounded text-xs overflow-x-auto"><code>{{ new_token }}</code></pre>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/import/api-token" class="mb-8 flex gap-2">
+        <input type="text" name="name" placeholder="Token label (e.g. chrome-extension-laptop)"
+               required maxlength="120"
+               class="flex-1 rounded border border-gray-300 dark:border-gray-700 dark:bg-gray-800 px-3 py-2 text-sm" />
+        <button type="submit"
+                class="px-4 py-2 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700">
+            Create token
+        </button>
+    </form>
+
+    <h2 class="text-lg font-semibold mb-2">Existing tokens</h2>
+    {% if tokens %}
+    <ul class="divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded">
+        {% for t in tokens %}
+        <li class="p-3 flex items-center justify-between text-sm">
+            <div>
+                <div class="font-medium">{{ t.name }}</div>
+                <div class="text-gray-500 dark:text-gray-400 text-xs">
+                    Created {{ t.created_at.strftime('%Y-%m-%d %H:%M UTC') if t.created_at else 'unknown' }}
+                    {% if t.last_used_at %}
+                        · last used {{ t.last_used_at.strftime('%Y-%m-%d %H:%M UTC') }}
+                    {% else %}
+                        · never used
+                    {% endif %}
+                </div>
+            </div>
+            <code class="text-xs text-gray-500">id={{ t.id }}</code>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">No tokens yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

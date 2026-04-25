@@ -14,7 +14,16 @@ from app.db import (
     get_settings,
 )
 from app.models import SQLModel
-from app.routers import highlights, settings, importer, library, dashboard, export
+from app.routers import (
+    highlights,
+    settings,
+    importer,
+    library,
+    dashboard,
+    export,
+    api_tokens,
+)
+from app.api_v2 import router as api_v2_router
 from app.services import kindle_import_watcher
 
 
@@ -153,6 +162,8 @@ app.include_router(settings.router)
 app.include_router(importer.router)
 app.include_router(library.router)
 app.include_router(export.router)
+app.include_router(api_tokens.router)
+app.include_router(api_v2_router.router)
 
 
 @app.get("/sw.js")
