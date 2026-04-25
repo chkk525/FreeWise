@@ -8,7 +8,8 @@ from sqlmodel import Session
 
 from app.db import get_engine, get_settings, get_current_streak
 from app.models import SQLModel
-from app.routers import highlights, settings, importer, library, dashboard, export
+from app.routers import highlights, settings, importer, library, dashboard, export, api_tokens
+from app.api_v2 import router as api_v2_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -59,6 +60,8 @@ app.include_router(settings.router)
 app.include_router(importer.router)
 app.include_router(library.router)
 app.include_router(export.router)
+app.include_router(api_tokens.router)
+app.include_router(api_v2_router.router)
 
 
 @app.get("/sw.js")
