@@ -30,6 +30,7 @@ from app.importers.kindle_notebook import (
     KindleImportResult,
     import_kindle_notebook_json,
 )
+from app.services.notifier import notify
 
 
 logger = logging.getLogger(__name__)
@@ -126,7 +127,7 @@ def scan_and_import(
             target,
         )
 
-    return ScanResult(
+    result = ScanResult(
         files_scanned=len(candidates),
         files_imported=files_imported,
         files_failed=files_failed,
@@ -136,6 +137,49 @@ def scan_and_import(
         highlights_skipped_duplicates=highlights_skipped,
         errors=tuple(errors),
     )
+    _maybe_notify(result)
+    return result
+
+
+def _maybe_notify(result: ScanResult) -> None:
+    """Fire a webhook iff something actually happened. Skips silent ticks."""
+    if result.files_imported == 0 and result.files_failed == 0:
+        return
+    if result.files_failed > 0:
+        msg = (
+            f"imported {result.files_imported}/{result.files_scanned} kindle files, "
+            f"{result.files_failed} failed; "
+            f"books={result.books_created}+{result.books_matched} new+matched, "
+            f"highlights={result.highlights_created}"
+        )
+        notify(
+            "failure",
+            msg,
+            extra={
+                "files_imported": result.files_imported,
+                "files_failed": result.files_failed,
+                "files_scanned": result.files_scanned,
+                "books_created": result.books_created,
+                "highlights_created": result.highlights_created,
+                "errors": list(result.errors)[:5],
+            },
+        )
+    else:
+        msg = (
+            f"imported {result.files_imported} kindle file(s): "
+            f"{result.books_created} new books, {result.books_matched} matched, "
+            f"{result.highlights_created} highlights"
+        )
+        notify(
+            "success",
+            msg,
+            extra={
+                "files_imported": result.files_imported,
+                "books_created": result.books_created,
+                "books_matched": result.books_matched,
+                "highlights_created": result.highlights_created,
+            },
+        )
 
 
 def _import_one_file(
