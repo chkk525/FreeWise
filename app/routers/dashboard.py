@@ -108,9 +108,7 @@ async def ui_dashboard(
 
     kindle_status = get_kindle_status(session)
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "settings": settings,
+    return templates.TemplateResponse(request, "dashboard.html", {"settings": settings,
         "daily_review_count": daily_review_count,
         "reviewed_today": reviewed_today,
         "highlights_reviewed_count": highlights_reviewed_count,
@@ -126,8 +124,7 @@ async def ui_dashboard(
         "review_heatmap_data": review_heatmap_data,
         "current_streak": current_streak,
         "longest_streak": longest_streak,
-        "kindle_status": kindle_status,
-    })
+        "kindle_status": kindle_status})
 
 
 @router.get("/kindle/status")

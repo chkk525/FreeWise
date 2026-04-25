@@ -113,10 +113,7 @@ async def ui_import(
     # Get settings for theme
     settings = get_settings(session)
 
-    return templates.TemplateResponse("import_main.html", {
-        "request": request,
-        "settings": settings
-    })
+    return templates.TemplateResponse(request, "import_main.html", {"settings": settings})
 
 
 @router.get("/ui/readwise", response_class=HTMLResponse)
@@ -128,10 +125,7 @@ async def ui_import_readwise(
     # Get settings for theme
     settings = get_settings(session)
 
-    return templates.TemplateResponse("import_readwise.html", {
-        "request": request,
-        "settings": settings
-    })
+    return templates.TemplateResponse(request, "import_readwise.html", {"settings": settings})
 
 
 @router.get("/ui/custom", response_class=HTMLResponse)
@@ -143,10 +137,7 @@ async def ui_import_custom(
     # Get settings for theme
     settings = get_settings(session)
 
-    return templates.TemplateResponse("import_custom.html", {
-        "request": request,
-        "settings": settings
-    })
+    return templates.TemplateResponse(request, "import_custom.html", {"settings": settings})
 
 
 # ── Kindle notebook JSON import ──────────────────────────────────────────────
@@ -269,10 +260,7 @@ async def ui_import_meebook(
 ):
     """Render Meebook HTML import page."""
     settings = get_settings(session)
-    return templates.TemplateResponse("import_meebook.html", {
-        "request": request,
-        "settings": settings,
-    })
+    return templates.TemplateResponse(request, "import_meebook.html", {"settings": settings})
 
 
 @router.post("/ui/meebook", response_class=HTMLResponse)
@@ -302,15 +290,12 @@ async def process_meebook_import(
 
     if not highlights:
         settings = get_settings(session)
-        return templates.TemplateResponse("import_meebook.html", {
-            "request": request,
-            "settings": settings,
+        return templates.TemplateResponse(request, "import_meebook.html", {"settings": settings,
             "success_message": "No highlights found in the uploaded file.",
             "imported_count": 0,
             "skipped_count": 0,
             "duplicate_count": 0,
-            "skipped_rows": [],
-        })
+            "skipped_rows": []})
 
     imported_count = 0
     duplicate_count = 0
@@ -365,15 +350,12 @@ async def process_meebook_import(
         session.commit()
 
     settings = get_settings(session)
-    return templates.TemplateResponse("import_meebook.html", {
-        "request": request,
-        "settings": settings,
+    return templates.TemplateResponse(request, "import_meebook.html", {"settings": settings,
         "success_message": f"Successfully imported {imported_count} highlights. Deduplicated {duplicate_count} duplicates.",
         "imported_count": imported_count,
         "skipped_count": 0,
         "duplicate_count": duplicate_count,
-        "skipped_rows": skipped_rows,
-    })
+        "skipped_rows": skipped_rows})
 
 
 @router.post("/ui/custom/preview", response_class=HTMLResponse)
@@ -414,13 +396,10 @@ async def ui_import_custom_preview(
         # Get settings for theme
         settings = get_settings(session)
 
-        return templates.TemplateResponse("import_custom.html", {
-            "request": request,
-            "settings": settings,
+        return templates.TemplateResponse(request, "import_custom.html", {"settings": settings,
             "preview_data": preview_data,
             "csv_columns": csv_columns,
-            "csv_data_b64": csv_data_b64
-        })
+            "csv_data_b64": csv_data_b64})
     
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="File encoding error. Please ensure the file is UTF-8 encoded.")
@@ -623,15 +602,12 @@ async def process_custom_import(
         settings = get_settings(session)
 
         # Return success page on custom import page
-        return templates.TemplateResponse("import_custom.html", {
-            "request": request,
-            "settings": settings,
+        return templates.TemplateResponse(request, "import_custom.html", {"settings": settings,
             "success_message": f"Successfully imported {imported_count} highlights. Skipped {skipped_count} rows. Deduplicated {duplicate_count} duplicates.",
             "imported_count": imported_count,
             "skipped_count": skipped_count,
             "duplicate_count": duplicate_count,
-            "skipped_rows": skipped_rows
-        })
+            "skipped_rows": skipped_rows})
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
@@ -839,15 +815,12 @@ async def process_readwise_import(
         settings = get_settings(session)
 
         # Return success page
-        return templates.TemplateResponse("import_readwise.html", {
-            "request": request,
-            "settings": settings,
+        return templates.TemplateResponse(request, "import_readwise.html", {"settings": settings,
             "success_message": f"Successfully imported {imported_count} highlights. Skipped {skipped_count} rows. Deduplicated {duplicate_count} duplicates.",
             "imported_count": imported_count,
             "skipped_count": skipped_count,
             "duplicate_count": duplicate_count,
-            "skipped_rows": skipped_rows
-        })
+            "skipped_rows": skipped_rows})
     
     except HTTPException:
         raise  # Let FastAPI handle HTTP exceptions directly

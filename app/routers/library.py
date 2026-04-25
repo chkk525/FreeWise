@@ -93,13 +93,10 @@ async def ui_library(
             "last_highlight_date": result.last_highlight_date
         })
     
-    return templates.TemplateResponse("library.html", {
-        "request": request,
-        "settings": settings,
+    return templates.TemplateResponse(request, "library.html", {"settings": settings,
         "books": books,
         "current_sort": sort,
-        "current_order": order
-    })
+        "current_order": order})
 
 
 @router.get("/ui/book/{book_id}", response_class=HTMLResponse)
@@ -129,12 +126,9 @@ async def ui_book_detail(
     )
     highlights = session.exec(highlights_stmt).all()
     
-    return templates.TemplateResponse("book_detail.html", {
-        "request": request,
-        "settings": settings,
+    return templates.TemplateResponse(request, "book_detail.html", {"settings": settings,
         "book": book,
-        "highlights": highlights
-    })
+        "highlights": highlights})
 
 
 @router.post("/ui/book/{book_id}/cover/upload", response_class=HTMLResponse)
@@ -323,10 +317,7 @@ async def ui_book_edit_form(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    return templates.TemplateResponse("_book_edit_form.html", {
-        "request": request,
-        "book": book,
-    })
+    return templates.TemplateResponse(request, "_book_edit_form.html", {"book": book})
 
 
 @router.post("/ui/book/{book_id}/edit", response_class=HTMLResponse)
@@ -507,28 +498,19 @@ async def ui_book_delete(
 
 def _render_cover_section(request: Request, book: Book) -> HTMLResponse:
     """Render the cover image display section only."""
-    return templates.TemplateResponse("_cover_section.html", {
-        "request": request,
-        "book": book,
-    })
+    return templates.TemplateResponse(request, "_cover_section.html", {"book": book})
 
 
 def _render_cover_search_results(request: Request, book_id: int, results: list[dict], query: str) -> HTMLResponse:
     """Render Open Library cover search results list."""
-    return templates.TemplateResponse("_cover_search_results.html", {
-        "request": request,
-        "book_id": book_id,
+    return templates.TemplateResponse(request, "_cover_search_results.html", {"book_id": book_id,
         "results": results,
-        "query": query,
-    })
+        "query": query})
 
 
 def _render_tags_section(request: Request, book: Book) -> HTMLResponse:
     """Render the document tags section."""
-    return templates.TemplateResponse("_tags_section.html", {
-        "request": request,
-        "book": book,
-    })
+    return templates.TemplateResponse(request, "_tags_section.html", {"book": book})
 
 
 def _delete_existing_cover_file(book: Book) -> None:
@@ -549,8 +531,5 @@ def _delete_existing_cover_file(book: Book) -> None:
 
 def _render_book_header(request: Request, book: Book, highlight_count: int) -> HTMLResponse:
     """Render the book header section."""
-    return templates.TemplateResponse("_book_header.html", {
-        "request": request,
-        "book": book,
-        "highlight_count": highlight_count,
-    })
+    return templates.TemplateResponse(request, "_book_header.html", {"book": book,
+        "highlight_count": highlight_count})

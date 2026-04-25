@@ -44,11 +44,8 @@ def render_book_highlights_sections(request: Request, book_id: int, session: Ses
     discarded_highlights = [h for h in highlights if h.is_discarded]
     
     # Render the sections template
-    return templates.TemplateResponse("_book_highlights_sections.html", {
-        "request": request,
-        "active_highlights": active_highlights,
-        "discarded_highlights": discarded_highlights
-    })
+    return templates.TemplateResponse(request, "_book_highlights_sections.html", {"active_highlights": active_highlights,
+        "discarded_highlights": discarded_highlights})
 
 
 class HighlightCreate(BaseModel):
@@ -396,13 +393,10 @@ async def ui_review(
         current = 0
         total = len(highlight_ids)
     
-    response = templates.TemplateResponse("review.html", {
-        "request": request,
-        "highlight": highlight,
+    response = templates.TemplateResponse(request, "review.html", {"highlight": highlight,
         "current": current,
         "total": total,
-        "settings": settings
-    })
+        "settings": settings})
     
     # Set session cookie
     response.set_cookie(
@@ -461,22 +455,19 @@ async def ui_review_next(
             
             # Review complete - clean up session and show completion message
             del review_sessions[review_session_id]
-            return templates.TemplateResponse("_review_complete.html", {"request": request})
+            return templates.TemplateResponse(request, "_review_complete.html")
         
         # Get next highlight from session
         next_highlight_id = highlight_ids[current_index]
         next_highlight = session.get(Highlight, next_highlight_id)
         
         if next_highlight:
-            return templates.TemplateResponse("_review_card.html", {
-                "request": request,
-                "highlight": next_highlight,
+            return templates.TemplateResponse(request, "_review_card.html", {"highlight": next_highlight,
                 "current": current_index + 1,
-                "total": len(highlight_ids)
-            })
+                "total": len(highlight_ids)})
     
     # Fallback: No valid session, show expiry message
-    return templates.TemplateResponse("_session_expired.html", {"request": request})
+    return templates.TemplateResponse(request, "_session_expired.html")
 
 
 @router.get("/{id}/weight/options", response_class=HTMLResponse)
@@ -490,10 +481,7 @@ async def ui_highlight_weight_options(
     if not highlight:
         raise HTTPException(status_code=404, detail="Highlight not found")
 
-    return templates.TemplateResponse("_weight_options.html", {
-        "request": request,
-        "highlight": highlight,
-    })
+    return templates.TemplateResponse(request, "_weight_options.html", {"highlight": highlight})
 
 
 @router.post("/{id}/weight", response_class=HTMLResponse)
@@ -538,11 +526,8 @@ async def ui_favorites(
     )
     highlights = session.exec(statement).all()
     
-    return templates.TemplateResponse("favorites.html", {
-        "request": request,
-        "highlights": highlights,
-        "settings": settings
-    })
+    return templates.TemplateResponse(request, "favorites.html", {"highlights": highlights,
+        "settings": settings})
 
 
 @router.get("/ui/discarded", response_class=HTMLResponse)
@@ -562,11 +547,8 @@ async def ui_discarded(
     )
     highlights = session.exec(statement).all()
     
-    return templates.TemplateResponse("discarded.html", {
-        "request": request,
-        "highlights": highlights,
-        "settings": settings
-    })
+    return templates.TemplateResponse(request, "discarded.html", {"highlights": highlights,
+        "settings": settings})
 
 
 @router.get("/{id}/view", response_class=HTMLResponse)
@@ -584,10 +566,7 @@ async def view_highlight_partial(
     # Choose template based on context
     template_name = "_book_highlight.html" if context == "book" else "_highlight_row.html"
     
-    return templates.TemplateResponse(template_name, {
-        "request": request,
-        "highlight": highlight
-    })
+    return templates.TemplateResponse(request, template_name, {"highlight": highlight})
 
 
 @router.get("/{id}/edit", response_class=HTMLResponse)
@@ -609,19 +588,13 @@ async def get_highlight_edit_form(
         current_index = session_data["current_index"]
         highlight_ids = session_data["highlight_ids"]
         
-        return templates.TemplateResponse("_review_edit.html", {
-            "request": request,
-            "highlight": highlight,
+        return templates.TemplateResponse(request, "_review_edit.html", {"highlight": highlight,
             "current": current_index + 1,
-            "total": len(highlight_ids)
-        })
+            "total": len(highlight_ids)})
     
     # Store context in the form for use after save
-    return templates.TemplateResponse("_highlight_edit.html", {
-        "request": request,
-        "highlight": highlight,
-        "context": context
-    })
+    return templates.TemplateResponse(request, "_highlight_edit.html", {"highlight": highlight,
+        "context": context})
 
 
 @router.post("/{id}/edit", response_class=HTMLResponse)
@@ -655,20 +628,14 @@ async def save_highlight_edit(
         current_index = session_data["current_index"]
         highlight_ids = session_data["highlight_ids"]
         
-        return templates.TemplateResponse("_review_card.html", {
-            "request": request,
-            "highlight": highlight,
+        return templates.TemplateResponse(request, "_review_card.html", {"highlight": highlight,
             "current": current_index + 1,
-            "total": len(highlight_ids)
-        })
+            "total": len(highlight_ids)})
     
     # Choose template based on context
     template_name = "_book_highlight.html" if context == "book" else "_highlight_row.html"
     
-    return templates.TemplateResponse(template_name, {
-        "request": request,
-        "highlight": highlight
-    })
+    return templates.TemplateResponse(request, template_name, {"highlight": highlight})
 
 
 # Helper endpoint for cancel button in review edit
@@ -695,12 +662,9 @@ async def get_review_card(
         current = 1
         total = 1
     
-    return templates.TemplateResponse("_review_card.html", {
-        "request": request,
-        "highlight": highlight,
+    return templates.TemplateResponse(request, "_review_card.html", {"highlight": highlight,
         "current": current,
-        "total": total
-    })
+        "total": total})
 
 
 
@@ -746,20 +710,14 @@ async def toggle_favorite_html(
         current_index = session_data["current_index"]
         highlight_ids = session_data["highlight_ids"]
         
-        return templates.TemplateResponse("_review_card.html", {
-            "request": request,
-            "highlight": highlight,
+        return templates.TemplateResponse(request, "_review_card.html", {"highlight": highlight,
             "current": current_index + 1,
-            "total": len(highlight_ids)
-        })
+            "total": len(highlight_ids)})
     
     # Otherwise return just the single highlight
     template_name = "_book_highlight.html" if context == "book" else "_highlight_row.html"
     
-    return templates.TemplateResponse(template_name, {
-        "request": request,
-        "highlight": highlight
-    })
+    return templates.TemplateResponse(request, template_name, {"highlight": highlight})
 
 
 @router.post("/{id}/discard", response_class=HTMLResponse)
@@ -817,26 +775,20 @@ async def discard_highlight_html(
             
             # Review complete - clean up session
             del review_sessions[review_session_id]
-            return templates.TemplateResponse("_review_complete.html", {"request": request})
+            return templates.TemplateResponse(request, "_review_complete.html")
         
         # Get next highlight from session
         next_highlight_id = highlight_ids[current_index]
         next_highlight = session.get(Highlight, next_highlight_id)
         
         if next_highlight:
-            return templates.TemplateResponse("_review_card.html", {
-                "request": request,
-                "highlight": next_highlight,
+            return templates.TemplateResponse(request, "_review_card.html", {"highlight": next_highlight,
                 "current": current_index + 1,
-                "total": len(highlight_ids)
-            })
+                "total": len(highlight_ids)})
     
     # Otherwise return just the single highlight
     template_name = "_book_highlight.html" if context == "book" else "_highlight_row.html"
     
     # Return updated highlight with badge
-    return templates.TemplateResponse(template_name, {
-        "request": request,
-        "highlight": highlight
-    })
+    return templates.TemplateResponse(request, template_name, {"highlight": highlight})
 

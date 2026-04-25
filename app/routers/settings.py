@@ -23,11 +23,8 @@ async def ui_settings(
     settings = get_settings(session)
     highlights_count_stmt = select(func.count(Highlight.id))
     highlights_count = session.exec(highlights_count_stmt).one()
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
-        "settings": settings,
-        "highlights_count": highlights_count
-    })
+    return templates.TemplateResponse(request, "settings.html", {"settings": settings,
+        "highlights_count": highlights_count})
 
 
 @router.post("/ui", response_class=HTMLResponse)
@@ -53,12 +50,9 @@ async def update_settings_ui(
     highlights_count = session.exec(highlights_count_stmt).one()
     
     # Return updated form with success message
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
-        "settings": settings,
+    return templates.TemplateResponse(request, "settings.html", {"settings": settings,
         "highlights_count": highlights_count,
-        "success_message": "Settings saved successfully!"
-    })
+        "success_message": "Settings saved successfully!"})
 
 
 @router.post("/reset-library", response_class=HTMLResponse)
@@ -73,9 +67,6 @@ async def reset_library(request: Request):
 
     with Session(engine) as s:
         fresh_settings = get_settings(s)
-        return templates.TemplateResponse("settings.html", {
-            "request": request,
-            "settings": fresh_settings,
+        return templates.TemplateResponse(request, "settings.html", {"settings": fresh_settings,
             "highlights_count": 0,
-            "success_message": "Library reset — all data has been permanently deleted and settings restored to defaults."
-        })
+            "success_message": "Library reset — all data has been permanently deleted and settings restored to defaults."})
