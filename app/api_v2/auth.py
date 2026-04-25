@@ -18,7 +18,7 @@ Usage::
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, status
@@ -76,7 +76,7 @@ def get_api_token(
             detail="Invalid token",
         )
 
-    row.last_used_at = datetime.utcnow()
+    row.last_used_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(row)
     session.commit()
     session.refresh(row)

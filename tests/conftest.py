@@ -6,7 +6,7 @@ and convenience factories for creating test data.
 """
 import sys
 from pathlib import Path
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -163,7 +163,7 @@ def make_review_session(db):
         is_completed=True,
     ):
         import uuid as _uuid
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         rs = ReviewSession(
             user_id=user_id,
             session_uuid=session_uuid or str(_uuid.uuid4()),

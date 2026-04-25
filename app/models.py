@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 from typing import Optional
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -25,7 +25,7 @@ class ApiToken(SQLModel, table=True):
     token: str = Field(index=True, unique=True)
     name: str  # human label, e.g. "chrome-extension-laptop"
     user_id: int = Field(foreign_key="user.id", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None), index=True)
     last_used_at: Optional[datetime] = Field(default=None, index=True)
 
     def __repr__(self) -> str:

@@ -31,7 +31,7 @@ Compatibility scope and known limits:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -154,7 +154,7 @@ def _persist_highlight(
         # Persist as naive UTC for consistency with the rest of the schema.
         created_at = created_at.replace(tzinfo=None)
     if created_at is None:
-        created_at = datetime.utcnow()
+        created_at = datetime.now(UTC).replace(tzinfo=None)
 
     location_type = item.location_type if item.location is not None else None
 
