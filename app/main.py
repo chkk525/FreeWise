@@ -108,16 +108,32 @@ def _maybe_start_kindle_scheduler():
 app = FastAPI(title="FreeWise", lifespan=lifespan)
 
 
+_STREAK_BEARING_PATHS: tuple[str, ...] = (
+    "/dashboard/",
+    "/highlights/ui/",
+    "/library/ui",
+    "/import/ui",
+    "/settings/ui",
+    "/",
+)
+
+
 @app.middleware("http")
 async def inject_streak(request: Request, call_next):
-    """Attach the current review streak to request.state for every rendered page.
+    """Attach the current review streak to request.state for HTML pages that
+    actually display it.
 
-    Skips static assets and the service worker to avoid unnecessary DB queries.
-    The value is always set (defaults to 0) so templates can rely on it.
+    The streak query touches `reviewsession` and is cheap individually but
+    not free at scale (3780 books / 460+ highlights deployments observe
+    ~30-50ms per request). Restricting to HTML page handlers — and skipping
+    JSON / API / static / preview — keeps the API path zero-allocation
+    here. Templates always read `request.state.streak`, so the default of
+    0 is safe for non-HTML responses too.
     """
     request.state.streak = 0
     path = request.url.path
-    if not path.startswith("/static") and path not in ("/sw.js", "/favicon.ico"):
+    needs_streak = any(path.startswith(p) or path == p for p in _STREAK_BEARING_PATHS)
+    if needs_streak:
         try:
             with Session(get_engine()) as s:
                 request.state.streak = get_current_streak(s)

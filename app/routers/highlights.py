@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
@@ -207,9 +208,14 @@ def get_review_highlights(
     
     now = datetime.utcnow()
 
-    # Fetch all active highlights (exclude discarded)
+    # Fetch all active highlights (exclude discarded). Eager-load Book via
+    # selectinload so the per-highlight `h.book.review_weight` access in
+    # get_book_weight below does NOT trigger an N+1 SELECT per row.
+    # Pre-fix this loop ran 466+ SELECT book WHERE id=? round-trips on prod
+    # — observed at ~5s for /highlights/ui/review.
     statement = (
         select(Highlight)
+        .options(selectinload(Highlight.book))
         .where(Highlight.is_discarded == False)
     )
     highlights = list(session.exec(statement).all())
