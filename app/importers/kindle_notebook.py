@@ -203,22 +203,39 @@ def _import_book(
     cover_url_raw = book_data.get("cover_url")
     cover_url = cover_url_raw.strip() if isinstance(cover_url_raw, str) and cover_url_raw.strip() else None
 
-    # Detect existing book (so we can decide whether to set cover fields).
-    existing = _find_existing_book(session, title=title, author=author)
-    is_new = existing is None
+    # Dedup priority:
+    #   1. existing book carrying an `asin:<asin>` tag — most reliable, survives
+    #      title rewrites in Amazon's library (e.g. " (Japanese Edition)" added)
+    #   2. (title, author) match — covers re-imports of books predating ASIN tagging
+    #   3. otherwise: create a new book
+    existing = _find_existing_book_by_asin(session, asin=asin)
+    if existing is None:
+        existing = _find_existing_book(session, title=title, author=author)
 
-    book = get_or_create_book(
-        session=session,
-        title=title,
-        author=author,
-        document_tags=f"asin:{asin}",
-    )
-    if book is None:  # pragma: no cover — get_or_create_book only returns None on empty title
-        msg = f"Failed to materialise book {title!r}"
-        errors.append(msg)
-        return None
+    if existing is not None:
+        is_new = False
+        book = existing
+        # Title may have changed in Amazon's library; trust the latest scrape.
+        if book.title != title:
+            book.title = title
+            session.add(book)
+        if author is not None and book.author != author:
+            book.author = author
+            session.add(book)
+    else:
+        is_new = True
+        book = get_or_create_book(
+            session=session,
+            title=title,
+            author=author,
+            document_tags=f"asin:{asin}",
+        )
+        if book is None:  # pragma: no cover — only on empty title
+            msg = f"Failed to materialise book {title!r}"
+            errors.append(msg)
+            return None
 
-    # Merge ASIN tag into existing document_tags without overwriting.
+    # Always merge ASIN tag (covers existing rows that pre-date kindle tagging).
     merged_tags = _merge_asin_tag(book.document_tags, asin)
     if merged_tags != (book.document_tags or ""):
         book.document_tags = merged_tags
@@ -255,6 +272,29 @@ def _find_existing_book(
     else:
         stmt = stmt.where(Book.author == author)
     return session.exec(stmt).first()
+
+
+def _find_existing_book_by_asin(session: Session, *, asin: str) -> Optional[Book]:
+    """Return the existing Book whose document_tags contains ``asin:<asin>``.
+
+    document_tags is a free-form comma-separated string in the current schema
+    (a dedicated kindle_asin column is on the Phase 3 wishlist). The token
+    boundaries we care about are ``,`` and start/end of string; we do that
+    matching in Python rather than SQL because (a) SQLite has no portable
+    string-list operator, (b) the table is small enough that a single
+    ``LIKE '%asin:%'`` filter + Python check is plenty fast.
+    """
+    if not asin:
+        return None
+    needle = f"asin:{asin}"
+    stmt = select(Book).where(Book.document_tags.is_not(None)).where(  # type: ignore[union-attr]
+        Book.document_tags.contains(needle)  # type: ignore[union-attr]
+    )
+    for candidate in session.exec(stmt):
+        tags = (candidate.document_tags or "").split(",")
+        if any(tag.strip() == needle for tag in tags):
+            return candidate
+    return None
 
 
 def _import_highlights(

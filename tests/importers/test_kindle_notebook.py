@@ -257,3 +257,100 @@ def test_preserves_existing_document_tags_when_matching_book(db):
     assert "history" in tags
     assert "anthropology" in tags
     assert "asin:B07FCMBLM6" in tags
+
+
+# ── ASIN-based dedup (Phase 3 prep) ──────────────────────────────────────────
+
+
+def _payload_one_book(*, asin="B07FCMBLM6", title="Sapiens", author="Yuval Noah Harari"):
+    return {
+        "schema_version": "1.0",
+        "exported_at": "2026-04-25T12:00:00Z",
+        "source": "kindle_notebook",
+        "books": [
+            {
+                "asin": asin,
+                "title": title,
+                "author": author,
+                "cover_url": None,
+                "highlights": [
+                    {
+                        "id": "QID:h1",
+                        "text": "the cognitive revolution",
+                        "note": None,
+                        "color": "yellow",
+                        "location": 1,
+                        "page": None,
+                        "created_at": None,
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_dedup_prefers_asin_over_title_when_title_changes(db):
+    """If Amazon rewrites the title, the ASIN tag still matches the same book."""
+    import_kindle_notebook_json(
+        _to_bytes(_payload_one_book(title="Sapiens")), db, user_id=1
+    )
+    initial = db.exec(select(Book)).one()
+    initial_id = initial.id
+
+    # Re-import with a different title but the same ASIN — should match the
+    # existing row by ASIN, not create a new one.
+    import_kindle_notebook_json(
+        _to_bytes(_payload_one_book(title="Sapiens (Revised Edition)")),
+        db,
+        user_id=1,
+    )
+
+    rows = db.exec(select(Book)).all()
+    assert len(rows) == 1, f"expected 1 book after rename, got {len(rows)}"
+    assert rows[0].id == initial_id
+    assert rows[0].title == "Sapiens (Revised Edition)"  # title is updated
+
+
+def test_dedup_falls_back_to_title_when_no_asin_tag_yet(db):
+    """A pre-existing book without the ASIN tag still matches by (title, author)
+    — backwards-compatible with rows imported before ASIN tagging existed."""
+    pre_existing = Book(
+        title="Sapiens",
+        author="Yuval Noah Harari",
+        document_tags=None,  # no asin tag yet
+    )
+    db.add(pre_existing)
+    db.commit()
+    db.refresh(pre_existing)
+    pre_id = pre_existing.id
+
+    import_kindle_notebook_json(_to_bytes(_payload_one_book()), db, user_id=1)
+
+    rows = db.exec(select(Book)).all()
+    assert len(rows) == 1
+    assert rows[0].id == pre_id
+    # ASIN tag is now backfilled
+    assert "asin:B07FCMBLM6" in (rows[0].document_tags or "")
+
+
+def test_dedup_does_not_match_substring_asin(db):
+    """asin:B07F should NOT collide with asin:B07FCMBLM6."""
+    longer = Book(
+        title="Some Book",
+        author=None,
+        document_tags="asin:B07FCMBLM6XX",  # superstring
+    )
+    db.add(longer)
+    db.commit()
+    db.refresh(longer)
+    longer_id = longer.id
+
+    # Import with the shorter ASIN — should NOT match the longer one.
+    import_kindle_notebook_json(_to_bytes(_payload_one_book(asin="B07F")), db, user_id=1)
+
+    rows = db.exec(select(Book)).all()
+    assert len(rows) == 2, f"expected 2 distinct books, got {len(rows)}"
+    # Original survives untouched
+    db.refresh(longer)
+    assert longer.id == longer_id
+    assert longer.document_tags == "asin:B07FCMBLM6XX"
