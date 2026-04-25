@@ -149,6 +149,78 @@ async def ui_import_custom(
     })
 
 
+# ── Kindle notebook JSON import ──────────────────────────────────────────────
+
+
+@router.get("/ui/kindle", response_class=HTMLResponse)
+async def ui_import_kindle(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Render Kindle notebook JSON import page."""
+    settings = get_settings(session)
+    # Use the new starlette 1.0 positional signature so this route works
+    # regardless of the legacy-style failures elsewhere in the codebase.
+    return templates.TemplateResponse(
+        request,
+        "import_kindle.html",
+        {"settings": settings},
+    )
+
+
+@router.post("/ui/kindle", response_class=HTMLResponse)
+async def process_kindle_import(
+    request: Request,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+):
+    """Process an uploaded Kindle notebook JSON file via the kindle_notebook importer."""
+    from app.importers.kindle_notebook import import_kindle_notebook_json
+
+    filename = file.filename or ""
+    if not filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="File must be a JSON file (.json)")
+
+    contents = await file.read()
+    file_obj = io.BytesIO(contents)
+
+    settings = get_settings(session)
+
+    try:
+        result = import_kindle_notebook_json(file_obj, session, user_id=1)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request,
+            "import_kindle.html",
+            {
+                "settings": settings,
+                "error_message": str(exc),
+            },
+            status_code=400,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        raise HTTPException(status_code=500, detail=f"Import failed: {exc}")
+
+    success_message = (
+        f"Imported {result.highlights_created} highlights "
+        f"({result.books_created} new books, {result.books_matched} matched). "
+        f"Skipped {result.highlights_skipped_duplicates} duplicates."
+    )
+    return templates.TemplateResponse(
+        request,
+        "import_kindle.html",
+        {
+            "settings": settings,
+            "success_message": success_message,
+            "imported_count": result.highlights_created,
+            "duplicate_count": result.highlights_skipped_duplicates,
+            "books_created": result.books_created,
+            "books_matched": result.books_matched,
+            "errors": result.errors,
+        },
+    )
+
+
 # ── Meebook / Haoqing HTML import ────────────────────────────────────────────
 
 @router.get("/ui/meebook", response_class=HTMLResponse)

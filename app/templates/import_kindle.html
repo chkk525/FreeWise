@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Import from Kindle - FreeWise{% endblock %}
+
+{% block heading %}
+<div class="flex items-center gap-3">
+    <a href="/import/ui" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors">
+        <i data-lucide="arrow-left" class="w-6 h-6"></i>
+    </a>
+    <span>Import from Kindle</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    {% if success_message %}
+    <div class="bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 p-4 mb-6 rounded">
+        <div class="flex items-start gap-3">
+            <i data-lucide="check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5"></i>
+            <div class="flex-1">
+                <p class="font-semibold text-green-700 dark:text-green-300 mb-2">Import Complete!</p>
+                <p class="text-sm text-green-700 dark:text-green-300 mb-3">{{ success_message }}</p>
+                <div class="flex gap-3">
+                    <a href="/highlights/ui/review" class="inline-flex items-center gap-2 text-sm text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100 font-medium transition-colors">
+                        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        <span>Review Highlights</span>
+                    </a>
+                    <a href="/import/ui/kindle" class="inline-flex items-center gap-2 text-sm text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100 font-medium transition-colors">
+                        <i data-lucide="upload" class="w-4 h-4"></i>
+                        <span>Import Another File</span>
+                    </a>
+                </div>
+                {% if errors %}
+                <div class="mt-4 bg-white dark:bg-gray-900/40 border border-green-200 dark:border-green-800 rounded p-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600 dark:text-amber-400"></i>
+                        <span class="text-sm font-semibold text-green-800 dark:text-green-200">Warnings ({{ errors|length }})</span>
+                    </div>
+                    <ul class="max-h-64 overflow-auto text-xs text-gray-700 dark:text-gray-200 space-y-1">
+                        {% for err in errors %}
+                        <li class="px-2 py-1 border-b border-gray-100 dark:border-gray-800">{{ err }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if error_message %}
+    <div class="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-4 mb-6 rounded">
+        <div class="flex items-start gap-3">
+            <i data-lucide="alert-circle" class="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5"></i>
+            <div class="flex-1">
+                <p class="font-semibold text-red-700 dark:text-red-300 mb-2">Import Failed</p>
+                <p class="text-sm text-red-700 dark:text-red-300">{{ error_message }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <p class="text-gray-600 dark:text-gray-400 mb-6">
+        Upload a JSON file produced by the FreeWise Kindle scraper. Books and highlights
+        will be deduplicated against your existing library.
+    </p>
+
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 mb-8">
+        <div class="flex items-start gap-3 mb-4">
+            <i data-lucide="info" class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"></i>
+            <h3 class="text-lg font-semibold text-blue-900 dark:text-blue-100">Where does this JSON come from?</h3>
+        </div>
+        <p class="text-sm text-blue-800 dark:text-blue-200 ml-8">
+            The companion FreeWise Kindle scraper logs into <code>read.amazon.com/notebook</code>,
+            extracts your highlights, and writes a JSON file matching the documented schema
+            (<code>schema_version: 1.0</code>, <code>source: kindle_notebook</code>).
+            Upload that file here.
+        </p>
+    </div>
+
+    <form method="post" action="/import/ui/kindle" enctype="multipart/form-data" id="import-form">
+        <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 mb-6">
+            <div class="flex items-start gap-4">
+                <div class="pt-1">
+                    <i data-lucide="file-json" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                </div>
+                <div class="flex-1">
+                    <label for="file" class="block text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                        Select Kindle JSON file
+                    </label>
+                    <input
+                        type="file"
+                        id="file"
+                        name="file"
+                        accept=".json,application/json"
+                        required
+                        class="w-full px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white cursor-pointer hover:border-primary-500 dark:hover:border-primary-400 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                </div>
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" id="submit-btn" class="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                <i data-lucide="upload" class="w-5 h-5"></i>
+                <span>Import Highlights</span>
+            </button>
+            <a href="/import/ui" class="flex items-center gap-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+                <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                <span>Back</span>
+            </a>
+        </div>
+    </form>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', lucide.createIcons);
+</script>
+{% endblock %}

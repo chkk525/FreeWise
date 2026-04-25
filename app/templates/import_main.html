@@ -11,7 +11,7 @@
     </p>
     
     <!-- Source Selection Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <!-- Readwise Card -->
         <a href="/import/ui/readwise" 
            class="group bg-white dark:bg-gray-800 rounded-xl p-8 border-2 border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-400 hover:shadow-xl transition-all cursor-pointer">
@@ -48,8 +48,26 @@
             </div>
         </a>
         
+        <!-- Kindle Card -->
+        <a href="/import/ui/kindle"
+           class="group bg-white dark:bg-gray-800 rounded-xl p-8 border-2 border-gray-200 dark:border-gray-700 hover:border-orange-500 dark:hover:border-orange-400 hover:shadow-xl transition-all cursor-pointer">
+            <div class="text-center">
+                <div class="inline-flex items-center justify-center w-20 h-20 bg-orange-100 dark:bg-orange-900/30 rounded-full mb-4 group-hover:scale-110 transition-transform">
+                    <i data-lucide="book" class="w-10 h-10 text-orange-600 dark:text-orange-400"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Kindle</h3>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">Import scraped Kindle notebook JSON</p>
+                <div class="flex items-center justify-center gap-2">
+                    <span class="inline-flex items-center px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs font-medium rounded-full">
+                        <i data-lucide="file-json" class="w-3 h-3 mr-1"></i>
+                        JSON
+                    </span>
+                </div>
+            </div>
+        </a>
+
         <!-- Custom CSV Card -->
-        <a href="/import/ui/custom" 
+        <a href="/import/ui/custom"
            class="group bg-white dark:bg-gray-800 rounded-xl p-8 border-2 border-gray-200 dark:border-gray-700 hover:border-amber-500 dark:hover:border-amber-400 hover:shadow-xl transition-all cursor-pointer">
             <div class="text-center">
                 <div class="inline-flex items-center justify-center w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full mb-4 group-hover:scale-110 transition-transform">
@@ -73,7 +91,7 @@
             <i data-lucide="sparkles" class="w-5 h-5 text-gray-400 dark:text-gray-600 flex-shrink-0 mt-0.5"></i>
             <div>
                 <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">More sources coming soon</h4>
-                <p class="text-xs text-gray-600 dark:text-gray-400">We're working on adding direct imports from Kindle, Apple Books, and more reading platforms.</p>
+                <p class="text-xs text-gray-600 dark:text-gray-400">We're working on adding direct imports from Apple Books and more reading platforms.</p>
             </div>
         </div>
     </div>
