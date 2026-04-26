@@ -593,6 +593,15 @@ async def ui_book_summarize(
     book = session.get(Book, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
+    # Single-user-mode ownership gate (defense-in-depth — same as bulk).
+    has_owned = session.exec(
+        select(Highlight.id)
+        .where(Highlight.book_id == book_id)
+        .where(Highlight.user_id == 1)
+        .limit(1)
+    ).first()
+    if has_owned is None:
+        raise HTTPException(status_code=404, detail="Book not found")
 
     question = (
         f"Summarize the key themes and ideas from this book ('{book.title}'"
@@ -600,7 +609,10 @@ async def ui_book_summarize(
         + ") based on the highlights below. Be concise."
     )
     try:
-        result = ask_library(session, question=question, top_k=12, book_id=book_id)
+        result = ask_library(
+            session, question=question, top_k=12,
+            book_id=book_id, user_id=1,  # single-user-mode default
+        )
     except OllamaUnavailable as e:
         return templates.TemplateResponse(
             request, "_book_summary.html",

@@ -588,7 +588,7 @@ class _SummarizeRequest(__import__("pydantic").BaseModel):
     """POST body for /api/v2/books/{id}/summarize."""
 
     question: Optional[str] = None  # optional override; default is "summarize"
-    top_k: int = 12
+    top_k: int = Field(default=12, ge=1, le=50)
     embed_model: Optional[str] = None
     generate_model: Optional[str] = None
 
@@ -606,11 +606,23 @@ def summarize_book(
     asks for "key themes and ideas"; pass ``question`` to override
     (e.g. "What advice does this book give about X?").
 
-    503 if Ollama unreachable; 404 if book has no highlights or no
-    embeddings yet.
+    503 if Ollama unreachable; 404 if book is missing OR if the auth'd
+    token has no highlights from this book (prevents cross-user
+    enumeration via integer book id guessing).
     """
     book = session.get(Book, book_id)
     if book is None:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    # Ownership gate: the token must own at least one highlight from
+    # this book. Without this, a token can summarize any book in the
+    # database by enumerating book_id.
+    has_owned = session.exec(
+        select(Highlight.id)
+        .where(Highlight.book_id == book_id)
+        .where(Highlight.user_id == token.user_id)
+        .limit(1)
+    ).first()
+    if has_owned is None:
         raise HTTPException(status_code=404, detail="Book not found.")
     question = (payload.question or "").strip() or (
         f"Summarize the key themes and ideas from this book ('{book.title}'"
@@ -624,6 +636,7 @@ def summarize_book(
             embed_model=payload.embed_model,
             generate_model=payload.generate_model,
             book_id=book_id,
+            user_id=token.user_id,
         )
     except OllamaUnavailable as e:
         raise HTTPException(
@@ -640,7 +653,9 @@ class _AskRequest(__import__("pydantic").BaseModel):
     """POST body for /api/v2/ask."""
 
     question: str
-    top_k: int = 8
+    # Hard cap top_k so a malicious caller can't blow up the prompt or
+    # the matmul. 50 is generous; the UI tops out at 16.
+    top_k: int = Field(default=8, ge=1, le=50)
     embed_model: Optional[str] = None
     generate_model: Optional[str] = None
 
@@ -668,6 +683,7 @@ def ask(
             top_k=payload.top_k,
             embed_model=payload.embed_model,
             generate_model=payload.generate_model,
+            user_id=token.user_id,
         )
     except OllamaUnavailable as e:
         raise HTTPException(
@@ -680,7 +696,10 @@ def ask(
 class _BackfillRequest(__import__("pydantic").BaseModel):
     """POST body for /api/v2/embeddings/backfill."""
 
-    batch_size: int = 64
+    # 256 is well above the optimal Ollama batch (~64) but caps the
+    # damage from a runaway caller. The CLI loops on the endpoint, so
+    # large totals are still reachable across multiple calls.
+    batch_size: int = Field(default=64, ge=1, le=256)
     model: Optional[str] = None
 
 

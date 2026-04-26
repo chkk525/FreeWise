@@ -615,6 +615,29 @@ class TestBulkOperations:
         client.post("/highlights/bulk", data={"action": "unmaster", "ids": str(h.id)})
         db.refresh(h); assert h.is_mastered is False
 
+    def test_bulk_does_not_touch_other_users_highlights(self, client, make_highlight, db):
+        """Defense-in-depth: bulk action must not affect rows owned by another user."""
+        h_mine = make_highlight(text="mine")
+        h_theirs = make_highlight(text="theirs")
+        h_theirs.user_id = 2
+        db.add(h_theirs); db.commit()
+        resp = client.post(
+            "/highlights/bulk",
+            data={"action": "discard", "ids": f"{h_mine.id},{h_theirs.id}"},
+        )
+        assert resp.status_code == 200
+        db.refresh(h_mine); db.refresh(h_theirs)
+        assert h_mine.is_discarded is True
+        assert h_theirs.is_discarded is False
+
+    def test_bulk_caps_id_count(self, client):
+        """A 1001-id payload should be rejected to bound blast radius."""
+        ids = ",".join(str(i) for i in range(1001))
+        resp = client.post(
+            "/highlights/bulk", data={"action": "favorite", "ids": ids},
+        )
+        assert resp.status_code == 400
+
     def test_bulk_garbage_ids_filtered(self, client, make_highlight, db):
         """Stale page state could send 'abc' alongside real ids; skip the trash."""
         h = make_highlight(text="x")

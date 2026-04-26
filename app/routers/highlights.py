@@ -742,7 +742,11 @@ async def ui_ask_submit(
             {"error": "Type a question first.", "result": None, "question": ""},
         )
     try:
-        result = ask_library(session, question=q, top_k=max(1, min(20, top_k)))
+        result = ask_library(
+            session, question=q,
+            top_k=max(1, min(20, top_k)),
+            user_id=1,  # single-user mode default
+        )
     except OllamaUnavailable as e:
         return templates.TemplateResponse(
             request, "_ask_answer.html",
@@ -1365,11 +1369,24 @@ async def bulk_action(
     id_list = _parse_bulk_ids(ids)
     if not id_list:
         raise HTTPException(status_code=400, detail="No highlight ids supplied.")
+    # Cap the per-request blast radius. The UI tops out at ~50 selections
+    # per page; legitimate bulk ops stay well under 1000. Anything above
+    # is almost certainly an attempt to sweep the whole table.
+    if len(id_list) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many ids ({len(id_list)}); cap is 1000 per request.",
+        )
 
     # Pull all targeted highlights in one IN query — N=1 round-trip even
-    # for thousand-row selections.
+    # for thousand-row selections. Scoped to the single-user-mode user_id
+    # (1) so a malicious caller can't sweep across owners by enumerating
+    # IDs. The HTML route runs behind Cloudflare Access in production;
+    # this is defense-in-depth at the data layer.
     highlights = session.exec(
-        select(Highlight).where(Highlight.id.in_(id_list))
+        select(Highlight)
+        .where(Highlight.id.in_(id_list))
+        .where(Highlight.user_id == 1)
     ).all()
 
     changed = 0

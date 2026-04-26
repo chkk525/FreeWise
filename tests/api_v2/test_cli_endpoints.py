@@ -621,6 +621,38 @@ def test_summarize_book_404_when_missing(client, db):
     assert resp.status_code == 404
 
 
+def test_summarize_book_404_for_other_users_book(client, db, make_book, make_highlight):
+    """A book whose only highlights belong to user 2 must NOT be
+    summarizable by a user-1 token, even if its book_id is guessed."""
+    headers = _auth_headers(db)  # token for user 1
+    b = make_book(title="Theirs")
+    h = make_highlight(text="theirs", book=b)
+    h.user_id = 2
+    db.add(h); db.commit()
+    resp = client.post(f"/api/v2/books/{b.id}/summarize", headers=headers, json={})
+    assert resp.status_code == 404
+
+
+def test_ask_top_k_clamped_at_50(client, db, make_highlight):
+    """top_k=99999 should be rejected (422) — protects matmul + prompt."""
+    headers = _auth_headers(db)
+    make_highlight(text="x")
+    resp = client.post(
+        "/api/v2/ask", headers=headers,
+        json={"question": "anything", "top_k": 99999},
+    )
+    assert resp.status_code == 422
+
+
+def test_backfill_batch_size_clamped(client, db):
+    headers = _auth_headers(db)
+    resp = client.post(
+        "/api/v2/embeddings/backfill", headers=headers,
+        json={"batch_size": 99999},
+    )
+    assert resp.status_code == 422
+
+
 def test_summarize_book_503_when_ollama_down(client, db, make_book, make_highlight, monkeypatch):
     import httpx
     from app.models import Embedding
