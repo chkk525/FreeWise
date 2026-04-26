@@ -144,9 +144,15 @@ class TestApiToken:
         assert token.created_at is not None  # auto-set by default
 
     def test_api_token_unique(self, db):
+        """Phase 4 (security hardening): uniqueness moved off the legacy
+        plaintext column. The canonical lookup is now (token_prefix,
+        token_hash). The legacy ``token`` column is kept only for the
+        in-place migration window and is no longer constrained."""
         from app.models import ApiToken
         db.add(ApiToken(token="dup", name="a", user_id=1))
         db.commit()
         db.add(ApiToken(token="dup", name="b", user_id=1))
-        with pytest.raises(Exception):  # IntegrityError
-            db.commit()
+        db.commit()  # no IntegrityError post-Phase-4
+        from sqlmodel import select
+        rows = db.exec(select(ApiToken).where(ApiToken.token == "dup")).all()
+        assert len(rows) == 2

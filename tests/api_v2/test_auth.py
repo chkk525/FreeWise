@@ -2,11 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from app.models import ApiToken
 
 
 def _seed_token(db, value: str = "good-token", user_id: int = 1) -> ApiToken:
-    token = ApiToken(token=value, name="test-token", user_id=user_id)
+    """Insert a HASHED token (Phase 4 storage shape) and return the row."""
+    token = ApiToken(
+        token_prefix=value[:16],
+        token_hash=hashlib.sha256(value.encode("utf-8")).hexdigest(),
+        name="test-token",
+        user_id=user_id,
+    )
+    db.add(token)
+    db.commit()
+    db.refresh(token)
+    return token
+
+
+def _seed_legacy_token(db, value: str = "legacy-token", user_id: int = 1) -> ApiToken:
+    """Insert a PLAINTEXT token (pre-Phase-4 storage) for the legacy fallback path."""
+    token = ApiToken(token=value, name="legacy", user_id=user_id)
     db.add(token)
     db.commit()
     db.refresh(token)
@@ -50,14 +67,70 @@ def test_auth_empty_token_returns_401(client):
 
 
 def test_auth_updates_last_used_at(client, db):
-    token = _seed_token(db, "good-token")
+    """The first authenticated call must populate last_used_at; subsequent
+    calls within the debounce window may skip the write."""
+    # Use a unique token so the per-token debounce cache doesn't suppress us.
+    token = _seed_token(db, "fresh-token-for-touch-test")
     assert token.last_used_at is None
 
+    # Reset the per-token debounce cache so this test isn't ordering-sensitive.
+    from app.api_v2 import auth as auth_module
+    auth_module._last_used_at_cache.clear()
+
     resp = client.get(
-        "/api/v2/auth/", headers={"Authorization": "Token good-token"}
+        "/api/v2/auth/", headers={"Authorization": "Token fresh-token-for-touch-test"}
     )
     assert resp.status_code == 204
 
     db.expire_all()
     refreshed = db.get(ApiToken, token.id)
     assert refreshed.last_used_at is not None
+
+
+def test_auth_legacy_plaintext_token_works_and_gets_upgraded(client, db):
+    """A pre-migration row stored as plaintext must still authenticate, and
+    the row should be hashed in place after the first hit."""
+    token = _seed_legacy_token(db, "legacy-plaintext-value")
+    assert token.token_hash is None
+    assert token.token == "legacy-plaintext-value"
+
+    from app.api_v2 import auth as auth_module
+    auth_module._last_used_at_cache.clear()
+
+    resp = client.get(
+        "/api/v2/auth/", headers={"Authorization": "Token legacy-plaintext-value"}
+    )
+    assert resp.status_code == 204
+
+    db.expire_all()
+    refreshed = db.get(ApiToken, token.id)
+    assert refreshed.token is None  # plaintext cleared
+    assert refreshed.token_hash == hashlib.sha256(
+        b"legacy-plaintext-value"
+    ).hexdigest()
+
+
+def test_auth_debounce_suppresses_repeat_writes(client, db):
+    """A second auth call within the debounce window must not re-commit."""
+    token = _seed_token(db, "debounce-token")
+
+    from app.api_v2 import auth as auth_module
+    auth_module._last_used_at_cache.clear()
+
+    resp = client.get(
+        "/api/v2/auth/", headers={"Authorization": "Token debounce-token"}
+    )
+    assert resp.status_code == 204
+
+    db.expire_all()
+    first_touch = db.get(ApiToken, token.id).last_used_at
+    assert first_touch is not None
+
+    # Second call: should be debounced — last_used_at unchanged.
+    resp = client.get(
+        "/api/v2/auth/", headers={"Authorization": "Token debounce-token"}
+    )
+    assert resp.status_code == 204
+    db.expire_all()
+    second_touch = db.get(ApiToken, token.id).last_used_at
+    assert second_touch == first_touch  # still the first value

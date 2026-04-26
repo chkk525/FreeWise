@@ -15,9 +15,39 @@
     {% if new_token %}
     <div class="mb-6 p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
         <p class="text-sm text-amber-900 dark:text-amber-200 mb-2">
-            New token <strong>{{ new_token_name }}</strong> created. Copy it now — it will not be shown again on this page.
+            <strong>One-time display:</strong> token <strong>{{ new_token_name }}</strong> created.
+            Copy it now — it is hashed before storage and cannot be retrieved later.
         </p>
-        <pre class="p-3 bg-white dark:bg-gray-900 border border-amber-300 dark:border-amber-700 rounded text-xs overflow-x-auto"><code>{{ new_token }}</code></pre>
+        <div class="flex gap-2 items-stretch">
+            <pre id="new-token-value" class="flex-1 p-3 bg-white dark:bg-gray-900 border border-amber-300 dark:border-amber-700 rounded text-xs overflow-x-auto m-0"><code>{{ new_token }}</code></pre>
+            <button type="button" id="copy-token-btn"
+                    class="px-3 rounded bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium whitespace-nowrap">
+                Copy
+            </button>
+        </div>
+        <script>
+        (function () {
+            var btn = document.getElementById('copy-token-btn');
+            var pre = document.getElementById('new-token-value');
+            if (!btn || !pre) return;
+            btn.addEventListener('click', function () {
+                var t = pre.innerText.trim();
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(t).then(function () {
+                        btn.textContent = 'Copied';
+                        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+                    });
+                } else {
+                    var range = document.createRange();
+                    range.selectNodeContents(pre);
+                    var sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    btn.textContent = 'Press ⌘/Ctrl+C';
+                }
+            });
+        })();
+        </script>
     </div>
     {% endif %}
 
@@ -35,10 +65,11 @@
     {% if tokens %}
     <ul class="divide-y divide-gray-200 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded">
         {% for t in tokens %}
-        <li class="p-3 flex items-center justify-between text-sm">
-            <div>
+        <li class="p-3 flex items-center justify-between text-sm gap-3">
+            <div class="min-w-0">
                 <div class="font-medium">{{ t.name }}</div>
-                <div class="text-gray-500 dark:text-gray-400 text-xs">
+                <div class="text-gray-500 dark:text-gray-400 text-xs truncate">
+                    {% if t.token_prefix %}<code>{{ t.token_prefix }}…</code> · {% endif %}
                     Created {{ t.created_at.strftime('%Y-%m-%d %H:%M UTC') if t.created_at else 'unknown' }}
                     {% if t.last_used_at %}
                         · last used {{ t.last_used_at.strftime('%Y-%m-%d %H:%M UTC') }}
@@ -47,7 +78,14 @@
                     {% endif %}
                 </div>
             </div>
-            <code class="text-xs text-gray-500">id={{ t.id }}</code>
+            <form method="post" action="/import/api-token/{{ t.id }}/delete"
+                  onsubmit="return confirm('Revoke token \'{{ t.name }}\'? Any client using it will fail immediately.');"
+                  class="shrink-0">
+                <button type="submit"
+                        class="px-3 py-1 rounded border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 text-xs hover:bg-red-50 dark:hover:bg-red-900/30">
+                    Revoke
+                </button>
+            </form>
         </li>
         {% endfor %}
     </ul>

@@ -61,6 +61,51 @@ def ensure_schema_migrations(engine=None) -> None:
             if backfilled:
                 _log.info("migration: backfilled kindle_asin on %d book rows", backfilled)
 
+        # ── ApiToken hashed-storage migration (security) ────────────────
+        token_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(apitoken)")).all()
+        }
+        if token_cols and "token_prefix" not in token_cols:
+            _log.info("migration: adding apitoken.token_prefix + token_hash columns")
+            conn.execute(text("ALTER TABLE apitoken ADD COLUMN token_prefix VARCHAR"))
+            conn.execute(text("ALTER TABLE apitoken ADD COLUMN token_hash VARCHAR"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_apitoken_token_prefix "
+                    "ON apitoken (token_prefix)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_apitoken_token_hash "
+                    "ON apitoken (token_hash)"
+                )
+            )
+            # Backfill: hash existing plaintext tokens so we can stop reading
+            # the plaintext column going forward. The plaintext column is
+            # left in place for one transition window so an in-flight client
+            # is not broken by the deploy.
+            import hashlib
+            rows = conn.execute(
+                text("SELECT id, token FROM apitoken WHERE token IS NOT NULL")
+            ).all()
+            for row_id, raw in rows:
+                if not raw:
+                    continue
+                h = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+                prefix = raw[:16]  # first 16 chars; safe to display
+                conn.execute(
+                    text(
+                        "UPDATE apitoken SET token_prefix = :p, token_hash = :h "
+                        "WHERE id = :id AND token_hash IS NULL"
+                    ),
+                    {"p": prefix, "h": h, "id": row_id},
+                )
+            if rows:
+                _log.info(
+                    "migration: hashed %d pre-existing apitoken row(s)", len(rows)
+                )
+
 
 def get_session():
     """FastAPI dependency that yields a database session."""

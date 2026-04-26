@@ -20,9 +20,26 @@ class User(SQLModel, table=True):
 
 
 class ApiToken(SQLModel, table=True):
-    """API token for programmatic access (Readwise-compatible API)."""
+    """API token for programmatic access (Readwise-compatible API).
+
+    Storage model (Phase 4 hardening):
+      * The raw token is shown to the user EXACTLY ONCE at creation and
+        never persisted. It has the shape ``fw_<24-byte-hex-prefix><32-byte-hex-secret>``
+        so the prefix is human-recognisable and the secret part is the
+        cryptographically-relevant material.
+      * ``token_prefix`` is the public-display prefix (16 hex chars / 8 bytes).
+        Indexed for cheap lookup; safe to log.
+      * ``token_hash`` is a sha256 hash of the full raw token. Compared in
+        constant time. Never logged.
+      * ``token`` (legacy column) holds the plaintext token for any rows
+        created before the migration. New rows leave it NULL. Lookup falls
+        back to it only when token_hash misses, then opportunistically
+        upgrades the row to hash storage on first use.
+    """
     id: Optional[int] = Field(default=None, primary_key=True)
-    token: str = Field(index=True, unique=True)
+    token: Optional[str] = Field(default=None, index=True, unique=False)
+    token_prefix: Optional[str] = Field(default=None, index=True)
+    token_hash: Optional[str] = Field(default=None, index=True)
     name: str  # human label, e.g. "chrome-extension-laptop"
     user_id: int = Field(foreign_key="user.id", index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None), index=True)
