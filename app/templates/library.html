@@ -43,6 +43,45 @@
         <i data-lucide="x" class="w-4 h-4"></i>
     </a>
 </div>
+
+{% if author_summary %}
+<div class="mb-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+    <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-2">{{ author_filter }}</h3>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+        <span>
+            <i data-lucide="library" class="w-4 h-4 inline-block text-gray-400"></i>
+            <span class="font-semibold">{{ author_summary.books }}</span> book{{ 's' if author_summary.books != 1 else '' }}
+        </span>
+        <span>
+            <i data-lucide="lightbulb" class="w-4 h-4 inline-block text-amber-500"></i>
+            <span class="font-semibold">{{ author_summary.highlights_active }}</span> active highlights
+        </span>
+        {% if author_summary.favorited %}
+        <span>
+            <i data-lucide="star" class="w-4 h-4 inline-block text-yellow-500"></i>
+            <span class="font-semibold">{{ author_summary.favorited }}</span> favorited
+        </span>
+        {% endif %}
+        {% if author_summary.mastered %}
+        <span>
+            <i data-lucide="graduation-cap" class="w-4 h-4 inline-block text-emerald-500"></i>
+            <span class="font-semibold">{{ author_summary.mastered }}</span> mastered
+        </span>
+        {% endif %}
+        {% if author_summary.discarded %}
+        <span>
+            <i data-lucide="x" class="w-4 h-4 inline-block text-gray-400"></i>
+            <span class="font-semibold">{{ author_summary.discarded }}</span> discarded
+        </span>
+        {% endif %}
+        {% if author_summary.last_highlight_at %}
+        <span class="text-xs text-gray-500">
+            last <time data-iso="{{ author_summary.last_highlight_at.isoformat() }}Z" data-format="date">{{ author_summary.last_highlight_at.strftime('%Y-%m-%d') }}</time>
+        </span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 {% if books %}

@@ -119,6 +119,44 @@ class TestLibraryBookSearch:
         assert "Filtering by query" in resp.text
 
 
+class TestAuthorSummaryCard:
+    """The author-filtered library page shows a stats summary card."""
+
+    def test_summary_card_rendered_when_author_filtered(self, client, make_book, make_highlight):
+        b1 = make_book(title="Book A", author="Alice")
+        b2 = make_book(title="Book B", author="Alice")
+        make_highlight(text="x", book=b1)
+        make_highlight(text="y", book=b1, is_favorited=True)
+        make_highlight(text="z", book=b2, is_mastered=True)
+        resp = client.get("/library/ui", params={"author": "Alice"})
+        assert resp.status_code == 200
+        # Card heading: author name appears in an h3
+        assert "<h3" in resp.text and "Alice" in resp.text
+        # Stats: 2 books, 3 active, 1 favorited, 1 mastered
+        assert ">2</span> book" in resp.text
+        assert ">3</span> active highlights" in resp.text
+        assert ">1</span> favorited" in resp.text
+        assert ">1</span> mastered" in resp.text
+
+    def test_no_summary_card_without_filter(self, client, make_book, make_highlight):
+        b = make_book(title="X", author="Alice")
+        make_highlight(text="x", book=b)
+        resp = client.get("/library/ui")
+        # Card uses an h3 with the author name; without filter it should NOT appear
+        assert ">Alice</h3>" not in resp.text
+
+    def test_summary_card_omits_zero_chips(self, client, make_book, make_highlight):
+        """Chips should only render for non-zero counts."""
+        b = make_book(title="A", author="Bob")
+        make_highlight(text="x", book=b)
+        resp = client.get("/library/ui", params={"author": "Bob"})
+        assert "active highlights" in resp.text
+        # No favorited/mastered/discarded chips since counts are zero.
+        assert "favorited" not in resp.text or "</span> favorited" not in resp.text
+        assert "</span> mastered" not in resp.text
+        assert "</span> discarded" not in resp.text
+
+
 class TestLibraryAuthorFilter:
     """GET /library/ui?author=X — filter books by author."""
 

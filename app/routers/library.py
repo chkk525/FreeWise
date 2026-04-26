@@ -141,6 +141,41 @@ async def ui_library(
     showing_first = 0 if total == 0 else (page - 1) * page_size + 1
     showing_last = min(page * page_size, total)
 
+    # When filtering by author, compute summary stats for the card
+    # rendered above the table. One query each — no N+1.
+    author_summary: Optional[dict] = None
+    if author_filter:
+        # Single SQL row with all the counts.
+        from sqlmodel import case as sa_case
+        stats_row = session.exec(
+            select(
+                func.count(Highlight.id).label("total"),
+                func.sum(
+                    sa_case((Highlight.is_favorited == True, 1), else_=0)  # noqa: E712
+                ).label("favorited"),
+                func.sum(
+                    sa_case((Highlight.is_mastered == True, 1), else_=0)  # noqa: E712
+                ).label("mastered"),
+                func.sum(
+                    sa_case((Highlight.is_discarded == True, 1), else_=0)  # noqa: E712
+                ).label("discarded"),
+                func.max(Highlight.created_at).label("last_at"),
+            )
+            .join(Book, Book.id == Highlight.book_id)
+            .where(Book.author == author_filter)
+        ).first()
+        total_h = int(stats_row[0] or 0)
+        if total_h > 0:
+            author_summary = {
+                "highlights_total": total_h,
+                "highlights_active": total_h - int(stats_row[3] or 0),
+                "favorited": int(stats_row[1] or 0),
+                "mastered": int(stats_row[2] or 0),
+                "discarded": int(stats_row[3] or 0),
+                "books": int(total),  # total here = filtered books_query count
+                "last_highlight_at": stats_row[4],
+            }
+
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -157,6 +192,7 @@ async def ui_library(
             "showing_last": showing_last,
             "author_filter": author_filter or None,
             "q_filter": q_clean or None,
+            "author_summary": author_summary,
         },
     )
 
