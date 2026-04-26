@@ -80,7 +80,9 @@
             
             {% if book.author %}
             <div class="text-lg text-gray-600 dark:text-gray-400 mb-6">
-                by {{ book.author }}
+                by <a href="/library/ui?author={{ book.author|urlencode }}"
+                      class="hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                      title="Show only books by {{ book.author }}">{{ book.author }}</a>
             </div>
             {% endif %}
             

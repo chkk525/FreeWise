@@ -33,6 +33,7 @@ async def ui_library(
     order: Optional[str] = "desc",
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    author: Optional[str] = None,
     session: Session = Depends(get_session)
 ):
     """Render library page with sortable + paginated table of books.
@@ -72,6 +73,13 @@ async def ui_library(
         .group_by(Book.id)
     )
 
+    # Optional author filter — exact match on the persisted author field.
+    # Empty/whitespace strings are ignored so a typo doesn't silently
+    # show "no books".
+    author_filter = (author or "").strip()
+    if author_filter:
+        books_query = books_query.where(Book.author == author_filter)
+
     sort_col = {
         "title": Book.title,
         "author": Book.author,
@@ -80,7 +88,10 @@ async def ui_library(
     }[sort]
     books_query = books_query.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
 
-    total = session.exec(select(func.count()).select_from(Book)).one()
+    total_query = select(func.count()).select_from(Book)
+    if author_filter:
+        total_query = total_query.where(Book.author == author_filter)
+    total = session.exec(total_query).one()
     if isinstance(total, tuple):
         total = total[0]
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -119,6 +130,7 @@ async def ui_library(
             "total_pages": total_pages,
             "showing_first": showing_first,
             "showing_last": showing_last,
+            "author_filter": author_filter or None,
         },
     )
 

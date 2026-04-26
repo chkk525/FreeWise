@@ -5,9 +5,19 @@
 {% block heading %}Library{% endblock %}
 
 {% block content %}
-<p class="text-gray-600 dark:text-gray-400 mb-6">
-    Browse your collection of {{ books|length }} book{{ 's' if books|length != 1 else '' }}.
+<p class="text-gray-600 dark:text-gray-400 mb-2">
+    Browse your collection of {{ total if total is defined else books|length }} book{{ 's' if (total if total is defined else books|length) != 1 else '' }}.
 </p>
+
+{% if author_filter %}
+<div class="mb-4 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-full text-sm text-blue-800 dark:text-blue-200">
+    <i data-lucide="user" class="w-4 h-4"></i>
+    <span>Filtering by author: <strong>{{ author_filter }}</strong></span>
+    <a href="/library/ui" class="ml-2 text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-100" title="Clear author filter">
+        <i data-lucide="x" class="w-4 h-4"></i>
+    </a>
+</div>
+{% endif %}
 
 {% if books %}
 <!-- Mobile card view (<sm). Table is reserved for ≥sm via the `hidden sm:block` switch. -->
@@ -112,7 +122,13 @@
                     {% endif %}
                 </td>
                 <td class="hidden sm:table-cell px-4 py-3 text-gray-600 dark:text-gray-400 w-48">
+                    {% if book.author and book.author != "Unknown" %}
+                    <a href="/library/ui?author={{ book.author|urlencode }}"
+                       class="hover:text-primary-600 dark:hover:text-primary-400 hover:underline"
+                       title="Show only books by {{ book.author }}">{{ book.author }}</a>
+                    {% else %}
                     {{ book.author }}
+                    {% endif %}
                 </td>
                 <td class="px-4 py-3 text-center w-32">
                     <span class="inline-block bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-1 rounded-full text-sm font-semibold">

@@ -65,6 +65,50 @@ class TestLibraryPage:
         assert resp.status_code == 200
 
 
+# ── Author filter ─────────────────────────────────────────────────────────────
+
+
+class TestLibraryAuthorFilter:
+    """GET /library/ui?author=X — filter books by author."""
+
+    def test_no_filter_shows_all(self, client, make_book):
+        make_book(title="AlphaBook", author="Alice")
+        make_book(title="BetaBook", author="Bob")
+        resp = client.get("/library/ui")
+        assert resp.status_code == 200
+        assert "AlphaBook" in resp.text and "BetaBook" in resp.text
+
+    def test_filter_by_author(self, client, make_book):
+        make_book(title="AlphaBook", author="Alice")
+        make_book(title="BetaBook", author="Bob")
+        resp = client.get("/library/ui", params={"author": "Alice"})
+        assert resp.status_code == 200
+        assert "AlphaBook" in resp.text
+        assert "BetaBook" not in resp.text
+        # Filter banner should appear
+        assert "Filtering by author" in resp.text
+
+    def test_filter_by_unknown_author_returns_empty(self, client, make_book):
+        make_book(title="AlphaBook", author="Alice")
+        resp = client.get("/library/ui", params={"author": "Nobody"})
+        assert resp.status_code == 200
+        assert "AlphaBook" not in resp.text
+
+    def test_filter_empty_string_ignored(self, client, make_book):
+        """Empty author= should behave like no filter."""
+        make_book(title="AlphaBook", author="Alice")
+        resp = client.get("/library/ui", params={"author": "  "})
+        assert resp.status_code == 200
+        assert "AlphaBook" in resp.text
+        assert "Filtering by author" not in resp.text
+
+    def test_author_link_rendered_on_table_cell(self, client, make_book):
+        make_book(title="X", author="Some Author")
+        resp = client.get("/library/ui")
+        # The desktop table cell author should be a clickable filter link.
+        assert "/library/ui?author=Some%20Author" in resp.text
+
+
 # ── Book detail ───────────────────────────────────────────────────────────────
 
 class TestBookDetail:
