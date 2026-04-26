@@ -6,7 +6,8 @@ from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session, select
+from sqlalchemy import Integer
+from sqlmodel import Session, func, select
 
 from app.db import get_session
 from app.models import Highlight, Book, Tag, HighlightTag
@@ -605,4 +606,70 @@ async def export_single_book_markdown(
         content=body.encode("utf-8"),
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": _content_disposition(f"{safe_title}.md")},
+    )
+
+
+# ── Books inventory CSV ─────────────────────────────────────────────────────
+
+
+@router.get("/books.csv")
+async def export_books_csv(
+    session: Session = Depends(get_session),
+):
+    """Stream a CSV inventory of books with highlight counts.
+
+    Useful for spreadsheet review of the library, picking books to import
+    elsewhere, or dumping into a citation manager. One join + one GROUP BY,
+    no N+1.
+    """
+    counts_subq = (
+        select(Highlight.book_id, func.count(Highlight.id).label("cnt"),
+               func.sum(
+                   # SQLite stores booleans as 0/1; sum gives the count.
+                   Highlight.is_favorited.cast(Integer)
+               ).label("fav_cnt"))
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(Highlight.book_id)
+    ).subquery()
+
+    rows = session.exec(
+        select(Book, counts_subq.c.cnt, counts_subq.c.fav_cnt)
+        .outerjoin(counts_subq, Book.id == counts_subq.c.book_id)
+        .order_by(Book.title.asc())
+    ).all()
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No books to export.")
+
+    headers = [
+        "id", "title", "author", "kindle_asin",
+        "highlight_count", "favorited_count", "document_tags",
+        "cover_image_url",
+    ]
+
+    def _gen():
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(headers)
+        yield buf.getvalue()
+        buf.seek(0); buf.truncate(0)
+        for book, cnt, fav_cnt in rows:
+            writer.writerow([
+                book.id,
+                book.title or "",
+                book.author or "",
+                book.kindle_asin or "",
+                int(cnt) if cnt is not None else 0,
+                int(fav_cnt) if fav_cnt is not None else 0,
+                book.document_tags or "",
+                book.cover_image_url or "",
+            ])
+            yield buf.getvalue()
+            buf.seek(0); buf.truncate(0)
+
+    fname = f"freewise_books_{datetime.now().strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        _gen(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": _content_disposition(fname)},
     )

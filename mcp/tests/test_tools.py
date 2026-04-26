@@ -27,6 +27,7 @@ SHOW = server.freewise_show
 RANDOM = server.freewise_random
 STATS = server.freewise_stats
 BOOKS = server.freewise_books
+BOOK_HIGHLIGHTS = server.freewise_book_highlights
 SET_NOTE = server.freewise_set_note
 FAVORITE = server.freewise_favorite
 DISCARD = server.freewise_discard
@@ -129,6 +130,23 @@ def test_books_returns_list(patched_client):
     assert out["results"][0]["title"] == "T"
 
 
+def test_book_highlights_filters_by_book(patched_client):
+    """Pull highlights from a specific book — Claude's "what's in this book?" path."""
+    from app.models import Book, Highlight
+    # Create book 1 first via _add (which uses Book(id=1)) so the second
+    # book gets a different auto-id.
+    _add("from-T")
+    with Session(_test_engine) as s:
+        b2 = Book(title="Other")
+        s.add(b2); s.commit(); s.refresh(b2)
+        s.add(Highlight(book_id=b2.id, user_id=1, text="from-other"))
+        s.commit()
+        b2_id = b2.id
+    out = json.loads(BOOK_HIGHLIGHTS(b2_id))
+    assert out["count"] == 1
+    assert out["results"][0]["text"] == "from-other"
+
+
 # ── Write tools ───────────────────────────────────────────────────────────
 
 
@@ -222,14 +240,15 @@ def test_search_with_tag_filter(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 14 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 15 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_random",
-        "freewise_stats", "freewise_books", "freewise_set_note",
+        "freewise_stats", "freewise_books", "freewise_book_highlights",
+        "freewise_set_note",
         "freewise_favorite", "freewise_discard", "freewise_master",
         "freewise_add",
         "freewise_tag_list", "freewise_tag_add", "freewise_tag_remove",

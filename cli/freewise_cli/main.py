@@ -180,6 +180,19 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_book_highlights(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.list_highlights(page=1, page_size=args.limit, book_id=args.book_id)
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"{len(body['results'])} of {body['count']} highlights for book #{args.book_id}")
+    print()
+    for h in body["results"]:
+        _print_highlight_short(h)
+    return 0
+
+
 def cmd_random(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     h = client.random_highlight(book_id=getattr(args, "book_id", None))
@@ -430,6 +443,12 @@ def _build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("books", help="List books that have at least one highlight.")
     b.add_argument("--limit", type=int, default=20)
     b.set_defaults(func=cmd_books)
+
+    # book-highlights
+    bh = sub.add_parser("book-highlights", help="List highlights for one book.")
+    bh.add_argument("book_id", type=int)
+    bh.add_argument("--limit", type=int, default=50)
+    bh.set_defaults(func=cmd_book_highlights)
 
     # note <id> "..."
     n = sub.add_parser("note", help="Replace the note on a highlight (use empty string to clear).")

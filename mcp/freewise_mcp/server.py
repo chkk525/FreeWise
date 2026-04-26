@@ -118,6 +118,20 @@ def freewise_books(limit: int = 50) -> str:
     return _call("books failed", lambda: _client().list_books(page=1, page_size=limit))
 
 
+@mcp.tool()
+def freewise_book_highlights(book_id: int, limit: int = 50) -> str:
+    """List highlights for one specific book.
+
+    Useful when Claude needs to discuss a particular book — first call
+    ``freewise_books`` to find the id, then this tool to pull the actual
+    highlights.
+    """
+    return _call(
+        "book_highlights failed",
+        lambda: _client().list_highlights(page=1, page_size=limit, book_id=book_id),
+    )
+
+
 # ── Write tools ───────────────────────────────────────────────────────────
 
 

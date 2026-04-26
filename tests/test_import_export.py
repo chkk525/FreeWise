@@ -528,6 +528,40 @@ class TestCSVExport:
         resp = client.get(f"/export/book/{b.id}.md", params={"flavor": "logseq-xtra"})
         assert resp.status_code == 400
 
+    def test_books_csv_returns_inventory(self, client, make_book, make_highlight):
+        b1 = make_book(title="A Book", author="Author A", document_tags="topic")
+        b2 = make_book(title="B Book", author="Author B")
+        make_highlight(text="x", book=b1)
+        make_highlight(text="y", book=b1, is_favorited=True)
+        make_highlight(text="z", book=b2)
+
+        resp = client.get("/export/books.csv")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/csv")
+        reader = csv.DictReader(io.StringIO(resp.text))
+        rows = list(reader)
+        assert {r["title"] for r in rows} == {"A Book", "B Book"}
+        # A Book has 2 highlights, 1 favorited.
+        a_row = next(r for r in rows if r["title"] == "A Book")
+        assert a_row["highlight_count"] == "2"
+        assert a_row["favorited_count"] == "1"
+        assert a_row["author"] == "Author A"
+        assert a_row["document_tags"] == "topic"
+
+    def test_books_csv_400_when_empty(self, client):
+        resp = client.get("/export/books.csv")
+        assert resp.status_code == 400
+
+    def test_books_csv_excludes_discarded_from_count(self, client, make_book, make_highlight):
+        b = make_book(title="X")
+        make_highlight(text="a", book=b)
+        make_highlight(text="b", book=b, is_discarded=True)
+        resp = client.get("/export/books.csv")
+        rows = list(csv.DictReader(io.StringIO(resp.text)))
+        x = next(r for r in rows if r["title"] == "X")
+        # Discarded should not be counted in highlight_count.
+        assert x["highlight_count"] == "1"
+
     def test_per_book_md_unicode_title(self, client, make_book, make_highlight):
         """Japanese / non-ASCII book titles must NOT crash the response with
         UnicodeEncodeError on the Content-Disposition header (uvicorn's

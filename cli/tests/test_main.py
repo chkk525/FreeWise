@@ -88,6 +88,25 @@ def test_random_picks_one(http_client, auth_token, capsys):
     assert ("alpha" in out) or ("beta" in out)
 
 
+def test_book_highlights_lists_book_only(http_client, auth_token, capsys):
+    """`freewise book-highlights <id>` should return only that book's highlights."""
+    from app.models import Book
+    with Session(_test_engine) as s:
+        b1 = Book(title="A1")
+        b2 = Book(title="A2")
+        s.add(b1); s.add(b2); s.commit(); s.refresh(b1); s.refresh(b2)
+        s.add(Highlight(book_id=b1.id, user_id=1, text="from-a1"))
+        s.add(Highlight(book_id=b2.id, user_id=1, text="from-a2"))
+        s.commit()
+        bid = b1.id
+    rc, out, _ = _run(
+        ["book-highlights", str(bid)], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "from-a1" in out
+    assert "from-a2" not in out
+
+
 def test_stats_output(http_client, auth_token, capsys):
     _add_highlight("a"); _add_highlight("b", is_favorited=True)
     rc, out, _ = _run(["stats"], http_client, auth_token, capsys)
