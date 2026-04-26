@@ -111,7 +111,7 @@ async def export_highlights_csv(
     return StreamingResponse(
         _gen(),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": _content_disposition(filename)},
     )
 
 
@@ -127,6 +127,22 @@ def _safe_filename(s: str, fallback: str = "untitled") -> str:
     cleaned = _FILENAME_BAD.sub("_", s).strip().strip(".")
     cleaned = cleaned[:120]  # keep well under FAT32 255-byte limit incl. unicode
     return cleaned or fallback
+
+
+def _content_disposition(filename: str) -> str:
+    """Build a Content-Disposition value that survives non-ASCII filenames.
+
+    HTTP headers are latin-1 by default; a raw Japanese title in the
+    ``filename=`` field crashes uvicorn with UnicodeEncodeError. RFC 5987
+    defines the ``filename*=UTF-8''<percent-encoded>`` form that every
+    modern browser understands. We emit BOTH a latin-1 fallback and the
+    UTF-8 form so dumb clients still get a sensible name.
+    """
+    from urllib.parse import quote
+    # Latin-1 fallback: replace any non-encodable char with underscore.
+    fallback = filename.encode("ascii", errors="replace").decode("ascii").replace("?", "_")
+    encoded = quote(filename, safe="")
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{encoded}'
 
 
 def _yaml_escape(s: str | None) -> str:
@@ -261,7 +277,7 @@ async def export_markdown_zip(session: Session = Depends(get_session)):
     return StreamingResponse(
         _gen(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": _content_disposition(fname)},
     )
 
 
@@ -418,7 +434,7 @@ async def export_atomic_notes_zip(
     return StreamingResponse(
         _gen(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": _content_disposition(fname)},
     )
 
 
@@ -542,7 +558,7 @@ async def export_notion_zip(session: Session = Depends(get_session)):
     return StreamingResponse(
         _gen(),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": _content_disposition(fname)},
     )
 
 
@@ -584,8 +600,9 @@ async def export_single_book_markdown(
         raise HTTPException(status_code=400, detail=f"Unknown flavor: {flavor!r}")
 
     safe_title = _safe_filename(book.title or "untitled")
-    return StreamingResponse(
-        iter([body.encode("utf-8")]),
+    from fastapi.responses import Response
+    return Response(
+        content=body.encode("utf-8"),
         media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{safe_title}.md"'},
+        headers={"Content-Disposition": _content_disposition(f"{safe_title}.md")},
     )

@@ -528,6 +528,22 @@ class TestCSVExport:
         resp = client.get(f"/export/book/{b.id}.md", params={"flavor": "logseq-xtra"})
         assert resp.status_code == 400
 
+    def test_per_book_md_unicode_title(self, client, make_book, make_highlight):
+        """Japanese / non-ASCII book titles must NOT crash the response with
+        UnicodeEncodeError on the Content-Disposition header (uvicorn's
+        latin-1 default). RFC 5987 filename* form covers this."""
+        b = make_book(title="日本語タイトル")
+        make_highlight(text="hello world", book=b)
+        resp = client.get(f"/export/book/{b.id}.md")
+        assert resp.status_code == 200
+        cd = resp.headers.get("content-disposition", "")
+        # Modern clients use the UTF-8 form
+        assert "filename*=UTF-8''" in cd
+        # Latin-1 fallback must be present and ASCII-only
+        assert "filename=" in cd
+        # Body is correct
+        assert "hello world" in resp.text
+
     def test_export_loads_tags_in_one_query(self, client, db, make_highlight):
         """Tags must be bulk-loaded — N highlights must NOT emit N tag queries."""
         h1 = make_highlight(text="With tags A")
