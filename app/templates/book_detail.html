@@ -127,6 +127,19 @@
                     <i data-lucide="notebook-pen" class="w-4 h-4"></i>
                     <span class="text-xs font-medium">Atomic Notes</span>
                 </a>
+                <button type="button"
+                    hx-post="/library/ui/book/{{ book.id }}/summarize"
+                    hx-target="#book-summary-card"
+                    hx-swap="outerHTML"
+                    hx-indicator="#summary-spinner"
+                    class="flex items-center gap-2 px-3 py-2 text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
+                    title="Generate an LLM summary from this book's highlights (needs Ollama)">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    <span class="text-xs font-medium">Summarize</span>
+                    <span id="summary-spinner" class="htmx-indicator">
+                        <i data-lucide="loader" class="w-3 h-3 animate-spin"></i>
+                    </span>
+                </button>
                 <button
                     class="flex items-center gap-2 px-3 py-2 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors"
                     hx-delete="/library/ui/book/{{ book.id }}"
@@ -178,6 +191,9 @@
                 </div>
             </div>
         </div>
+
+        <!-- LLM summary card (filled by Summarize button via HTMX). -->
+        <div id="book-summary-card" class="mt-4"></div>
 
         <!-- Highlights Sections Wrapper -->
         <div id="highlights-sections-wrapper">

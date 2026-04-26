@@ -126,6 +126,90 @@ class TestBookDetail:
         resp = client.get("/library/ui/book/9999")
         assert resp.status_code == 404
 
+    def test_detail_renders_summarize_button(self, client, make_book, make_highlight):
+        """Book detail action bar should expose the new Summarize button."""
+        book = make_book(title="Test")
+        make_highlight(text="x", book=book)
+        resp = client.get(f"/library/ui/book/{book.id}")
+        assert resp.status_code == 200
+        # Button label + the HTMX endpoint it posts to
+        assert "Summarize" in resp.text
+        assert f"/library/ui/book/{book.id}/summarize" in resp.text
+
+
+class TestBookSummarizeUI:
+    """POST /library/ui/book/{id}/summarize — HTMX summary partial."""
+
+    def test_404_for_missing_book(self, client):
+        resp = client.post("/library/ui/book/9999/summarize")
+        assert resp.status_code == 404
+
+    def test_renders_answer_when_ollama_works(
+        self, client, db, make_book, make_highlight, monkeypatch,
+    ):
+        import httpx
+        from app.models import Embedding
+        from app.services import embeddings as emb_svc
+        from app.services.embeddings import pack_vector
+
+        b = make_book(title="Antifragile", author="Taleb")
+        h = make_highlight(text="What does not kill us makes us stronger.", book=b)
+        db.add(Embedding(
+            highlight_id=h.id, model_name="nomic-embed-text", dim=2,
+            vector=pack_vector([1.0, 0.0]),
+        ))
+        db.commit()
+
+        def handler(request):
+            if request.url.path == "/api/embeddings":
+                return httpx.Response(200, json={"embedding": [1.0, 0.0]})
+            if request.url.path == "/api/generate":
+                return httpx.Response(200, json={
+                    "response": f"Antifragility means systems that gain from disorder. [#{h.id}]",
+                })
+            return httpx.Response(404)
+
+        fake = emb_svc.OllamaClient(
+            base_url="http://x", model="nomic-embed-text",
+            http=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+
+        resp = client.post(f"/library/ui/book/{b.id}/summarize")
+        assert resp.status_code == 200
+        assert "Antifragility" in resp.text
+        assert "Antifragile" in resp.text  # book title in heading
+
+    def test_renders_inline_error_on_ollama_unavailable(
+        self, client, db, make_book, make_highlight, monkeypatch,
+    ):
+        import httpx
+        from app.models import Embedding
+        from app.services import embeddings as emb_svc
+        from app.services.embeddings import pack_vector
+
+        b = make_book(title="X")
+        h = make_highlight(text="x", book=b)
+        db.add(Embedding(
+            highlight_id=h.id, model_name="nomic-embed-text", dim=1,
+            vector=pack_vector([1.0]),
+        ))
+        db.commit()
+
+        def handler(request):
+            raise httpx.ConnectError("refused")
+
+        fake = emb_svc.OllamaClient(
+            base_url="http://x", model="nomic-embed-text",
+            http=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+
+        resp = client.post(f"/library/ui/book/{b.id}/summarize")
+        # Errors return the partial with an inline message, not 5xx.
+        assert resp.status_code == 200
+        assert "Ollama unreachable" in resp.text
+
 
 # ── Book edit ─────────────────────────────────────────────────────────────────
 

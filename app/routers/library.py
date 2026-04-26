@@ -573,3 +573,40 @@ def _render_book_header(request: Request, book: Book, highlight_count: int) -> H
     """Render the book header section."""
     return templates.TemplateResponse(request, "_book_header.html", {"book": book,
         "highlight_count": highlight_count})
+
+
+@router.post("/ui/book/{book_id}/summarize", response_class=HTMLResponse)
+async def ui_book_summarize(
+    request: Request,
+    book_id: int,
+    session: Session = Depends(get_session),
+):
+    """Summarize one book with RAG and return a partial for HTMX swap.
+
+    Wraps the same ask_library() pipeline used by /api/v2/ask but scopes
+    retrieval to this book's highlights and uses a default "summarize
+    key themes" prompt. Errors fold into the partial as an inline error
+    message rather than a 500 — matches the ask UI's degradation pattern.
+    """
+    from app.services.embeddings import OllamaUnavailable, ask_library
+
+    book = session.get(Book, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    question = (
+        f"Summarize the key themes and ideas from this book ('{book.title}'"
+        + (f" by {book.author}" if book.author else "")
+        + ") based on the highlights below. Be concise."
+    )
+    try:
+        result = ask_library(session, question=question, top_k=12, book_id=book_id)
+    except OllamaUnavailable as e:
+        return templates.TemplateResponse(
+            request, "_book_summary.html",
+            {"error": f"Ollama unreachable: {e}", "result": None, "book": book},
+        )
+    return templates.TemplateResponse(
+        request, "_book_summary.html",
+        {"error": None, "result": result.as_dict(), "book": book},
+    )
