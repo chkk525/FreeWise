@@ -584,6 +584,58 @@ def update_highlight(
 # ── Highlight-level tags ────────────────────────────────────────────────────
 
 
+class _SummarizeRequest(__import__("pydantic").BaseModel):
+    """POST body for /api/v2/books/{id}/summarize."""
+
+    question: Optional[str] = None  # optional override; default is "summarize"
+    top_k: int = 12
+    embed_model: Optional[str] = None
+    generate_model: Optional[str] = None
+
+
+@router.post("/books/{book_id}/summarize")
+def summarize_book(
+    book_id: int,
+    payload: _SummarizeRequest,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> dict:
+    """RAG: ask Ollama to summarize a book using its highlights as evidence.
+
+    Sugar over /api/v2/ask scoped to one book_id. The default question
+    asks for "key themes and ideas"; pass ``question`` to override
+    (e.g. "What advice does this book give about X?").
+
+    503 if Ollama unreachable; 404 if book has no highlights or no
+    embeddings yet.
+    """
+    book = session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found.")
+    question = (payload.question or "").strip() or (
+        f"Summarize the key themes and ideas from this book ('{book.title}'"
+        + (f" by {book.author}" if book.author else "")
+        + ") based on the highlights below. Be concise."
+    )
+    try:
+        result = ask_library(
+            session, question=question,
+            top_k=max(1, min(20, payload.top_k)),
+            embed_model=payload.embed_model,
+            generate_model=payload.generate_model,
+            book_id=book_id,
+        )
+    except OllamaUnavailable as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Ollama unavailable: {e}. See docs/SEMANTIC_SETUP.md.",
+        ) from e
+    out = result.as_dict()
+    out["book_id"] = book_id
+    out["book_title"] = book.title
+    return out
+
+
 class _AskRequest(__import__("pydantic").BaseModel):
     """POST body for /api/v2/ask."""
 

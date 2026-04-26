@@ -193,6 +193,31 @@ def cmd_book_highlights(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_summarize_book(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.summarize_book(
+        args.book_id, question=args.question, top_k=args.top_k,
+    )
+    if args.json:
+        _print_json(body)
+        return 0
+    title = body.get("book_title") or f"book #{body.get('book_id')}"
+    print(f"Summary of {title}")
+    print()
+    print(body.get("answer", "(no answer)"))
+    cites = body.get("citations") or []
+    if cites:
+        print()
+        print(f"--- {len(cites)} citation{'s' if len(cites) != 1 else ''} ---")
+        for c in cites:
+            sim = c.get("similarity", 0.0)
+            snippet = (c.get("text") or "").replace("\n", " ").strip()
+            if len(snippet) > 100:
+                snippet = snippet[:97] + "…"
+            print(f"  [#{c['id']:<6} {sim:.3f}]  {snippet}")
+    return 0
+
+
 def cmd_ask(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body = client.ask(
@@ -615,6 +640,13 @@ def _build_parser() -> argparse.ArgumentParser:
     ak.add_argument("--embed-model", help="Override FREEWISE_OLLAMA_EMBED_MODEL.")
     ak.add_argument("--generate-model", help="Override FREEWISE_OLLAMA_GENERATE_MODEL.")
     ak.set_defaults(func=cmd_ask)
+
+    # summarize-book (RAG scoped to one book)
+    sb = sub.add_parser("summarize-book", help="LLM summary of one book using its highlights.")
+    sb.add_argument("book_id", type=int)
+    sb.add_argument("--question", help="Override the default 'summarize key themes' prompt.")
+    sb.add_argument("--top-k", type=int, default=12)
+    sb.set_defaults(func=cmd_summarize_book)
 
     # embed-backfill
     eb = sub.add_parser("embed-backfill", help="Generate embeddings for highlights that don't have them yet.")

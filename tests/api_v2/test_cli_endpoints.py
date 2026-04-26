@@ -570,6 +570,123 @@ def test_ask_requires_auth(client):
     assert client.post("/api/v2/ask", json={"question": "q"}).status_code == 401
 
 
+# ── POST /api/v2/books/{id}/summarize ───────────────────────────────────────
+
+
+def test_summarize_book_uses_book_scope(client, db, make_highlight, make_book, monkeypatch):
+    """summarize-book should only retrieve from the requested book's highlights."""
+    import httpx
+    from app.models import Embedding
+    from app.services import embeddings as emb_svc
+    from app.services.embeddings import pack_vector
+
+    headers = _auth_headers(db)
+    book_a = make_book(title="Target Book", author="A")
+    book_b = make_book(title="Other Book", author="B")
+    h_a = make_highlight(text="from target", book=book_a)
+    h_b = make_highlight(text="from other", book=book_b)
+    for h in (h_a, h_b):
+        db.add(Embedding(
+            highlight_id=h.id, model_name="nomic-embed-text", dim=2,
+            vector=pack_vector([1.0, 0.0]),
+        ))
+    db.commit()
+
+    def handler(request):
+        if request.url.path == "/api/embeddings":
+            return httpx.Response(200, json={"embedding": [1.0, 0.0]})
+        if request.url.path == "/api/generate":
+            return httpx.Response(200, json={"response": "summary text"})
+        return httpx.Response(404)
+
+    fake = emb_svc.OllamaClient(
+        base_url="http://x", model="nomic-embed-text",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+    resp = client.post(f"/api/v2/books/{book_a.id}/summarize", headers=headers, json={})
+    assert resp.status_code == 200
+    body = resp.json()
+    # Citations must be ONLY from book A.
+    assert body["book_id"] == book_a.id
+    assert body["book_title"] == "Target Book"
+    cited_ids = {c["id"] for c in body["citations"]}
+    assert h_a.id in cited_ids
+    assert h_b.id not in cited_ids
+
+
+def test_summarize_book_404_when_missing(client, db):
+    headers = _auth_headers(db)
+    resp = client.post("/api/v2/books/9999/summarize", headers=headers, json={})
+    assert resp.status_code == 404
+
+
+def test_summarize_book_503_when_ollama_down(client, db, make_book, make_highlight, monkeypatch):
+    import httpx
+    from app.models import Embedding
+    from app.services import embeddings as emb_svc
+    from app.services.embeddings import pack_vector
+
+    headers = _auth_headers(db)
+    b = make_book(title="X")
+    h = make_highlight(text="x", book=b)
+    db.add(Embedding(
+        highlight_id=h.id, model_name="nomic-embed-text", dim=1,
+        vector=pack_vector([1.0]),
+    ))
+    db.commit()
+
+    def handler(request):
+        raise httpx.ConnectError("refused")
+    fake = emb_svc.OllamaClient(
+        base_url="http://x", model="nomic-embed-text",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+    resp = client.post(f"/api/v2/books/{b.id}/summarize", headers=headers, json={})
+    assert resp.status_code == 503
+
+
+def test_summarize_book_custom_question(client, db, make_book, make_highlight, monkeypatch):
+    """Passing a custom question should override the default summarize prompt."""
+    import httpx, json as _json
+    from app.models import Embedding
+    from app.services import embeddings as emb_svc
+    from app.services.embeddings import pack_vector
+
+    headers = _auth_headers(db)
+    b = make_book(title="X")
+    h = make_highlight(text="answer-y content", book=b)
+    db.add(Embedding(
+        highlight_id=h.id, model_name="nomic-embed-text", dim=1,
+        vector=pack_vector([1.0]),
+    ))
+    db.commit()
+
+    seen_prompts: list[str] = []
+
+    def handler(request):
+        if request.url.path == "/api/embeddings":
+            seen_prompts.append(_json.loads(request.content)["prompt"])
+            return httpx.Response(200, json={"embedding": [1.0]})
+        if request.url.path == "/api/generate":
+            return httpx.Response(200, json={"response": "ok"})
+        return httpx.Response(404)
+    fake = emb_svc.OllamaClient(
+        base_url="http://x", model="nomic-embed-text",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+    custom = "What does this book say about productivity?"
+    resp = client.post(
+        f"/api/v2/books/{b.id}/summarize", headers=headers,
+        json={"question": custom},
+    )
+    assert resp.status_code == 200
+    # The embed call should have been the custom question, not the default summary prompt.
+    assert any(custom in p for p in seen_prompts)
+
+
 # ── POST /api/v2/embeddings/backfill (CLI driver endpoint) ───────────────────
 
 

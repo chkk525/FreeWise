@@ -97,6 +97,53 @@ def freewise_show(highlight_id: int) -> str:
 
 
 @mcp.tool()
+def freewise_summarize_book(book_id: int, question: str | None = None, top_k: int = 12) -> str:
+    """RAG summary of one book using its highlights as evidence.
+
+    Optional ``question`` overrides the default "summarize key themes"
+    prompt. Useful for "what advice does this book give about X" style
+    follow-ups. Requires Ollama + backfill (see SEMANTIC_SETUP.md).
+    """
+    return _call(
+        "summarize_book failed",
+        lambda: _client().summarize_book(book_id, question=question, top_k=top_k),
+    )
+
+
+@mcp.tool()
+def freewise_tag_rename(old_name: str, new_name: str) -> str:
+    """Rename a tag globally. 409 if the new name collides — use
+    ``freewise_tag_merge`` instead. Reserved names (favorite/discard)
+    are rejected. Returns the renamed tag's summary."""
+    return _call(
+        "tag_rename failed",
+        lambda: _client().rename_tag(old_name, new_name),
+    )
+
+
+@mcp.tool()
+def freewise_tag_merge(src: str, into: str) -> str:
+    """Merge tag ``src`` into ``into`` — every highlight that had ``src``
+    gets ``into`` (skipping duplicates), and the source Tag is deleted.
+    Useful for consolidating near-duplicates ('ml' + 'machine learning')."""
+    return _call(
+        "tag_merge failed",
+        lambda: _client().merge_tag(src, into),
+    )
+
+
+@mcp.tool()
+def freewise_author_rename(old_name: str, new_name: str) -> str:
+    """Rename an author across every book that has it. Useful for
+    fixing import-time typos. Returns the new author's summary
+    (book count + highlight count)."""
+    return _call(
+        "author_rename failed",
+        lambda: _client().rename_author(old_name, new_name),
+    )
+
+
+@mcp.tool()
 def freewise_ask(question: str, top_k: int = 8) -> str:
     """RAG: ask a natural-language question over your highlight library.
 

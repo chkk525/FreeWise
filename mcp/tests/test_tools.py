@@ -26,6 +26,10 @@ RECENT = server.freewise_recent
 SHOW = server.freewise_show
 RELATED = server.freewise_related
 ASK = server.freewise_ask
+SUMMARIZE_BOOK = server.freewise_summarize_book
+TAG_RENAME = server.freewise_tag_rename
+TAG_MERGE = server.freewise_tag_merge
+AUTHOR_RENAME = server.freewise_author_rename
 RANDOM = server.freewise_random
 STATS = server.freewise_stats
 BOOKS = server.freewise_books
@@ -268,19 +272,40 @@ def test_search_with_tag_filter(patched_client):
     assert out["results"][0]["id"] == h1
 
 
+def test_tag_rename_via_mcp(patched_client):
+    hid = _add("x")
+    TAG_ADD(hid, "ml")
+    out = json.loads(TAG_RENAME("ml", "Machine Learning"))
+    assert out["name"] == "machine learning"
+
+
+def test_author_rename_via_mcp(patched_client):
+    """Set up a book with an author, rename via MCP, verify."""
+    from app.models import Book
+    from sqlmodel import select
+    with Session(_test_engine) as s:
+        b = Book(title="X", author="Old A")
+        s.add(b); s.commit()
+    out = json.loads(AUTHOR_RENAME("Old A", "New A"))
+    assert out["name"] == "New A"
+    assert out["book_count"] == 1
+
+
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 19 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 23 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_random", "freewise_related", "freewise_ask",
+        "freewise_summarize_book",
         "freewise_stats", "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",
         "freewise_set_note",
         "freewise_favorite", "freewise_discard", "freewise_master",
         "freewise_add",
         "freewise_tag_list", "freewise_tag_add", "freewise_tag_remove",
+        "freewise_tag_rename", "freewise_tag_merge", "freewise_author_rename",
     }
     assert names == expected

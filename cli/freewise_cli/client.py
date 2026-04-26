@@ -97,6 +97,13 @@ class Client:
             body["generate_model"] = generate_model
         return self._request("POST", "/api/v2/ask", json=body)
 
+    def summarize_book(self, book_id: int, *, question: str | None = None,
+                       top_k: int = 12) -> dict:
+        body: dict[str, Any] = {"top_k": top_k}
+        if question:
+            body["question"] = question
+        return self._request("POST", f"/api/v2/books/{book_id}/summarize", json=body)
+
     def backfill_embeddings(self, *, batch_size: int = 64,
                             model: str | None = None) -> dict:
         """Run one batch of the embedding backfill on the server side."""

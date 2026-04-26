@@ -477,10 +477,14 @@ def ask_library(
     top_k: int = 8,
     embed_model: str | None = None,
     generate_model: str | None = None,
+    book_id: int | None = None,
     client: OllamaClient | None = None,
 ) -> AskResult:
     """Retrieve the K most-similar highlights to ``question``, then ask
     Ollama to compose a citation-grounded answer.
+
+    Pass ``book_id`` to scope retrieval to a single book — used by the
+    per-book ``summarize`` endpoint.
 
     Raises :class:`OllamaUnavailable` if either the embed or generate call
     fails — the caller should surface that as a graceful "Ollama not
@@ -504,14 +508,18 @@ def ask_library(
     q_blob = pack_vector(q_vec)
     q_dim = len(q_vec)
 
-    # 2. Pull all candidate vectors for the same model + dim.
-    cand_rows = session.exec(
+    # 2. Pull all candidate vectors for the same model + dim. Optional
+    # book_id filter scopes retrieval (used by summarize-book).
+    cand_stmt = (
         select(Embedding.highlight_id, Embedding.vector)
         .join(Highlight, Highlight.id == Embedding.highlight_id)
         .where(Embedding.model_name == embed_name)
         .where(Embedding.dim == q_dim)
         .where(Highlight.is_discarded == False)  # noqa: E712
-    ).all()
+    )
+    if book_id is not None:
+        cand_stmt = cand_stmt.where(Highlight.book_id == book_id)
+    cand_rows = session.exec(cand_stmt).all()
     if not cand_rows:
         return AskResult(
             answer="No embeddings exist yet — run `freewise embed-backfill` first.",
