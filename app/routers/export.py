@@ -420,3 +420,172 @@ async def export_atomic_notes_zip(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+# ── Notion-flavored Markdown export ──────────────────────────────────────────
+#
+# Notion renders Markdown on import but interprets it differently from
+# Obsidian/Logseq:
+#   - Blockquotes (`> ...`) become Quote blocks (one per blank-separated
+#     run), which is fine but loses individuality across many highlights.
+#   - Bulleted lists become Toggle/Bullet blocks — easier to skim when
+#     there are dozens of highlights per book.
+#   - Notion ignores YAML frontmatter (it's pasted as text). We omit it
+#     and put title/author/tags in a header block instead.
+#   - Notion has a callout shorthand (`> 💡 ...`) which it parses as a
+#     Quote with an emoji marker — lighter than nested headings.
+
+
+def _render_book_markdown_notion(book: Book, highlights: list[Highlight]) -> str:
+    """Notion-friendly variant of _render_book_markdown.
+
+    Differences from the Obsidian variant:
+    - No YAML frontmatter (Notion would render it as plain text).
+    - Title + metadata via H1 + Quote block at the top.
+    - Each highlight rendered as a top-level bullet so Notion makes them
+      individually-collapsible blocks. The note (if any) becomes a
+      sub-bullet so it's visually attached to its highlight.
+    """
+    lines: list[str] = []
+    lines.append(f"# {book.title}")
+    meta_bits: list[str] = []
+    if book.author:
+        meta_bits.append(book.author)
+    meta_bits.append(f"{len(highlights)} highlight{'s' if len(highlights) != 1 else ''}")
+    if book.document_tags:
+        for raw in book.document_tags.split(","):
+            t = raw.strip()
+            if t:
+                meta_bits.append(f"#{t.replace(' ', '-')}")
+    lines.append(f"> 💡 {' · '.join(meta_bits)}")
+    lines.append("")
+
+    if not highlights:
+        lines.append("_No highlights yet._")
+    else:
+        for h in highlights:
+            # Bulleted highlight. Multi-line highlights need each
+            # subsequent line indented under the bullet so Notion keeps
+            # them inside the same block.
+            text_lines = (h.text or "").splitlines() or [""]
+            lines.append(f"- {text_lines[0]}")
+            for ln in text_lines[1:]:
+                lines.append(f"  {ln}")
+            footer_bits: list[str] = []
+            if h.location is not None:
+                footer_bits.append(
+                    f"loc {h.location}" + (f" ({h.location_type})" if h.location_type else "")
+                )
+            if h.is_favorited:
+                footer_bits.append("⭐")
+            if footer_bits:
+                lines.append(f"  _{' · '.join(footer_bits)}_")
+            if h.note:
+                # Sub-bullet so Notion nests the note under the highlight.
+                for nl in h.note.splitlines() or [""]:
+                    lines.append(f"  - {nl}")
+            lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@router.get("/notion.zip")
+async def export_notion_zip(session: Session = Depends(get_session)):
+    """Stream a Notion-friendly ZIP — one .md per book, no YAML frontmatter,
+    bulleted highlights so Notion makes each one a collapsible block.
+
+    Excludes discarded highlights. Same SQL pattern as /export/markdown.zip
+    (one query for highlights, one for books) — no N+1.
+    """
+    rows = session.exec(
+        select(Highlight, Book)
+        .outerjoin(Book, Highlight.book_id == Book.id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(
+            Highlight.book_id.asc().nullslast(),
+            Highlight.location.asc().nullslast(),
+            Highlight.created_at.asc().nullslast(),
+            Highlight.id.asc(),
+        )
+    ).all()
+    if not rows:
+        raise HTTPException(status_code=400, detail="No active highlights to export.")
+
+    by_book: dict[int | None, list[Highlight]] = defaultdict(list)
+    book_lookup: dict[int | None, Book | None] = {}
+    for h, b in rows:
+        by_book[h.book_id].append(h)
+        book_lookup[h.book_id] = b
+
+    seen: dict[str, int] = {}
+
+    def _gen():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for book_id, hl_list in by_book.items():
+                book = book_lookup.get(book_id)
+                if book is None:
+                    book = Book(title="Unbound highlights", author=None)
+                title_safe = _safe_filename(book.title or "")
+                key = title_safe.lower()
+                if key in seen:
+                    seen[key] += 1
+                    fname = f"{title_safe} ({seen[key]}).md"
+                else:
+                    seen[key] = 0
+                    fname = f"{title_safe}.md"
+                zf.writestr(fname, _render_book_markdown_notion(book, hl_list))
+        buf.seek(0)
+        yield buf.getvalue()
+
+    fname = f"freewise-notion-{datetime.now().strftime('%Y%m%d')}.zip"
+    return StreamingResponse(
+        _gen(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ── Per-book single-file Markdown download (no ZIP, no archive) ─────────────
+
+
+@router.get("/book/{book_id}.md")
+async def export_single_book_markdown(
+    book_id: int,
+    flavor: str = "obsidian",
+    session: Session = Depends(get_session),
+):
+    """Download one book's highlights as a single .md file (no ZIP).
+
+    Linked from the book detail page so users can grab one book without
+    waiting for a full-vault export. ``flavor=obsidian`` (default) or
+    ``flavor=notion`` selects between the two renderers.
+    """
+    book = session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    highlights = session.exec(
+        select(Highlight)
+        .where(Highlight.book_id == book_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(
+            Highlight.location.asc().nullslast(),
+            Highlight.created_at.asc().nullslast(),
+            Highlight.id.asc(),
+        )
+    ).all()
+
+    if flavor == "notion":
+        body = _render_book_markdown_notion(book, list(highlights))
+    elif flavor in ("obsidian", "markdown", "md"):
+        body = _render_book_markdown(book, list(highlights))
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown flavor: {flavor!r}")
+
+    safe_title = _safe_filename(book.title or "untitled")
+    return StreamingResponse(
+        iter([body.encode("utf-8")]),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.md"'},
+    )

@@ -95,9 +95,9 @@
                 {% endif %}
             </div>
             
-            <!-- Action Buttons (Edit/Delete) -->
-            <div class="flex items-center justify-center gap-4 mb-6 pb-0">
-                <button 
+            <!-- Action Buttons (Edit / Download / Delete) -->
+            <div class="flex items-center justify-center gap-4 mb-6 pb-0 flex-wrap">
+                <button
                     class="flex items-center gap-2 px-3 py-2 text-amber-700 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 transition-colors"
                     hx-get="/library/ui/book/{{ book.id }}/edit"
                     hx-target="#book-header"
@@ -107,7 +107,25 @@
                     <i data-lucide="pencil" class="w-4 h-4"></i>
                     <span class="text-xs font-medium">Edit</span>
                 </button>
-                <button 
+                <a href="/export/book/{{ book.id }}.md"
+                    class="flex items-center gap-2 px-3 py-2 text-purple-700 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 transition-colors"
+                    title="Download this book as a single Markdown file (Obsidian flavor)">
+                    <i data-lucide="download" class="w-4 h-4"></i>
+                    <span class="text-xs font-medium">Markdown</span>
+                </a>
+                <a href="/export/book/{{ book.id }}.md?flavor=notion"
+                    class="flex items-center gap-2 px-3 py-2 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+                    title="Download this book as a Notion-flavored Markdown file (bullets, no frontmatter)">
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span class="text-xs font-medium">Notion .md</span>
+                </a>
+                <a href="/export/atomic-notes.zip?book_id={{ book.id }}"
+                    class="flex items-center gap-2 px-3 py-2 text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 transition-colors"
+                    title="Download one .md per highlight in this book (atomic notes)">
+                    <i data-lucide="notebook-pen" class="w-4 h-4"></i>
+                    <span class="text-xs font-medium">Atomic Notes</span>
+                </a>
+                <button
                     class="flex items-center gap-2 px-3 py-2 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors"
                     hx-delete="/library/ui/book/{{ book.id }}"
                     hx-confirm="⚠️ Are you sure you want to remove '{{ book.title }}' and all its {{ highlights|length }} highlight(s) from your library? This action cannot be undone."

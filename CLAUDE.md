@@ -94,6 +94,8 @@ Beyond the upstream HTML/HTMX UI:
 | GET   | `/export/csv`                | Readwise-compatible CSV |
 | GET   | `/export/markdown.zip`       | Obsidian/Logseq vault ZIP — fork addition |
 | GET   | `/export/atomic-notes.zip`   | One .md per highlight (Zettelkasten atoms) — fork addition |
+| GET   | `/export/notion.zip`         | Notion-flavored Markdown vault ZIP — fork addition |
+| GET   | `/export/book/{id}.md`       | Single book as Markdown (?flavor=obsidian\|notion) — fork addition |
 | POST  | `/settings/backup.db`        | SQLite VACUUM INTO snapshot |
 | POST  | `/settings/theme/toggle`     | Cycle light → dark → auto |
 

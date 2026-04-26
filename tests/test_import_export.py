@@ -445,6 +445,89 @@ class TestCSVExport:
         resp = client.get("/export/atomic-notes.zip")
         assert resp.status_code == 400
 
+    # ── Notion-flavored markdown export ─────────────────────────────────
+
+    def test_notion_export_returns_zip_without_yaml(self, client, make_highlight, make_book):
+        """Notion variant must NOT emit YAML frontmatter (Notion would render it
+        as plain text). Highlights become bullets."""
+        import io as _io, zipfile as _zip
+        b = make_book(title="N Book", author="Author A", document_tags="topic")
+        make_highlight(text="quote one", note="my note", book=b, location=12)
+        make_highlight(text="quote two", book=b, is_favorited=True)
+
+        resp = client.get("/export/notion.zip")
+        assert resp.status_code == 200
+        zf = _zip.ZipFile(_io.BytesIO(resp.content))
+        body = zf.read("N Book.md").decode("utf-8")
+        # No YAML fence at the top.
+        assert not body.startswith("---")
+        # H1 with title + 💡 callout block with metadata.
+        assert "# N Book" in body
+        assert "💡" in body
+        assert "Author A" in body
+        # Highlights as bullets.
+        assert "- quote one" in body
+        assert "- quote two" in body
+        # Note nested as a sub-bullet.
+        assert "  - my note" in body
+        # Tag rendered as inline #topic in callout.
+        assert "#topic" in body
+
+    def test_notion_export_excludes_discarded(self, client, make_highlight, make_book):
+        import io as _io, zipfile as _zip
+        b = make_book(title="B")
+        make_highlight(text="alive", book=b)
+        make_highlight(text="dead", book=b, is_discarded=True)
+        resp = client.get("/export/notion.zip")
+        body = _zip.ZipFile(_io.BytesIO(resp.content)).read("B.md").decode("utf-8")
+        assert "alive" in body
+        assert "dead" not in body
+
+    def test_notion_export_400_when_empty(self, client):
+        assert client.get("/export/notion.zip").status_code == 400
+
+    # ── Per-book single-file download ───────────────────────────────────
+
+    def test_per_book_md_default_obsidian(self, client, make_highlight, make_book):
+        b = make_book(title="One Book", author="Author")
+        make_highlight(text="just one quote", book=b)
+        resp = client.get(f"/export/book/{b.id}.md")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/markdown")
+        cd = resp.headers.get("content-disposition", "")
+        assert "One Book.md" in cd
+        body = resp.text
+        # Obsidian flavor: YAML frontmatter present.
+        assert body.startswith("---")
+        assert "> just one quote" in body
+
+    def test_per_book_md_notion_flavor(self, client, make_highlight, make_book):
+        b = make_book(title="Notion Book")
+        make_highlight(text="bullet me", book=b)
+        resp = client.get(f"/export/book/{b.id}.md", params={"flavor": "notion"})
+        assert resp.status_code == 200
+        body = resp.text
+        # Notion flavor: no frontmatter, bullets.
+        assert not body.startswith("---")
+        assert "- bullet me" in body
+
+    def test_per_book_md_404(self, client):
+        assert client.get("/export/book/999999.md").status_code == 404
+
+    def test_per_book_md_excludes_discarded(self, client, make_highlight, make_book):
+        b = make_book(title="X")
+        make_highlight(text="kept", book=b)
+        make_highlight(text="trashed", book=b, is_discarded=True)
+        body = client.get(f"/export/book/{b.id}.md").text
+        assert "kept" in body
+        assert "trashed" not in body
+
+    def test_per_book_md_unknown_flavor_400(self, client, make_book, make_highlight):
+        b = make_book(title="X")
+        make_highlight(text="x", book=b)
+        resp = client.get(f"/export/book/{b.id}.md", params={"flavor": "logseq-xtra"})
+        assert resp.status_code == 400
+
     def test_export_loads_tags_in_one_query(self, client, db, make_highlight):
         """Tags must be bulk-loaded — N highlights must NOT emit N tag queries."""
         h1 = make_highlight(text="With tags A")
