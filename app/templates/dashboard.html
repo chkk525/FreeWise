@@ -82,6 +82,30 @@
 </div>
 {% endif %}
 
+{# ── Quick capture: save a free-form thought as a new highlight ──── #}
+<div class="mb-6">
+    <form hx-post="/highlights/ui/quick-capture"
+          hx-target="#quick-capture-result"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) this.reset()"
+          class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+        <label class="block">
+            <span class="sr-only">Quick capture</span>
+            <div class="flex items-start gap-2">
+                <i data-lucide="pencil-line" class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-1"></i>
+                <textarea name="text" rows="2" maxlength="8191"
+                          placeholder="Quick capture: a thought, a quote, a reminder…"
+                          class="flex-1 px-2 py-1.5 bg-transparent focus:outline-none text-gray-900 dark:text-white resize-none"></textarea>
+                <button type="submit"
+                        class="inline-flex items-center gap-1 px-3 py-1 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 self-start mt-1">
+                    Save
+                </button>
+            </div>
+        </label>
+        <div id="quick-capture-result" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></div>
+    </form>
+</div>
+
 {# ── Ask widget (RAG) ─────────────────────────────────────────────── #}
 {% if embedding_coverage and embedding_coverage.embedded > 0 %}
 <div class="mb-6">

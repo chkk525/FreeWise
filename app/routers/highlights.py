@@ -861,6 +861,53 @@ async def ui_highlight_permalink(
     )
 
 
+_QUICK_CAPTURE_BOOK_TITLE = "Quick Notes"
+
+
+@router.post("/ui/quick-capture", response_class=HTMLResponse)
+async def ui_quick_capture(
+    request: Request,
+    text: str = Form(...),
+    note: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Save a free-form thought as a new highlight under "Quick Notes".
+
+    Used by the dashboard quick-capture widget. Returns a tiny success/error
+    partial that HTMX swaps into the form's response container. The auto-
+    managed "Quick Notes" book is created on first use; subsequent captures
+    append to the same book.
+    """
+    from app.routers.importer import get_or_create_book
+
+    body = (text or "").strip()
+    if not body:
+        return HTMLResponse(
+            '<div id="quick-capture-result" class="text-sm text-red-700 dark:text-red-300">Type something first.</div>',
+        )
+    if len(body) > 8191:
+        return HTMLResponse(
+            '<div id="quick-capture-result" class="text-sm text-red-700 dark:text-red-300">Too long (8191-char cap).</div>',
+        )
+
+    book = get_or_create_book(session=session, title=_QUICK_CAPTURE_BOOK_TITLE)
+    h = Highlight(
+        text=body,
+        note=(note or "").strip() or None,
+        book_id=book.id if book else None,
+        created_at=datetime.now(UTC).replace(tzinfo=None),
+        user_id=1,
+    )
+    session.add(h)
+    session.commit()
+    session.refresh(h)
+    return HTMLResponse(
+        f'<div id="quick-capture-result" class="text-sm text-emerald-700 dark:text-emerald-300">'
+        f'Saved as <a class="underline" href="/highlights/ui/h/{h.id}">#{h.id}</a> in "{_QUICK_CAPTURE_BOOK_TITLE}".'
+        f'</div>',
+    )
+
+
 @router.get("/ui/duplicates", response_class=HTMLResponse)
 async def ui_duplicates(
     request: Request,

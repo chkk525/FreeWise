@@ -393,6 +393,50 @@ class TestPermalinkPage:
         assert f"/highlights/ui/h/{h.id}" in resp.text
 
 
+class TestQuickCapture:
+    """POST /highlights/ui/quick-capture — dashboard quick-capture widget."""
+
+    def test_creates_highlight_under_quick_notes_book(self, client, db):
+        from app.models import Book, Highlight
+        from sqlmodel import select
+        resp = client.post(
+            "/highlights/ui/quick-capture",
+            data={"text": "A passing thought"},
+        )
+        assert resp.status_code == 200
+        assert "Saved as" in resp.text
+        # The "Quick Notes" book should now exist with one highlight.
+        book = db.exec(select(Book).where(Book.title == "Quick Notes")).first()
+        assert book is not None
+        h = db.exec(select(Highlight).where(Highlight.book_id == book.id)).first()
+        assert h is not None
+        assert h.text == "A passing thought"
+        assert h.user_id == 1
+
+    def test_appends_to_existing_quick_notes_book(self, client, db):
+        from app.models import Book, Highlight
+        from sqlmodel import select
+        client.post("/highlights/ui/quick-capture", data={"text": "first"})
+        client.post("/highlights/ui/quick-capture", data={"text": "second"})
+        books = db.exec(select(Book).where(Book.title == "Quick Notes")).all()
+        assert len(books) == 1   # not duplicated
+        highlights = db.exec(select(Highlight).where(Highlight.book_id == books[0].id)).all()
+        assert {h.text for h in highlights} == {"first", "second"}
+
+    def test_empty_text_returns_error(self, client):
+        resp = client.post("/highlights/ui/quick-capture", data={"text": "   "})
+        assert resp.status_code == 200
+        assert "Type something first" in resp.text
+
+    def test_too_long_rejected(self, client):
+        resp = client.post(
+            "/highlights/ui/quick-capture",
+            data={"text": "x" * 9000},
+        )
+        assert resp.status_code == 200
+        assert "Too long" in resp.text
+
+
 class TestDuplicatesPage:
     """GET /highlights/ui/duplicates — duplicate-group cleanup page."""
 
