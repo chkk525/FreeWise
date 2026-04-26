@@ -50,6 +50,7 @@ ADD = server.freewise_add
 TAG_LIST = server.freewise_tag_list
 TAG_ADD = server.freewise_tag_add
 TAG_REMOVE = server.freewise_tag_remove
+BACKUP = server.freewise_backup
 
 
 def _add(text: str, **kwargs) -> int:
@@ -332,8 +333,16 @@ def test_author_rename_via_mcp(patched_client):
     assert out["book_count"] == 1
 
 
+def test_backup_via_mcp(patched_client, tmp_path):
+    out = tmp_path / "snap.sqlite"
+    body = json.loads(BACKUP(str(out)))
+    assert body["path"] == str(out)
+    assert body["bytes"] > 0
+    assert out.read_bytes()[:16] == b"SQLite format 3\x00"
+
+
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 29 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 30 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
@@ -342,7 +351,7 @@ def test_tool_surface_complete(patched_client):
         "freewise_random", "freewise_today", "freewise_related",
         "freewise_ask", "freewise_summarize_book", "freewise_suggest_tags",
         "freewise_duplicates", "freewise_semantic_dupes",
-        "freewise_stats", "freewise_health",
+        "freewise_stats", "freewise_health", "freewise_backup",
         "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",
         "freewise_set_note", "freewise_append_note",

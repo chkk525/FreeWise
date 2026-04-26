@@ -278,6 +278,25 @@ def freewise_health() -> str:
 
 
 @mcp.tool()
+def freewise_backup(out_path: str | None = None) -> str:
+    """Download an atomic SQLite snapshot to ``out_path`` (default: /tmp/freewise-DATE.sqlite).
+
+    Wraps GET /api/v2/admin/backup. Safe to run while the server takes
+    writes — uses sqlite3.backup() under the hood. Returns ``{"path", "bytes"}``.
+    Treat the file as a full credential dump (it includes api tokens).
+    """
+    import os
+    from datetime import date as _date
+    target = out_path or f"/tmp/freewise-{_date.today().isoformat()}.sqlite"
+
+    def _do():
+        written = _client().backup(target)
+        return {"path": target, "bytes": written}
+
+    return _call("backup failed", _do)
+
+
+@mcp.tool()
 def freewise_books(limit: int = 50) -> str:
     """List books that have at least one highlight, with counts."""
     return _call("books failed", lambda: _client().list_books(page=1, page_size=limit))

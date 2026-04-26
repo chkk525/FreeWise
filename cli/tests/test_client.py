@@ -85,3 +85,21 @@ def test_list_books(cli_client):
     assert body["count"] == 1
     assert body["results"][0]["title"] == "Test Book"
     assert body["results"][0]["num_highlights"] == 1
+
+
+def test_backup_streams_to_disk(cli_client, tmp_path):
+    """The CLI backup() method writes a real SQLite blob to disk."""
+    _add_book_with_highlights({"text": "round-trip me"})
+    out = tmp_path / "snap.sqlite"
+    written = cli_client.backup(str(out))
+    assert written > 0
+    blob = out.read_bytes()
+    assert blob[:16] == b"SQLite format 3\x00"
+    # Round-trip: the highlight made it into the snapshot.
+    import sqlite3
+    conn = sqlite3.connect(str(out))
+    try:
+        rows = conn.execute("SELECT text FROM highlight").fetchall()
+    finally:
+        conn.close()
+    assert any(r[0] == "round-trip me" for r in rows)

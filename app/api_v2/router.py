@@ -34,7 +34,8 @@ import logging
 from datetime import date, datetime, UTC
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
@@ -1501,3 +1502,57 @@ def get_stats(
         books_total=books_total,
         review_due_today=review_due,
     )
+
+
+@router.get("/admin/backup")
+def admin_backup(
+    background: BackgroundTasks,
+    token: ApiToken = Depends(get_api_token),
+):
+    """Stream an atomic SQLite snapshot of the database.
+
+    Token-gated. Uses the sqlite3 backup API so it's safe to call while
+    the server is taking writes — the source DB is not blocked beyond
+    brief per-page locks. The snapshot is written to a temp file,
+    streamed to the client, and removed via BackgroundTasks after the
+    response completes.
+
+    Includes ALL tables, including api tokens. Treat the file as a
+    full credential dump and store it the same way you'd store a
+    raw .env (out of git, encrypted at rest).
+    """
+    import os
+    import tempfile
+
+    from app.db import get_engine
+    from app.services.backup import make_backup_to_path
+
+    fd, tmp = tempfile.mkstemp(suffix=".sqlite", prefix="freewise-backup-")
+    os.close(fd)
+    try:
+        make_backup_to_path(get_engine(), tmp)
+    except Exception:
+        # Don't leak the temp file on early failure.
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+    background.add_task(_silent_unlink, tmp)
+    today = date.today().isoformat()
+    return FileResponse(
+        tmp,
+        media_type="application/x-sqlite3",
+        filename=f"freewise-{today}.sqlite",
+    )
+
+
+def _silent_unlink(path: str) -> None:
+    """Remove ``path`` if it exists, swallowing OS errors. Used as a
+    BackgroundTask so a failed cleanup doesn't surface to the client."""
+    import os
+    try:
+        os.unlink(path)
+    except OSError:
+        pass

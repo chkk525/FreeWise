@@ -462,6 +462,25 @@ def cmd_health(args: argparse.Namespace) -> int:
     return 0 if status == "ok" else 1
 
 
+def cmd_backup(args: argparse.Namespace) -> int:
+    """Download an atomic SQLite snapshot to ``--out`` (default: cwd dated)."""
+    import os
+    from datetime import date as _date
+    out = args.out
+    if not out:
+        out = f"freewise-{_date.today().isoformat()}.sqlite"
+    if os.path.exists(out) and not args.force:
+        print(f"refusing to overwrite existing {out!r} (pass --force)", file=sys.stderr)
+        return 2
+    client = _client_from_args(args)
+    written = client.backup(out)
+    if args.json:
+        _print_json({"path": out, "bytes": written})
+        return 0
+    print(f"wrote {written:,} bytes → {out}")
+    return 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     s = client.stats()
@@ -848,6 +867,12 @@ def _build_parser() -> argparse.ArgumentParser:
     # health
     hc = sub.add_parser("health", help="Liveness/readiness probe (status, counts, Ollama).")
     hc.set_defaults(func=cmd_health)
+
+    # backup
+    bk = sub.add_parser("backup", help="Download an atomic SQLite snapshot of the database.")
+    bk.add_argument("--out", help="Output path (default: ./freewise-YYYY-MM-DD.sqlite).")
+    bk.add_argument("--force", action="store_true", help="Overwrite an existing file at --out.")
+    bk.set_defaults(func=cmd_backup)
 
     # import
     im = sub.add_parser("import", help="Upload a CSV (Readwise), JSON (Kindle), or HTML (Meebook) file.")

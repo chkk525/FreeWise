@@ -71,6 +71,35 @@ class Client:
         """Hit the public /healthz probe. Doesn't need auth."""
         return self._request("GET", "/healthz")
 
+    def backup(self, out_path: str) -> int:
+        """Download a SQLite snapshot from /api/v2/admin/backup to ``out_path``.
+
+        Streams the response so the entire DB never sits in memory. Returns
+        the byte size written. Auth required (token-gated endpoint).
+        """
+        target = "/api/v2/admin/backup"
+        headers = self._headers()
+        written = 0
+        if self.http is not None:
+            with self.http.stream("GET", target, headers=headers) as r:
+                if r.status_code != 200:
+                    raise FreewiseError(r.status_code, r.read().decode("utf-8", "replace")[:200])
+                with open(out_path, "wb") as fh:
+                    for chunk in r.iter_bytes(chunk_size=64 * 1024):
+                        fh.write(chunk)
+                        written += len(chunk)
+        else:
+            full = f"{self.url.rstrip('/')}{target}"
+            with httpx.Client(timeout=300.0) as c:
+                with c.stream("GET", full, headers=headers) as r:
+                    if r.status_code != 200:
+                        raise FreewiseError(r.status_code, r.read().decode("utf-8", "replace")[:200])
+                    with open(out_path, "wb") as fh:
+                        for chunk in r.iter_bytes(chunk_size=64 * 1024):
+                            fh.write(chunk)
+                            written += len(chunk)
+        return written
+
     def import_file(self, path: str) -> tuple[int, str]:
         """Upload a CSV or Kindle JSON file to the corresponding /import/ui
         endpoint. Returns (status_code, body_excerpt). The endpoint is
