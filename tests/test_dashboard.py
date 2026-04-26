@@ -67,6 +67,48 @@ class TestDashboardLibraryHealth:
         assert "/highlights/ui/duplicates/semantic" not in resp.text
 
 
+class TestDashboardTaggingCoverage:
+    """Dashboard surfaces an "untagged highlights" count alongside dup hygiene."""
+
+    def test_hidden_when_all_highlights_have_tags(self, client, db, make_highlight):
+        from app.models import Tag, HighlightTag
+        h = make_highlight(text="x")
+        t = Tag(name="topic")
+        db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
+        db.commit()
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "Tagging coverage:" not in resp.text
+
+    def test_shows_untagged_count_when_present(self, client, make_highlight):
+        for _ in range(3):
+            make_highlight(text="orphan")
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "Tagging coverage:" in resp.text
+        assert ">3<" in resp.text  # the count
+        assert "untagged highlight" in resp.text
+
+    def test_system_tags_do_not_count_as_tagged(self, client, db, make_highlight):
+        """A highlight with only `favorite` / `discard` tag rows still counts as
+        untagged — those names represent state, not topic."""
+        from app.models import Tag, HighlightTag
+        h = make_highlight(text="favorited only")  # is_discarded stays False
+        # Attach system-named Tag rows (NOT the is_favorited column).
+        fav = Tag(name="favorite")
+        db.add(fav); db.commit(); db.refresh(fav)
+        db.add(HighlightTag(highlight_id=h.id, tag_id=fav.id))
+        db.commit()
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        # Banner still shows 1 untagged because the system tag is excluded
+        # from the "tagged" count.
+        assert "Tagging coverage:" in resp.text
+        assert ">1<" in resp.text
+        assert "untagged highlight" in resp.text
+
+
 class TestDashboardOnThisDay:
     """Dashboard surfaces highlights from today's MM-DD across past years."""
 

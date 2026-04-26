@@ -141,10 +141,31 @@ async def ui_dashboard(
         .having(func.count(Highlight.id) >= 2)
     ).all()
     from app.services.embeddings import SEMANTIC_COVERAGE_THRESHOLD
+
+    # Count active highlights that carry at least one non-system tag.
+    # System tags (favorite/discard) are stored in the same table but
+    # represent state, not topic — exclude them from the "tagged" count
+    # so the surfaced number matches what the user thinks of as tagging.
+    from app.models import HighlightTag, Tag
+    tagged_ids_count = session.exec(
+        select(func.count(func.distinct(HighlightTag.highlight_id)))
+        .join(Tag, Tag.id == HighlightTag.tag_id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(~Tag.name.in_(["favorite", "discard"]))
+    ).one() or 0
+    untagged_count = max(0, int(active_highlights) - int(tagged_ids_count))
+
     library_health = {
         "dup_groups": len(dup_group_sizes),
         "dup_redundant": sum(int(c) - 1 for c in dup_group_sizes),
         "semantic_ready": embedding_coverage["percent"] >= SEMANTIC_COVERAGE_THRESHOLD * 100,
+        "untagged_count": untagged_count,
+        "untagged_pct": round(
+            (untagged_count / int(active_highlights) * 100) if active_highlights > 0 else 0.0,
+            1,
+        ),
     }
 
     # On-this-day — highlights captured on today's MM-DD across all years.
