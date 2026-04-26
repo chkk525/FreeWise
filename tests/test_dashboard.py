@@ -33,42 +33,64 @@ class TestDashboardEmbeddingCoverage:
         assert "50.0%" in resp.text  # 1 / 2
 
 
-class TestDashboardLibraryHealth:
-    """Dashboard surfaces duplicate-group counts as a library-health card."""
+class TestDashboardDeferLoadWiring:
+    """Main dashboard page should defer the heavy widgets via HTMX, not
+    compute them inline."""
 
-    def test_hidden_when_no_duplicates(self, client, make_highlight):
-        make_highlight(text="solitary highlight that has no twins")
+    def test_health_partial_is_lazy_loaded(self, client):
         resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert 'hx-get="/dashboard/ui/health"' in resp.text
+        assert 'hx-get="/dashboard/ui/on-this-day"' in resp.text
+        # The actual heavy markup should NOT be inline.
+        assert "Library health:" not in resp.text
+        assert "Tagging coverage:" not in resp.text
+
+
+class TestDashboardLibraryHealth:
+    """The /dashboard/ui/health partial returns dup + tagging hygiene."""
+
+    def test_hidden_when_no_duplicates_and_all_tagged(self, client, db, make_highlight):
+        from app.models import Tag, HighlightTag
+        h = make_highlight(text="solitary highlight that has no twins")
+        t = Tag(name="topic")
+        db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
+        db.commit()
+        resp = client.get("/dashboard/ui/health")
         assert resp.status_code == 200
         assert "Library health:" not in resp.text
+        assert "Tagging coverage:" not in resp.text
 
-    def test_shows_dup_groups_when_present(self, client, make_highlight):
-        # Three identical-prefix highlights → 1 group, 2 redundant rows.
+    def test_shows_dup_groups_when_present(self, client, db, make_highlight):
+        # Three identical-prefix highlights, all tagged so only the dup
+        # signal fires and we can assert on it cleanly.
+        from app.models import Tag, HighlightTag
         text = "Dashboard duplicate detection survives the 80-char prefix grouping check"
+        t = Tag(name="topic"); db.add(t); db.commit(); db.refresh(t)
         for _ in range(3):
-            make_highlight(text=text)
-        resp = client.get("/dashboard/ui")
+            h = make_highlight(text=text)
+            db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
+        db.commit()
+        resp = client.get("/dashboard/ui/health")
         assert resp.status_code == 200
         assert "Library health:" in resp.text
-        # Group count + redundant count both rendered
-        assert "1</span>\n                duplicate group" in resp.text or ">1<" in resp.text
+        assert ">1<" in resp.text  # group count
         assert "2 redundant" in resp.text
-        # Exact-duplicates link present
         assert 'href="/highlights/ui/duplicates"' in resp.text
 
     def test_semantic_link_hidden_when_coverage_low(self, client, make_highlight):
         text = "another duplicate prefix that should trigger the health card cleanly"
         for _ in range(2):
             make_highlight(text=text)
-        resp = client.get("/dashboard/ui")
+        resp = client.get("/dashboard/ui/health")
         assert resp.status_code == 200
         assert "Library health:" in resp.text
-        # No embeddings → no semantic link
         assert "/highlights/ui/duplicates/semantic" not in resp.text
 
 
 class TestDashboardTaggingCoverage:
-    """Dashboard surfaces an "untagged highlights" count alongside dup hygiene."""
+    """Tagging coverage signal in the health partial."""
 
     def test_hidden_when_all_highlights_have_tags(self, client, db, make_highlight):
         from app.models import Tag, HighlightTag
@@ -77,48 +99,42 @@ class TestDashboardTaggingCoverage:
         db.add(t); db.commit(); db.refresh(t)
         db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
         db.commit()
-        resp = client.get("/dashboard/ui")
+        resp = client.get("/dashboard/ui/health")
         assert resp.status_code == 200
         assert "Tagging coverage:" not in resp.text
 
     def test_shows_untagged_count_when_present(self, client, make_highlight):
         for _ in range(3):
             make_highlight(text="orphan")
-        resp = client.get("/dashboard/ui")
+        resp = client.get("/dashboard/ui/health")
         assert resp.status_code == 200
         assert "Tagging coverage:" in resp.text
-        assert ">3<" in resp.text  # the count
+        assert ">3<" in resp.text
         assert "untagged highlight" in resp.text
 
     def test_system_tags_do_not_count_as_tagged(self, client, db, make_highlight):
-        """A highlight with only `favorite` / `discard` tag rows still counts as
-        untagged — those names represent state, not topic."""
         from app.models import Tag, HighlightTag
-        h = make_highlight(text="favorited only")  # is_discarded stays False
-        # Attach system-named Tag rows (NOT the is_favorited column).
+        h = make_highlight(text="favorited only")
         fav = Tag(name="favorite")
         db.add(fav); db.commit(); db.refresh(fav)
         db.add(HighlightTag(highlight_id=h.id, tag_id=fav.id))
         db.commit()
-        resp = client.get("/dashboard/ui")
+        resp = client.get("/dashboard/ui/health")
         assert resp.status_code == 200
-        # Banner still shows 1 untagged because the system tag is excluded
-        # from the "tagged" count.
         assert "Tagging coverage:" in resp.text
         assert ">1<" in resp.text
         assert "untagged highlight" in resp.text
 
 
 class TestDashboardOnThisDay:
-    """Dashboard surfaces highlights from today's MM-DD across past years."""
+    """The /dashboard/ui/on-this-day partial returns past-year highlights."""
 
     def test_hidden_when_no_history_on_this_day(self, client, make_highlight):
         from datetime import datetime
-        # Highlight from a different day-of-year so it can't match today.
         d = datetime.now().date()
         other_month = 1 if d.month != 1 else 12
         make_highlight(text="off-date", created_at=datetime(2024, other_month, 15))
-        resp = client.get("/dashboard/ui")
+        resp = client.get("/dashboard/ui/on-this-day")
         assert resp.status_code == 200
         assert "On this day" not in resp.text
 
@@ -133,17 +149,15 @@ class TestDashboardOnThisDay:
             text="another year another highlight",
             created_at=datetime(2024, today.month, today.day, 14, 0),
         )
-        # A non-matching one to prove the filter works.
         make_highlight(
             text="not today", created_at=datetime(2024, 7, 4),
         )
-        resp = client.get("/dashboard/ui")
+        resp = client.get("/dashboard/ui/on-this-day")
         assert resp.status_code == 200
         assert "On this day" in resp.text
         assert "anniversary highlight" in resp.text
         assert "another year another highlight" in resp.text
         assert "not today" not in resp.text
-        # Year labels should appear (newest first).
         assert ">2024<" in resp.text
         assert ">2023<" in resp.text
 

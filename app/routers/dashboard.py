@@ -130,56 +130,11 @@ async def ui_dashboard(
         ),
     }
 
-    # Library health — number of exact-prefix duplicate groups and total
-    # redundant rows that the user could discard. Same prefix length as
-    # the default on /highlights/ui/duplicates so the count matches.
-    dup_group_sizes = session.exec(
-        select(func.count(Highlight.id))
-        .where(Highlight.user_id == 1)
-        .where(Highlight.is_discarded == False)  # noqa: E712
-        .group_by(func.substr(Highlight.text, 1, 80))
-        .having(func.count(Highlight.id) >= 2)
-    ).all()
-    from app.services.embeddings import SEMANTIC_COVERAGE_THRESHOLD
-
-    # Count active highlights that carry at least one non-system tag.
-    # System tags (favorite/discard) are stored in the same table but
-    # represent state, not topic — exclude them from the "tagged" count
-    # so the surfaced number matches what the user thinks of as tagging.
-    from app.models import HighlightTag, Tag
-    tagged_ids_count = session.exec(
-        select(func.count(func.distinct(HighlightTag.highlight_id)))
-        .join(Tag, Tag.id == HighlightTag.tag_id)
-        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
-        .where(Highlight.user_id == 1)
-        .where(Highlight.is_discarded == False)  # noqa: E712
-        .where(~Tag.name.in_(["favorite", "discard"]))
-    ).one() or 0
-    untagged_count = max(0, int(active_highlights) - int(tagged_ids_count))
-
-    library_health = {
-        "dup_groups": len(dup_group_sizes),
-        "dup_redundant": sum(int(c) - 1 for c in dup_group_sizes),
-        "semantic_ready": embedding_coverage["percent"] >= SEMANTIC_COVERAGE_THRESHOLD * 100,
-        "untagged_count": untagged_count,
-        "untagged_pct": round(
-            (untagged_count / int(active_highlights) * 100) if active_highlights > 0 else 0.0,
-            1,
-        ),
-    }
-
-    # On-this-day — highlights captured on today's MM-DD across all years.
-    # Pure SQLite strftime; no Python-side filter so the LIMIT works in DB.
-    today_mmdd = f"{date.today().month:02d}-{date.today().day:02d}"
-    on_this_day = session.exec(
-        select(Highlight)
-        .options(selectinload(Highlight.book))
-        .where(Highlight.user_id == 1)
-        .where(Highlight.is_discarded == False)  # noqa: E712
-        .where(func.strftime("%m-%d", Highlight.created_at) == today_mmdd)
-        .order_by(Highlight.created_at.desc())
-        .limit(5)
-    ).all()
+    # NOTE: library-health (duplicate hygiene + tagging coverage) and
+    # on-this-day used to compute here, but at 25k+ highlights both
+    # require full-table scans (strftime, GROUP BY substr, COUNT DISTINCT).
+    # They're now defer-loaded via /dashboard/ui/health and
+    # /dashboard/ui/on-this-day so the main page returns instantly.
 
     # Tag cloud — counts of highlight-level tags, sorted desc, capped to keep
     # the dashboard widget readable. Single GROUP BY query — no N+1.
@@ -223,9 +178,6 @@ async def ui_dashboard(
         "longest_streak": longest_streak,
         "tag_cloud": tag_cloud,
         "embedding_coverage": embedding_coverage,
-        "library_health": library_health,
-        "on_this_day": on_this_day,
-        "today_mmdd": today_mmdd,
         "kindle_status": kindle_status})
 
 
@@ -233,3 +185,92 @@ async def ui_dashboard(
 def kindle_status(session: Session = Depends(get_session)) -> Dict[str, Any]:
     """Return JSON snapshot of Kindle import state for dashboards / probes."""
     return asdict(get_kindle_status(session))
+
+
+@router.get("/ui/health", response_class=HTMLResponse)
+async def ui_dashboard_health(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Defer-loaded library-health partial: dup-group count + untagged count.
+
+    Splits two full-table scans off the main dashboard handler so /dashboard/ui
+    can return immediately. The partial is fetched via HTMX after page load.
+    """
+    from app.models import HighlightTag, Tag
+    from app.services.embeddings import SEMANTIC_COVERAGE_THRESHOLD
+
+    active_count = session.exec(
+        select(func.count(Highlight.id))
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one() or 0
+    active_count = int(active_count)
+
+    dup_group_sizes = session.exec(
+        select(func.count(Highlight.id))
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(func.substr(Highlight.text, 1, 80))
+        .having(func.count(Highlight.id) >= 2)
+    ).all()
+
+    tagged_ids_count = session.exec(
+        select(func.count(func.distinct(HighlightTag.highlight_id)))
+        .join(Tag, Tag.id == HighlightTag.tag_id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(~Tag.name.in_(["favorite", "discard"]))
+    ).one() or 0
+    untagged_count = max(0, active_count - int(tagged_ids_count))
+
+    # Embedding coverage % is recomputed here so the partial owns its
+    # own state — the parent page no longer passes it through.
+    from app.models import Embedding
+    from app.services.embeddings import _env_model
+    embed_model = _env_model()
+    embedded_count = session.exec(
+        select(func.count(func.distinct(Embedding.highlight_id)))
+        .where(Embedding.model_name == embed_model)
+    ).one() or 0
+    coverage_pct = (
+        (int(embedded_count) / active_count * 100) if active_count > 0 else 0.0
+    )
+
+    library_health = {
+        "dup_groups": len(dup_group_sizes),
+        "dup_redundant": sum(int(c) - 1 for c in dup_group_sizes),
+        "semantic_ready": coverage_pct >= SEMANTIC_COVERAGE_THRESHOLD * 100,
+        "untagged_count": untagged_count,
+        "untagged_pct": round(
+            (untagged_count / active_count * 100) if active_count > 0 else 0.0,
+            1,
+        ),
+    }
+    return templates.TemplateResponse(
+        request, "_dashboard_health.html",
+        {"library_health": library_health},
+    )
+
+
+@router.get("/ui/on-this-day", response_class=HTMLResponse)
+async def ui_dashboard_on_this_day(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Defer-loaded on-this-day partial — past-year highlights for today's MM-DD."""
+    today_mmdd = f"{date.today().month:02d}-{date.today().day:02d}"
+    on_this_day = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(func.strftime("%m-%d", Highlight.created_at) == today_mmdd)
+        .order_by(Highlight.created_at.desc())
+        .limit(5)
+    ).all()
+    return templates.TemplateResponse(
+        request, "_dashboard_on_this_day.html",
+        {"on_this_day": on_this_day, "today_mmdd": today_mmdd},
+    )

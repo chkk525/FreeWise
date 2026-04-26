@@ -165,51 +165,10 @@
 </div>
 {% endif %}
 
-{# ── Library health: duplicate hygiene + tagging coverage ─────────── #}
-{% if library_health and (library_health.dup_groups > 0 or library_health.untagged_count > 0) %}
-<div class="mb-6 space-y-2">
-    {% if library_health.dup_groups > 0 %}
-    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-center gap-3 flex-wrap">
-        <i data-lucide="copy" class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0"></i>
-        <div class="flex-1 text-sm min-w-0">
-            <p class="font-medium text-gray-900 dark:text-white">
-                Library health:
-                <span class="font-mono">{{ library_health.dup_groups }}</span>
-                duplicate group{{ 's' if library_health.dup_groups != 1 else '' }}
-                <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">
-                    ({{ library_health.dup_redundant }} redundant row{{ 's' if library_health.dup_redundant != 1 else '' }} could be discarded)
-                </span>
-            </p>
-            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-                <a href="/highlights/ui/duplicates" class="underline hover:text-amber-700 dark:hover:text-amber-300">Review exact duplicates</a>
-                {% if library_health.semantic_ready %}
-                · <a href="/highlights/ui/duplicates/semantic" class="underline hover:text-amber-700 dark:hover:text-amber-300">semantic near-duplicates</a>
-                {% endif %}
-            </p>
-        </div>
-    </div>
-    {% endif %}
-    {% if library_health.untagged_count > 0 %}
-    <div class="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl p-4 flex items-center gap-3 flex-wrap">
-        <i data-lucide="tags" class="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0"></i>
-        <div class="flex-1 text-sm min-w-0">
-            <p class="font-medium text-gray-900 dark:text-white">
-                Tagging coverage:
-                <span class="font-mono">{{ library_health.untagged_count }}</span>
-                untagged highlight{{ 's' if library_health.untagged_count != 1 else '' }}
-                <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">({{ library_health.untagged_pct }}% of active)</span>
-            </p>
-            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-                <a href="/highlights/ui/search" class="underline hover:text-sky-700 dark:hover:text-sky-300">Open search</a>
-                and bulk-tag from the action bar, or run
-                <code class="font-mono bg-white dark:bg-gray-900 px-1 py-0.5 rounded">freewise suggest-tags</code>
-                from the CLI.
-            </p>
-        </div>
-    </div>
-    {% endif %}
-</div>
-{% endif %}
+{# ── Library health: defer-loaded so the dashboard returns instantly
+     even on a 25k-row library. Empty if no actionable signal. #}
+<div id="dashboard-health" class="mb-6"
+     hx-get="/dashboard/ui/health" hx-trigger="load once" hx-swap="innerHTML"></div>
 
 {# ── Tag cloud ─────────────────────────────────────────────────────── #}
 {% if tag_cloud and tag_cloud|length > 0 %}
@@ -245,31 +204,10 @@
 </div>
 {% endif %}
 
-{# ── On this day ──────────────────────────────────────────────────── #}
-{% if on_this_day and on_this_day|length > 0 %}
-<div class="mb-8">
-    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-        <i data-lucide="calendar-days" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
-        On this day
-        <span class="text-sm font-normal text-gray-500 dark:text-gray-400 ml-1">— captured on {{ today_mmdd }} in past years</span>
-    </h3>
-    <div class="space-y-3">
-        {% for h in on_this_day %}
-        <a href="/highlights/ui/h/{{ h.id }}" class="block no-underline group">
-            <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                <div class="flex items-start justify-between gap-3 mb-2">
-                    <p class="text-xs text-blue-700 dark:text-blue-300 font-mono shrink-0">{{ h.created_at.year }}</p>
-                    {% if h.book %}
-                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate text-right">{{ h.book.title }}{% if h.book.author %} · {{ h.book.author }}{% endif %}</p>
-                    {% endif %}
-                </div>
-                <p class="font-serif text-sm text-gray-900 dark:text-gray-100 line-clamp-3">{{ h.text }}</p>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
+{# ── On-this-day: defer-loaded; strftime() filter cannot use any
+     index, so a 25k-row scan should not block the main page render. #}
+<div id="dashboard-on-this-day" class="mb-8"
+     hx-get="/dashboard/ui/on-this-day" hx-trigger="load once" hx-swap="innerHTML"></div>
 
 <!-- Review Activity Heatmap -->
 <div class="mb-10 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
