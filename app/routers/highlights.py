@@ -5,7 +5,7 @@ import math
 import random
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
@@ -1831,4 +1831,38 @@ async def bulk_action(
     )
     response.headers["HX-Refresh"] = "true"
     return response
+
+
+# ── Tag autocomplete ────────────────────────────────────────────────────────
+
+_TAG_AUTOCOMPLETE_LIMIT = 30
+# Tags reserved for legacy favorite/discard pseudo-flags. Excluded from
+# autocomplete because the bulk-tag UI is for *user* tags — favoriting and
+# discarding have their own dedicated buttons.
+_TAG_AUTOCOMPLETE_EXCLUDED = ("favorite", "discard")
+
+
+@router.get("/tags/autocomplete", response_class=PlainTextResponse)
+async def tags_autocomplete(session: Session = Depends(get_session)) -> PlainTextResponse:
+    """Return the user's most-used tag names as plain text, one per line.
+
+    Powers the bulk-tag input's <datalist> autocomplete in the action bar.
+    Cache-friendly plain-text response (no JSON envelope) so a browser/CDN
+    can revalidate cheaply. Excludes the legacy 'favorite'/'discard'
+    pseudo-tags and caps the list at 30 to keep the dropdown tight.
+    Scoped to user_id=1 for single-user mode, matching every other HTML
+    route in this module.
+    """
+    rows = session.exec(
+        select(Tag.name, func.count(HighlightTag.highlight_id).label("c"))
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Tag.name.notin_(_TAG_AUTOCOMPLETE_EXCLUDED))
+        .group_by(Tag.name)
+        .order_by(func.count(HighlightTag.highlight_id).desc())
+        .limit(_TAG_AUTOCOMPLETE_LIMIT)
+    ).all()
+    body = "\n".join(name for name, _ in rows)
+    return PlainTextResponse(content=body)
 

@@ -1070,3 +1070,155 @@ class TestSearchFacets:
         assert r.status_code == 200
         assert "Favorites only" in r.text
         assert "Has note" in r.text
+
+
+class TestTagAutocomplete:
+    """GET /highlights/tags/autocomplete — bulk-tag input suggestions."""
+
+    def _attach(self, client, highlight_id, name):
+        """Helper: attach a tag to a highlight via the existing UI endpoint."""
+        client.post(
+            f"/highlights/{highlight_id}/tags/add",
+            data={"new_tag": name},
+        )
+
+    def _attach_many(self, client, highlight_id, names):
+        for n in names:
+            self._attach(client, highlight_id, n)
+
+    def test_returns_plain_text_200(self, client, make_highlight):
+        h = make_highlight(text="x")
+        self._attach(client, h.id, "python")
+        resp = client.get("/highlights/tags/autocomplete")
+        assert resp.status_code == 200
+        # Starlette appends "; charset=utf-8" — accept that as long as it's text/plain.
+        assert resp.headers["content-type"].startswith("text/plain")
+
+    def test_one_name_per_line_sorted_by_usage_desc(self, client, make_highlight):
+        # Three highlights; tag "alpha" attached to all three, "beta" to two,
+        # "gamma" to one. Expected order: alpha, beta, gamma.
+        h1 = make_highlight(text="a")
+        h2 = make_highlight(text="b")
+        h3 = make_highlight(text="c")
+        self._attach_many(client, h1.id, ["alpha", "beta", "gamma"])
+        self._attach_many(client, h2.id, ["alpha", "beta"])
+        self._attach_many(client, h3.id, ["alpha"])
+
+        resp = client.get("/highlights/tags/autocomplete")
+        assert resp.status_code == 200
+        lines = resp.text.split("\n")
+        assert lines == ["alpha", "beta", "gamma"]
+
+    def test_excludes_system_tags(self, client, make_highlight, db):
+        """'favorite' and 'discard' Tag rows must not appear even if present."""
+        from app.models import Tag, HighlightTag
+
+        h = make_highlight(text="x")
+        # Manually insert reserved Tag rows + links since the /tags/add
+        # endpoint silently rejects them. We're simulating legacy data.
+        for name in ("favorite", "discard"):
+            t = Tag(name=name)
+            db.add(t)
+            db.commit()
+            db.refresh(t)
+            db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
+        db.commit()
+        # Add a real tag too so the response is non-empty.
+        self._attach(client, h.id, "real-tag")
+
+        resp = client.get("/highlights/tags/autocomplete")
+        assert resp.status_code == 200
+        lines = [ln for ln in resp.text.split("\n") if ln]
+        assert "favorite" not in lines
+        assert "discard" not in lines
+        assert "real-tag" in lines
+
+    def test_caps_at_thirty(self, client, make_highlight):
+        h = make_highlight(text="x")
+        # 35 distinct tags on a single highlight — all have count=1, so the
+        # ORDER BY tie-breaks arbitrarily; we only assert the cap.
+        for i in range(35):
+            self._attach(client, h.id, f"tag-{i:02d}")
+        resp = client.get("/highlights/tags/autocomplete")
+        assert resp.status_code == 200
+        lines = [ln for ln in resp.text.split("\n") if ln]
+        assert len(lines) == 30
+
+    def test_empty_result_returns_empty_body_200(self, client):
+        # No highlights, no tags — endpoint should still 200 with empty body.
+        resp = client.get("/highlights/tags/autocomplete")
+        assert resp.status_code == 200
+        assert resp.text == ""
+
+
+class TestPermalinkOgMeta:
+    """The /highlights/ui/h/{id} permalink emits Open Graph + Twitter Card
+    meta tags so a shared URL expands richly in Slack/Twitter/iMessage."""
+
+    def test_og_meta_renders_with_book(self, client, make_highlight, make_book):
+        book = make_book(title="Sapiens", author="Yuval Noah Harari")
+        h = make_highlight(text="A short highlight to share.", book=book)
+        r = client.get(f"/highlights/ui/h/{h.id}")
+        assert r.status_code == 200
+        assert '<meta property="og:type" content="article">' in r.text
+        assert '<meta property="og:title" content="Sapiens">' in r.text
+        assert 'A short highlight to share.' in r.text
+        assert '<meta name="twitter:card" content="summary">' in r.text
+
+    def test_og_title_falls_back_when_no_book(self, client, db, make_highlight):
+        # Force book_id=None after creation since the fixture auto-creates
+        # a default book when none is supplied.
+        h = make_highlight(text="orphan highlight")
+        h_db = db.get(Highlight, h.id)
+        h_db.book_id = None
+        db.add(h_db); db.commit()
+
+        r = client.get(f"/highlights/ui/h/{h.id}")
+        assert r.status_code == 200
+        assert '<meta property="og:title" content="FreeWise highlight">' in r.text
+
+    def test_og_description_truncates_at_200(self, client, make_highlight):
+        long_text = "x" * 250
+        h = make_highlight(text=long_text)
+        r = client.get(f"/highlights/ui/h/{h.id}")
+        assert r.status_code == 200
+        # Description in og:description should be 200 x's + ellipsis.
+        truncated = "x" * 200 + "…"
+        assert f'<meta property="og:description" content="{truncated}">' in r.text
+
+    def test_og_description_no_truncation_when_short(self, client, make_highlight):
+        h = make_highlight(text="short")
+        r = client.get(f"/highlights/ui/h/{h.id}")
+        assert r.status_code == 200
+        # No ellipsis appended.
+        assert '<meta property="og:description" content="short">' in r.text
+
+    def test_og_meta_escapes_html_in_text(self, client, make_highlight):
+        # XSS-safety: a <script> in the highlight body must not break out
+        # of the meta content attribute.
+        h = make_highlight(text='<script>alert(1)</script>')
+        r = client.get(f"/highlights/ui/h/{h.id}")
+        assert r.status_code == 200
+        # Raw <script> must NOT appear inside any og: or twitter: meta tag.
+        # (It's fine if it shows up elsewhere on the page autoescaped to &lt;.)
+        import re
+        meta_lines = re.findall(r'<meta[^>]*(?:og:|twitter:)[^>]*>', r.text)
+        for m in meta_lines:
+            assert "<script>" not in m
+
+    def test_og_meta_escapes_quote_in_book_title(self, client, make_highlight, make_book):
+        book = make_book(title='Crash"course', author="A")
+        h = make_highlight(text="x", book=book)
+        r = client.get(f"/highlights/ui/h/{h.id}")
+        assert r.status_code == 200
+        # The " inside the title must be HTML-escaped or it would terminate
+        # the content attribute.
+        assert ('content="Crash&#34;course"' in r.text
+                or 'content="Crash&quot;course"' in r.text)
+
+    def test_og_meta_absent_on_dashboard(self, client):
+        r = client.get("/dashboard/ui")
+        assert r.status_code == 200
+        # Other pages keep the empty og_meta block — no og:* tags.
+        assert "og:type" not in r.text
+        assert "twitter:card" not in r.text

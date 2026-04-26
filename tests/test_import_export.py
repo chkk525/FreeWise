@@ -708,3 +708,126 @@ class TestCSVExport:
         assert rows[0]["Note"] == "A note"
         assert rows[0]["Location"] == "7"
         assert rows[0]["Location Type"] == "page"
+
+
+class TestMarkdownExportFilters:
+    """GET /export/markdown.zip — filter params mirror /export/csv (U88).
+
+    Each test verifies the resulting ZIP only contains .md files for books
+    that have at least one matching highlight after filtering — empty books
+    must NOT produce empty .md files.
+    """
+
+    @staticmethod
+    def _open_zip(resp):
+        import io as _io
+        import zipfile as _zip
+        return _zip.ZipFile(_io.BytesIO(resp.content))
+
+    def test_filter_favorited_only(self, client, make_highlight, make_book):
+        """favorited_only=true returns only books that have a favorited match."""
+        b1 = make_book(title="FavBook")
+        b2 = make_book(title="PlainBook")
+        make_highlight(text="keep me", book=b1, is_favorited=True)
+        make_highlight(text="not me", book=b2)
+
+        resp = client.get("/export/markdown.zip?favorited_only=true")
+        assert resp.status_code == 200
+        zf = self._open_zip(resp)
+        names = zf.namelist()
+        # Only the favorited book's .md should be in the archive.
+        assert any("FavBook" in n for n in names)
+        assert not any("PlainBook" in n for n in names)
+        body = zf.read(next(n for n in names if "FavBook" in n)).decode("utf-8")
+        assert "keep me" in body
+        assert "not me" not in body
+        assert "highlight_count: 1" in body
+
+    def test_filter_book_id(self, client, make_highlight, make_book):
+        """book_id scopes the export to a single book."""
+        b1 = make_book(title="One")
+        b2 = make_book(title="Two")
+        make_highlight(text="from one", book=b1)
+        make_highlight(text="from two", book=b2)
+
+        resp = client.get(f"/export/markdown.zip?book_id={b1.id}")
+        assert resp.status_code == 200
+        names = self._open_zip(resp).namelist()
+        assert any("One" in n for n in names)
+        assert not any(n == "Two.md" for n in names)
+        # Only one .md emitted because only one book matches.
+        assert len(names) == 1
+
+    def test_filter_author(self, client, make_highlight, make_book):
+        """author exact-match filters by Book.author."""
+        a = make_book(title="A1", author="Alice")
+        b = make_book(title="B1", author="Bob")
+        make_highlight(text="alice quote", book=a)
+        make_highlight(text="bob quote", book=b)
+
+        resp = client.get("/export/markdown.zip?author=Alice")
+        assert resp.status_code == 200
+        names = self._open_zip(resp).namelist()
+        assert any("A1" in n for n in names)
+        assert not any("B1" in n for n in names)
+        assert len(names) == 1
+
+    def test_filter_tag(self, client, db, make_highlight, make_book):
+        """tag filter narrows highlights, dropping books without a match."""
+        from app.models import Tag, HighlightTag
+        b1 = make_book(title="Tagged")
+        b2 = make_book(title="Untagged")
+        h1 = make_highlight(text="ml stuff", book=b1)
+        make_highlight(text="other stuff", book=b2)
+        t = Tag(name="ml"); db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h1.id, tag_id=t.id))
+        db.commit()
+
+        resp = client.get("/export/markdown.zip?tag=ml")
+        assert resp.status_code == 200
+        zf = self._open_zip(resp)
+        names = zf.namelist()
+        assert any("Tagged" in n and "Untagged" not in n for n in names)
+        assert not any("Untagged" in n for n in names)
+        body = zf.read(next(n for n in names if "Tagged" in n)).decode("utf-8")
+        assert "ml stuff" in body
+        assert "other stuff" not in body
+
+    def test_filter_no_match_returns_400(self, client, make_highlight):
+        """When all filters narrow to zero rows, return the U88 message."""
+        make_highlight(text="nothing favorited")
+
+        resp = client.get("/export/markdown.zip?favorited_only=true")
+        assert resp.status_code == 400
+        # Same message shape as /export/csv's filter-narrowed-to-zero branch.
+        assert "filters" in resp.text.lower()
+        assert "No highlights match the supplied filters" in resp.text
+
+    def test_filters_compose(self, client, db, make_highlight, make_book):
+        """tag + favorited_only must AND, not OR — and only the matching
+        book gets a .md file."""
+        from app.models import Tag, HighlightTag
+        b1 = make_book(title="Match")
+        b2 = make_book(title="OtherBook")
+        h_fav_tagged = make_highlight(text="fav+tag", book=b1, is_favorited=True)
+        make_highlight(text="fav only", book=b1, is_favorited=True)
+        h_tag_only = make_highlight(text="tag only", book=b2)
+        t = Tag(name="ml"); db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h_fav_tagged.id, tag_id=t.id))
+        db.add(HighlightTag(highlight_id=h_tag_only.id, tag_id=t.id))
+        db.commit()
+
+        resp = client.get("/export/markdown.zip?tag=ml&favorited_only=true")
+        assert resp.status_code == 200
+        zf = self._open_zip(resp)
+        names = zf.namelist()
+        # Only the book with a fav+tag highlight should produce a file.
+        assert any("Match" in n for n in names)
+        assert not any("OtherBook" in n for n in names)
+        assert len(names) == 1
+        body = zf.read(next(n for n in names if "Match" in n)).decode("utf-8")
+        assert "fav+tag" in body
+        # The fav-only and tag-only highlights are filtered out.
+        assert "fav only" not in body
+        assert "tag only" not in body
+        assert "highlight_count: 1" in body

@@ -252,28 +252,68 @@ def _render_book_markdown(book: Book, highlights: list[Highlight]) -> str:
 
 
 @router.get("/markdown.zip")
-async def export_markdown_zip(session: Session = Depends(get_session)):
+async def export_markdown_zip(
+    session: Session = Depends(get_session),
+    tag: str | None = Query(default=None, description="Restrict to highlights with this exact tag name."),
+    book_id: int | None = Query(default=None, description="Restrict to highlights from this book."),
+    author: str | None = Query(default=None, description="Restrict to highlights from books by this exact author."),
+    favorited_only: bool = Query(default=False, description="Only include is_favorited=True rows."),
+    active_only: bool = Query(default=False, description="Exclude is_discarded=True rows."),
+):
     """Stream a ZIP of one Markdown file per book (Obsidian/Logseq friendly).
 
     Excludes discarded highlights — the Markdown export is meant to populate
     a knowledge vault, not preserve trash. Re-running the export overwrites
     files in the destination vault.
+
+    Supports the same conjunctive filter params as ``/export/csv`` (U88) so a
+    user can export "just my favorites" or "just one tag" as Obsidian-friendly
+    markdown without first re-importing the CSV. Only books that have at
+    least one matching highlight after filtering produce a ``.md`` file.
     """
-    # Fetch all books that have at least one non-discarded highlight, then
-    # group highlights per book. One pass each — no N+1.
-    rows = session.exec(
+    statement = (
         select(Highlight, Book)
         .outerjoin(Book, Highlight.book_id == Book.id)
         .where(Highlight.is_discarded == False)  # noqa: E712
-        .order_by(
-            Highlight.book_id.asc().nullslast(),
-            Highlight.location.asc().nullslast(),
-            Highlight.created_at.asc().nullslast(),
-            Highlight.id.asc(),
+    )
+
+    tag_clean = (tag or "").strip()
+    author_clean = (author or "").strip()
+    has_filter = bool(tag_clean or book_id or author_clean or favorited_only or active_only)
+
+    if tag_clean:
+        statement = statement.where(
+            Highlight.id.in_(
+                select(HighlightTag.highlight_id)
+                .join(Tag, Tag.id == HighlightTag.tag_id)
+                .where(Tag.name == tag_clean)
+            )
         )
-    ).all()
+    if book_id is not None:
+        statement = statement.where(Highlight.book_id == book_id)
+    if author_clean:
+        statement = statement.where(Book.author == author_clean)
+    if favorited_only:
+        statement = statement.where(Highlight.is_favorited == True)  # noqa: E712
+    if active_only:
+        statement = statement.where(Highlight.is_discarded == False)  # noqa: E712
+
+    statement = statement.order_by(
+        Highlight.book_id.asc().nullslast(),
+        Highlight.location.asc().nullslast(),
+        Highlight.created_at.asc().nullslast(),
+        Highlight.id.asc(),
+    )
+    rows = session.exec(statement).all()
 
     if not rows:
+        # Mirror the CSV endpoint: distinguish "filters too narrow" from the
+        # historical empty-library 400 so callers can react appropriately.
+        if has_filter:
+            raise HTTPException(
+                status_code=400,
+                detail="No highlights match the supplied filters.",
+            )
         raise HTTPException(status_code=400, detail="No active highlights to export.")
 
     by_book: dict[int | None, list[Highlight]] = defaultdict(list)

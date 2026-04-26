@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}FreeWise{% endblock %}</title>
-    
+
+    {# Open Graph / Twitter Card meta. Empty by default; pages that benefit
+       from rich link previews (highlight_permalink.html) override this block. #}
+    {% block og_meta %}{% endblock %}
+
     <!-- Local CSS -->
     <link rel="stylesheet" href="/static/css/fonts.css">
     <link rel="stylesheet" href="/static/css/tailwind.css">

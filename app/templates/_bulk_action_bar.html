@@ -38,7 +38,10 @@
         <i data-lucide="tag" class="w-4 h-4 text-gray-500"></i>
         <input id="bulk-tag-input" type="text" placeholder="tag…" maxlength="64"
                autocomplete="off"
+               list="bulk-tag-suggestions"
                class="bg-transparent text-sm focus:outline-none w-24 placeholder-gray-400">
+        {# Populated on load by the IIFE below from /highlights/tags/autocomplete. #}
+        <datalist id="bulk-tag-suggestions"></datalist>
         <button type="button"
                 class="bulk-action-btn text-xs font-medium text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100"
                 data-bulk-action="tag">add</button>
@@ -133,6 +136,31 @@
             if (window.showToast) window.showToast('Network error during bulk action', 'error');
         }
     });
+
+    // Populate the tag-input datalist with the user's most-used tags so the
+    // browser shows native autocomplete suggestions on focus / typing. Plain-
+    // text endpoint (one tag per line) keeps this dirt-cheap and CDN-cache
+    // friendly. Failures are non-fatal — the input still works without
+    // suggestions.
+    (function loadTagSuggestions() {
+        const datalist = document.getElementById('bulk-tag-suggestions');
+        if (!datalist) return;
+        fetch('/highlights/tags/autocomplete', { headers: { 'Accept': 'text/plain' } })
+            .then(r => r.ok ? r.text() : '')
+            .then(body => {
+                if (!body) return;
+                const frag = document.createDocumentFragment();
+                body.split('\n').forEach(name => {
+                    const trimmed = name.trim();
+                    if (!trimmed) return;
+                    const opt = document.createElement('option');
+                    opt.value = trimmed;
+                    frag.appendChild(opt);
+                });
+                datalist.appendChild(frag);
+            })
+            .catch(() => { /* non-fatal */ });
+    })();
 
     refresh();
 })();
