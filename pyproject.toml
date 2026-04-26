@@ -5,6 +5,12 @@ requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
+# Only collect the main app's tests by default. cli/ and mcp/ have their own
+# conftest.py files that can't coexist in a single pytest collection because
+# they each set up an in-process FastAPI app. Run them individually:
+#   uv run pytest cli/tests/
+#   uv run pytest mcp/tests/
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
