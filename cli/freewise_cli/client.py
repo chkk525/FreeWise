@@ -103,6 +103,34 @@ class Client:
     def stats(self) -> dict:
         return self._request("GET", "/api/v2/stats")
 
+    def stream_export(self, fmt: str) -> tuple[bytes, str | None]:
+        """Fetch /export/<fmt> and return (bytes, suggested filename).
+
+        Streams when possible — uses httpx.stream in production. With an
+        injected sync HTTP client (TestClient) we just call request() since
+        TestClient already buffers the response into memory.
+        """
+        if fmt == "csv":
+            path = "/export/csv"
+        elif fmt in ("md", "markdown"):
+            path = "/export/markdown.zip"
+        else:
+            raise ValueError(f"Unknown export format: {fmt!r}")
+
+        if self.http is not None:
+            r = self.http.request("GET", path, headers=self._headers())
+            if r.status_code >= 400:
+                raise FreewiseError(r.status_code, r.text)
+            cd = r.headers.get("content-disposition", "")
+            return r.content, _filename_from_cd(cd)
+
+        full = f"{self.url.rstrip('/')}{path}"
+        with httpx.Client(timeout=120.0) as c:
+            r = c.get(full, headers=self._headers())
+        if r.status_code >= 400:
+            raise FreewiseError(r.status_code, r.text)
+        return r.content, _filename_from_cd(r.headers.get("content-disposition", ""))
+
     def create_highlight(self, *, text: str, title: str | None = None,
                          author: str | None = None, note: str | None = None,
                          location: int | None = None,
@@ -116,3 +144,12 @@ class Client:
         return self._request(
             "POST", "/api/v2/highlights/", json={"highlights": [item]},
         )
+
+
+def _filename_from_cd(cd: str) -> str | None:
+    """Pull the filename out of a Content-Disposition header. Best-effort."""
+    if not cd:
+        return None
+    import re
+    m = re.search(r'filename="([^"]+)"', cd)
+    return m.group(1) if m else None

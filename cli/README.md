@@ -46,6 +46,10 @@ freewise restore 1234
 
 freewise add --text "captured quote" \
              --book "Book Title" --author "Author"
+
+freewise export csv -o backup.csv          # Readwise-compatible CSV
+freewise export markdown -o vault.zip      # Obsidian/Logseq-ready ZIP
+freewise export csv | head                 # any export streams to stdout if -o omitted
 ```
 
 ## Using from Claude Code

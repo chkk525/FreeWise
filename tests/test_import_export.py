@@ -290,6 +290,79 @@ class TestCSVExport:
         ]
         assert headers == expected
 
+    def test_markdown_export_returns_zip(self, client, make_highlight, make_book):
+        """GET /export/markdown.zip should return a ZIP with one .md per book."""
+        import io as _io
+        import zipfile as _zip
+        b = make_book(title="My Book", author="Alice", document_tags="philosophy, stoicism")
+        make_highlight(text="An important quote", note="why this matters", book=b, location=42)
+        make_highlight(text="another quote", book=b)
+
+        resp = client.get("/export/markdown.zip")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+        assert "attachment" in resp.headers.get("content-disposition", "")
+        zf = _zip.ZipFile(_io.BytesIO(resp.content))
+        names = zf.namelist()
+        assert any("My Book" in n and n.endswith(".md") for n in names)
+        body = zf.read(names[0]).decode("utf-8")
+        # Frontmatter is present
+        assert body.startswith("---")
+        assert 'title: "My Book"' in body
+        assert 'author: "Alice"' in body
+        assert "highlight_count: 2" in body
+        # Tags appear in YAML
+        assert '- "philosophy"' in body
+        assert '- "stoicism"' in body
+        # Blockquotes
+        assert "> An important quote" in body
+        assert "> another quote" in body
+        # Note rendered as paragraph
+        assert "why this matters" in body
+        # Location surface
+        assert "location 42" in body
+
+    def test_markdown_export_excludes_discarded(self, client, make_highlight, make_book):
+        b = make_book(title="Book")
+        make_highlight(text="alive", book=b)
+        make_highlight(text="dead", book=b, is_discarded=True)
+        import io as _io, zipfile as _zip
+        resp = client.get("/export/markdown.zip")
+        assert resp.status_code == 200
+        body = _zip.ZipFile(_io.BytesIO(resp.content)).read("Book.md").decode("utf-8")
+        assert "alive" in body
+        assert "dead" not in body
+        assert "highlight_count: 1" in body
+
+    def test_markdown_export_400_when_empty(self, client):
+        resp = client.get("/export/markdown.zip")
+        assert resp.status_code == 400
+
+    def test_markdown_export_safe_filename(self, client, make_highlight, make_book):
+        """Filenames must strip OS-unsafe chars but keep unicode."""
+        import io as _io, zipfile as _zip
+        b = make_book(title='C/O \\Slash:Title?*"<>|')
+        make_highlight(text="x", book=b)
+        resp = client.get("/export/markdown.zip")
+        assert resp.status_code == 200
+        names = _zip.ZipFile(_io.BytesIO(resp.content)).namelist()
+        assert any(n.endswith(".md") for n in names)
+        for ch in '\\/:*?"<>|':
+            assert not any(ch in n for n in names)
+
+    def test_markdown_export_handles_collision(self, client, make_highlight, make_book):
+        """Two books with the same title must produce distinct .md filenames."""
+        import io as _io, zipfile as _zip
+        b1 = make_book(title="Same Name")
+        b2 = make_book(title="Same Name")
+        make_highlight(text="a", book=b1)
+        make_highlight(text="b", book=b2)
+        resp = client.get("/export/markdown.zip")
+        assert resp.status_code == 200
+        names = _zip.ZipFile(_io.BytesIO(resp.content)).namelist()
+        # Either {"Same Name.md", "Same Name (1).md"} or similar — must be 2 distinct.
+        assert len(set(names)) == 2
+
     def test_export_loads_tags_in_one_query(self, client, db, make_highlight):
         """Tags must be bulk-loaded — N highlights must NOT emit N tag queries."""
         h1 = make_highlight(text="With tags A")

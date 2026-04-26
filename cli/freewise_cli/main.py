@@ -249,6 +249,28 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body, suggested_name = client.stream_export(args.format)
+    if args.output is None or args.output == "-":
+        # Stream to stdout. CSV is text — write to the encoding-aware buffer.
+        # Markdown ZIP is binary — write to the underlying buffer.
+        if args.format == "csv":
+            sys.stdout.write(body.decode("utf-8", errors="replace"))
+        else:
+            sys.stdout.buffer.write(body)
+        return 0
+    out_path = args.output
+    # If user passed a directory, append the server-suggested filename.
+    import os
+    if os.path.isdir(out_path):
+        out_path = os.path.join(out_path, suggested_name or f"freewise-export.{args.format}")
+    with open(out_path, "wb") as f:
+        f.write(body)
+    print(f"wrote {len(body):,} bytes to {out_path}")
+    return 0
+
+
 def cmd_add(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body = client.create_highlight(
@@ -340,6 +362,20 @@ def _build_parser() -> argparse.ArgumentParser:
     rest = sub.add_parser("restore", help="Restore a discarded highlight to active.")
     rest.add_argument("highlight_id", type=int)
     rest.set_defaults(func=cmd_restore)
+
+    # export
+    ex = sub.add_parser("export", help="Download CSV or Markdown ZIP export.")
+    ex.add_argument(
+        "format",
+        choices=["csv", "markdown", "md"],
+        help="csv = Readwise-compatible CSV; markdown/md = Obsidian-ready ZIP.",
+    )
+    ex.add_argument(
+        "-o", "--output",
+        help="Output path. If omitted or '-', stream to stdout. If a directory, "
+             "use the server-suggested filename.",
+    )
+    ex.set_defaults(func=cmd_export)
 
     # add
     a = sub.add_parser("add", help="Create a new highlight (manual capture).")

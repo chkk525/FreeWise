@@ -119,6 +119,38 @@ def test_discard_and_restore(http_client, auth_token, capsys):
         assert s.get(Highlight, hid).is_discarded is False
 
 
+# ── export ───────────────────────────────────────────────────────────────
+
+
+def test_export_csv_to_file(http_client, auth_token, capsys, tmp_path):
+    _add_highlight("export me")
+    out = tmp_path / "snap.csv"
+    rc, msg, _ = _run(["export", "csv", "-o", str(out)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert out.exists()
+    content = out.read_text(encoding="utf-8")
+    assert "export me" in content
+    assert "wrote" in msg and str(out) in msg
+
+
+def test_export_csv_stdout(http_client, auth_token, capsys):
+    _add_highlight("stdout me")
+    rc, out, _ = _run(["export", "csv"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "stdout me" in out
+
+
+def test_export_markdown_to_file(http_client, auth_token, capsys, tmp_path):
+    import zipfile
+    _add_highlight("md content")
+    out = tmp_path / "vault.zip"
+    rc, _, _ = _run(["export", "markdown", "-o", str(out)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert zipfile.is_zipfile(out)
+    names = zipfile.ZipFile(out).namelist()
+    assert any(n.endswith(".md") for n in names)
+
+
 # ── add (manual capture) ──────────────────────────────────────────────────
 
 
