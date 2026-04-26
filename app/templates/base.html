@@ -164,7 +164,20 @@
     <style>
         .kbd { display:inline-block; padding:1px 6px; border:1px solid #d1d5db; background:#f9fafb; border-radius:4px; font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#374151; }
         @media (prefers-color-scheme: dark) { .kbd { background:#111827; border-color:#4b5563; color:#e5e7eb; } }
+        /* Toast notifications: fixed bottom-right column, animated in/out. */
+        #toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
+        .toast { pointer-events: auto; min-width: 240px; max-width: 360px; padding: 0.625rem 0.875rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,.15), 0 4px 6px -4px rgba(0,0,0,.1); display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; opacity: 0; transform: translateY(8px); transition: opacity 180ms ease, transform 180ms ease; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+        .toast-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .toast-info    { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+        @media (prefers-color-scheme: dark) {
+            .toast-success { background: #064e3b; color: #d1fae5; border-color: #047857; }
+            .toast-error   { background: #7f1d1d; color: #fee2e2; border-color: #b91c1c; }
+            .toast-info    { background: #1e3a8a; color: #dbeafe; border-color: #2563eb; }
+        }
     </style>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Scripts at bottom for proper loading order -->
     <script>
@@ -426,6 +439,44 @@
                 });
             });
         }
+
+        // Toast notifications. Anyone can call window.showToast(msg, type, ms).
+        // HTMX requests auto-toast: success when the trigger has data-toast-success,
+        // error on any non-2xx response.
+        window.showToast = function (message, type, durationMs) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const t = document.createElement('div');
+            t.className = 'toast toast-' + (type || 'info');
+            t.setAttribute('role', type === 'error' ? 'alert' : 'status');
+            const icon = type === 'error' ? 'alert-circle' : (type === 'success' ? 'check-circle-2' : 'info');
+            t.innerHTML = '<i data-lucide="' + icon + '" class="w-4 h-4 flex-shrink-0"></i><span class="flex-1">' + String(message).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + '</span>';
+            container.appendChild(t);
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+            // Trigger CSS transition on next frame.
+            requestAnimationFrame(function () { t.classList.add('show'); });
+            const ttl = durationMs || (type === 'error' ? 6000 : 2500);
+            setTimeout(function () {
+                t.classList.remove('show');
+                setTimeout(function () { t.remove(); }, 220);
+            }, ttl);
+        };
+
+        document.body.addEventListener('htmx:afterRequest', function (evt) {
+            const xhr = evt.detail && evt.detail.xhr;
+            const elt = evt.detail && evt.detail.elt;
+            if (!xhr) return;
+            const ok = xhr.status >= 200 && xhr.status < 300;
+            if (ok) {
+                const msg = elt && elt.dataset && elt.dataset.toastSuccess;
+                if (msg) window.showToast(msg, 'success');
+            } else if (xhr.status >= 400) {
+                // Server may return a plain-text error in body; trim long bodies.
+                let msg = (xhr.responseText || '').trim();
+                if (!msg || msg.length > 200) msg = 'Request failed (' + xhr.status + ')';
+                window.showToast(msg, 'error');
+            }
+        });
 
         function initAll() {
             initLucideIcons();
