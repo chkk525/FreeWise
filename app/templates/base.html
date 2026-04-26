@@ -178,6 +178,17 @@
         }
     </style>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <!-- Global HTMX progress bar: animates while any HTMX request is in flight. -->
+    <div id="htmx-progress" aria-hidden="true"></div>
+    <style>
+        /* Top-of-page progress bar for in-flight HTMX requests. */
+        #htmx-progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: linear-gradient(90deg, #3b82f6, #22d3ee); z-index: 70; opacity: 0; transition: width 240ms ease, opacity 200ms ease; pointer-events: none; }
+        #htmx-progress.active { opacity: 1; width: 80%; transition: width 8s cubic-bezier(.05,.85,.2,.99), opacity 80ms ease; }
+        #htmx-progress.done   { width: 100%; opacity: 0; transition: width 200ms ease, opacity 320ms ease 180ms; }
+        /* Per-element in-flight feedback: dim + disable pointer + spinner. */
+        .htmx-request { opacity: 0.55; pointer-events: none; cursor: wait; }
+        .htmx-request.htmx-request { /* HTMX adds this twice when nested; keep specificity */ }
+    </style>
 
     <!-- Scripts at bottom for proper loading order -->
     <script>
@@ -477,6 +488,39 @@
                 window.showToast(msg, 'error');
             }
         });
+
+        // Top-of-page progress bar — driven purely by HTMX request lifecycle.
+        // Reference-counted so overlapping requests don't end the bar early.
+        (function () {
+            const bar = document.getElementById('htmx-progress');
+            if (!bar) return;
+            let inflight = 0;
+            let resetTimer = null;
+            function start() {
+                inflight += 1;
+                if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+                bar.classList.remove('done');
+                // Force reflow so the width transition restarts.
+                bar.classList.remove('active');
+                void bar.offsetWidth;
+                bar.classList.add('active');
+            }
+            function end() {
+                inflight = Math.max(0, inflight - 1);
+                if (inflight > 0) return;
+                bar.classList.remove('active');
+                bar.classList.add('done');
+                resetTimer = setTimeout(function () {
+                    bar.classList.remove('done');
+                    bar.style.width = '0';
+                }, 520);
+            }
+            document.body.addEventListener('htmx:beforeRequest', start);
+            document.body.addEventListener('htmx:afterRequest', end);
+            // sendError fires without a matching afterRequest in some cases.
+            document.body.addEventListener('htmx:sendError', end);
+            document.body.addEventListener('htmx:responseError', end);
+        })();
 
         function initAll() {
             initLucideIcons();
