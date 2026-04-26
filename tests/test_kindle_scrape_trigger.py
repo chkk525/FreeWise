@@ -67,7 +67,40 @@ class TestTriggerScrape:
         with pytest.raises(trig.ScrapeAlreadyRunning):
             trig.trigger_scrape()
         # Cleanup — don't leave the sleep child orphaned.
-        trig.cancel_scrape()
+        trig._cancel_scrape_blocking()
+
+    def test_concurrent_threads_only_spawn_once(self, isolated_state, monkeypatch):
+        """U100 review HIGH #2 fix: the trigger lock must serialize the
+        read-check-write so two threads racing both produce one Popen
+        and one ScrapeAlreadyRunning, not two child processes."""
+        import threading
+        monkeypatch.setenv("KINDLE_SCRAPE_CMD", f"{sys.executable} -c \"import time; time.sleep(2)\"")
+
+        results: list = []
+        errors: list = []
+        barrier = threading.Barrier(2)
+
+        def worker():
+            barrier.wait()
+            try:
+                results.append(trig.trigger_scrape())
+            except trig.ScrapeAlreadyRunning as e:
+                errors.append(e)
+
+        t1 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=worker)
+        t1.start(); t2.start()
+        t1.join(); t2.join()
+
+        # Exactly one trigger should have succeeded; the other must have
+        # been rejected with ScrapeAlreadyRunning.
+        assert len(results) == 1
+        assert len(errors) == 1
+        # And only one process should be alive.
+        status = trig.get_status()
+        assert status.running is True
+        # Cleanup.
+        trig._cancel_scrape_blocking()
 
     def test_log_tail_captures_stdout(self, isolated_state, monkeypatch):
         # Echo a known marker; the log tail should pick it up.
@@ -89,7 +122,7 @@ class TestTriggerScrape:
         monkeypatch.setenv("KINDLE_SCRAPE_CMD", f"{sys.executable} -c \"import time; time.sleep(30)\"")
         trig.trigger_scrape()
         assert trig.get_status().running is True
-        trig.cancel_scrape()
+        trig._cancel_scrape_blocking()
         # Poll up to ~3s — SIGTERM delivery + Python signal handler +
         # process exit can take a noticeable beat on a busy CI host.
         for _ in range(60):
@@ -131,4 +164,4 @@ class TestScrapeEndpoints:
         # Either we caught it running, or it already finished — both fine.
         assert ("Scraping read.amazon.com" in r.text) or ("Scrape now" in r.text)
         # Cleanup
-        trig.cancel_scrape()
+        trig._cancel_scrape_blocking()

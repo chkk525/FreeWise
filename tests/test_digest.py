@@ -158,4 +158,5 @@ class TestAdminDigestEndpoint:
             headers={"Authorization": "Token good-token"},
         )
         assert resp.status_code == 503
-        assert "SMTP not configured" in resp.text
+        # Generic message — full reason is logged server-side, not echoed.
+        assert "SMTP is not configured" in resp.text

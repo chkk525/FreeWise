@@ -17,11 +17,13 @@ and the trigger endpoint returns 503.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shlex
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -35,6 +37,12 @@ _ENV_LOG_TAIL_BYTES = "KINDLE_SCRAPE_LOG_TAIL_BYTES"
 
 _DEFAULT_STATE_PATH = "/tmp/freewise-kindle-scrape.json"
 _DEFAULT_LOG_TAIL = 4096
+
+# Process-local mutex around the read-check-write sequence in
+# trigger_scrape() — without this, two concurrent POST /scrape-now
+# requests can both pass the "running?" check before either writes
+# state, double-spawning the scraper. (U100 review HIGH #2.)
+_TRIGGER_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -210,47 +218,49 @@ def trigger_scrape() -> ScrapeStatus:
     if not cmd_str:
         raise ScrapeNotConfigured(f"{_ENV_CMD} env var is not set")
 
-    current = get_status()
-    if current.running:
-        raise ScrapeAlreadyRunning(
-            f"scrape already running (pid={current.pid}, started={current.started_at})"
+    # Hold the lock across the read-check-write so two concurrent
+    # callers can't both pass the running check.
+    with _TRIGGER_LOCK:
+        current = get_status()
+        if current.running:
+            raise ScrapeAlreadyRunning(
+                f"scrape already running (pid={current.pid}, started={current.started_at})"
+            )
+
+        log_path = str(_state_path().with_suffix(".log"))
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        log_fh = open(log_path, "wb")
+
+        # shlex split so the env var can be a full command line, but we
+        # also accept a single binary path (no spaces) without splitting.
+        argv = shlex.split(cmd_str)
+        proc = subprocess.Popen(
+            argv,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,  # detach from the uvicorn process group
         )
+        log_fh.close()  # the subprocess holds its own fd
 
-    log_path = str(_state_path().with_suffix(".log"))
-    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
-    log_fh = open(log_path, "wb")
+        handle = _ProcessHandle(
+            pid=proc.pid,
+            started_at=_now_iso(),
+            cmd=cmd_str,
+            log_path=log_path,
+        )
+        _write_handle(handle)
 
-    # shlex split so the env var can be a full command line, but we
-    # also accept a single binary path (no spaces) without splitting.
-    argv = shlex.split(cmd_str)
-    proc = subprocess.Popen(
-        argv,
-        stdout=log_fh,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,  # detach from the uvicorn process group
-    )
-    log_fh.close()  # the subprocess holds its own fd
-
-    handle = _ProcessHandle(
-        pid=proc.pid,
-        started_at=_now_iso(),
-        cmd=cmd_str,
-        log_path=log_path,
-    )
-    _write_handle(handle)
-    # Brief sleep so the OS commits the fork before we report status.
+    # Outside the lock — brief sleep so the OS commits the fork before
+    # we report status.
     time.sleep(0.05)
     return get_status()
 
 
-def cancel_scrape() -> ScrapeStatus:
-    """Best-effort kill of a running scrape. Sends SIGTERM first, then
-    escalates to SIGKILL if the process hasn't died within ~1.5s. The
-    real-world child is a shell script calling ``docker compose``;
-    polite SIGTERM to the wrapper doesn't always propagate to the
-    container, so the escalation is necessary in practice.
-    """
+def _cancel_scrape_blocking() -> ScrapeStatus:
+    """Blocking implementation — sleeps up to ~1.6s. Use ``cancel_scrape``
+    (async) from request handlers; only call this directly from sync
+    code or when you've already moved off the event loop."""
     current = get_status()
     if not current.running or not current.pid:
         return current
@@ -274,3 +284,19 @@ def cancel_scrape() -> ScrapeStatus:
         # Give the kernel a beat to mark the entry dead.
         time.sleep(0.1)
     return get_status()
+
+
+async def cancel_scrape() -> ScrapeStatus:
+    """Best-effort kill of a running scrape. Sends SIGTERM first, then
+    escalates to SIGKILL if the process hasn't died within ~1.5s. Real-
+    world child is a shell wrapper around ``docker compose``; polite
+    SIGTERM doesn't always propagate to the container, so escalation
+    is necessary.
+
+    Async-first so the up-to-1.6s wait doesn't block the uvicorn event
+    loop. Falls back to sync ``_cancel_scrape_blocking`` for callers
+    that aren't on the loop.
+    """
+    return await asyncio.get_running_loop().run_in_executor(
+        None, _cancel_scrape_blocking
+    )

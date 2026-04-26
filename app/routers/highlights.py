@@ -934,6 +934,7 @@ async def ui_highlight_quote_image(
     Twitter/Slack image-fetchers reuse a single render across many
     impressions.
     """
+    import asyncio
     from fastapi.responses import Response
     from app.services.quote_card import render_quote_png
 
@@ -947,7 +948,11 @@ async def ui_highlight_quote_image(
 
     title = h.book.title if h.book else None
     author = h.book.author if h.book else None
-    png = render_quote_png(h.text or "", book_title=title, book_author=author)
+    # Pillow render is CPU-bound 50-200ms; off-load so the uvicorn event
+    # loop stays responsive when several social scrapers fetch in burst.
+    png = await asyncio.get_running_loop().run_in_executor(
+        None, render_quote_png, h.text or "", title, author,
+    )
     return Response(
         content=png,
         media_type="image/png",

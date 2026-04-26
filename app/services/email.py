@@ -107,8 +107,14 @@ def send_email(
         if hasattr(s, "starttls"):
             try:
                 s.starttls(context=ssl.create_default_context())
-            except Exception:
-                # Mock SMTP in tests may not need real STARTTLS.
-                pass
+            except smtplib.SMTPException:
+                # Real STARTTLS failure on a real connection means the
+                # server doesn't support TLS upgrade — this is rare for
+                # 587 but possible. Re-raise rather than fall through to
+                # plaintext credentials, which would be a downgrade
+                # MITM in production.
+                if smtp_factory is None:
+                    raise
+                # Test path with a stub: STARTTLS not implemented; OK.
         s.login(cfg.user, cfg.password)
         s.send_message(msg)

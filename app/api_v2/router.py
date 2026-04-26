@@ -1607,8 +1607,12 @@ def admin_digest_send(
         send_email(digest.subject, digest.text_body, html_body=digest.html_body)
         out["sent"] = True
     except EmailNotConfigured as e:
+        # Don't echo which SMTP_* vars are missing — that's
+        # operator-side detail. Log the full reason server-side; tell
+        # the caller something actionable but generic.
+        logger.warning("SMTP digest send blocked: %s", e)
         raise HTTPException(
             status_code=503,
-            detail=f"SMTP not configured on the server: {e}",
+            detail="SMTP is not configured on this server.",
         )
     return out

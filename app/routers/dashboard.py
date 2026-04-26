@@ -234,7 +234,7 @@ async def kindle_scrape_now(request: Request) -> HTMLResponse:
 async def kindle_scrape_cancel(request: Request) -> HTMLResponse:
     """SIGTERM a running scrape. Idempotent — no-op if nothing's running."""
     from app.services.kindle_scrape_trigger import cancel_scrape
-    status = cancel_scrape()
+    status = await cancel_scrape()
     return templates.TemplateResponse(
         request, "_kindle_scrape_status.html",
         {"scrape": status},
