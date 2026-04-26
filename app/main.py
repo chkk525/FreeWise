@@ -251,6 +251,8 @@ async def healthz():
     from app.models import Highlight, Embedding
     from app.services.embeddings import _env_url, _env_model
 
+    import logging as _logging
+    log = _logging.getLogger("freewise.healthz")
     engine = get_engine()
     out: dict = {"status": "ok"}
     try:
@@ -271,12 +273,26 @@ async def healthz():
         }
         out["embed_model"] = embed_model
     except Exception as e:  # noqa: BLE001
+        # Don't surface internal exception text to unauthenticated callers
+        # (could include connection strings, paths). Log full error
+        # server-side for the operator.
+        log.exception("healthz: db check failed")
         out["status"] = "degraded"
-        out["db_error"] = str(e)
+        out["db_error"] = "database unreachable"
 
     # Best-effort Ollama check — short timeout so the probe stays cheap.
+    # Don't return the full URL: an internal hostname leaks network
+    # topology to anyone who can hit /healthz. Just report the host
+    # (no scheme, no port) so operators can still see WHERE we're
+    # pointing without exposing internal addressing.
     ollama_url = _env_url()
-    out["ollama"] = {"url": ollama_url, "reachable": False}
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(ollama_url)
+        ollama_host = parsed.hostname or "?"
+    except Exception:  # noqa: BLE001
+        ollama_host = "?"
+    out["ollama"] = {"host": ollama_host, "reachable": False}
     try:
         import httpx
         r = httpx.get(f"{ollama_url}/api/tags", timeout=2.0)

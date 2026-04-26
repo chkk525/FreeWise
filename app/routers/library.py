@@ -85,9 +85,14 @@ async def ui_library(
     # author. LIKE wildcards in the user's query are escaped so a "%"
     # query matches a literal percent rather than every row.
     q_clean = (q or "").strip()
+
+    def _like_pattern(needle: str) -> str:
+        """Escape SQL LIKE wildcards in user input, then wrap in %."""
+        escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return f"%{escaped}%"
+
     if q_clean:
-        needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{needle}%"
+        pattern = _like_pattern(q_clean)
         books_query = books_query.where(
             Book.title.like(pattern, escape="\\")
             | Book.author.like(pattern, escape="\\")
@@ -106,8 +111,7 @@ async def ui_library(
         total_query = total_query.where(Book.author == author_filter)
     if q_clean:
         # Mirror the same LIKE filter so pagination math stays right.
-        needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{needle}%"
+        pattern = _like_pattern(q_clean)
         total_query = total_query.where(
             Book.title.like(pattern, escape="\\")
             | Book.author.like(pattern, escape="\\")

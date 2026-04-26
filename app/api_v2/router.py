@@ -35,7 +35,7 @@ from datetime import datetime, UTC
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import Field
+from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
 from app.api_v2.auth import get_api_token
@@ -659,7 +659,7 @@ def update_highlight(
 # ── Highlight-level tags ────────────────────────────────────────────────────
 
 
-class _SummarizeRequest(__import__("pydantic").BaseModel):
+class _SummarizeRequest(BaseModel):
     """POST body for /api/v2/books/{id}/summarize."""
 
     question: Optional[str] = None  # optional override; default is "summarize"
@@ -724,7 +724,7 @@ def summarize_book(
     return out
 
 
-class _AskRequest(__import__("pydantic").BaseModel):
+class _AskRequest(BaseModel):
     """POST body for /api/v2/ask."""
 
     question: str
@@ -768,7 +768,7 @@ def ask(
     return result.as_dict()
 
 
-class _BackfillRequest(__import__("pydantic").BaseModel):
+class _BackfillRequest(BaseModel):
     """POST body for /api/v2/embeddings/backfill."""
 
     # 256 is well above the optimal Ollama batch (~64) but caps the
@@ -890,7 +890,7 @@ def related_highlights(
     return PaginatedResponse(count=len(results), results=results)
 
 
-class _AppendNotePayload(__import__("pydantic").BaseModel):
+class _AppendNotePayload(BaseModel):
     text: str = Field(..., min_length=1, max_length=8191)
 
 
@@ -914,10 +914,20 @@ def append_highlight_note(
     extra = payload.text.strip()
     if not extra:
         raise HTTPException(status_code=400, detail="text cannot be empty.")
-    if h.note:
-        h.note = f"{h.note.rstrip()}\n\n{extra}"
-    else:
-        h.note = extra
+    combined = f"{h.note.rstrip()}\n\n{extra}" if h.note else extra
+    # Enforce the same 8191-char cap that applies to a single SET. An
+    # 8000-char existing note + 8000-char append would otherwise silently
+    # store a 16000-char note (SQLite TEXT has no hard limit) and break
+    # any client that assumes the documented cap holds.
+    if len(combined) > 8191:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Combined note would be {len(combined)} chars; "
+                "max is 8191. Edit the existing note instead."
+            ),
+        )
+    h.note = combined
     session.add(h)
     session.commit()
     session.refresh(h)
@@ -1069,7 +1079,7 @@ def list_authors(
     return PaginatedResponse(count=total, results=results)
 
 
-class _TagRenamePayload(__import__("pydantic").BaseModel):
+class _TagRenamePayload(BaseModel):
     new_name: str = Field(..., min_length=1, max_length=64)
 
 
@@ -1125,7 +1135,7 @@ def rename_tag(
     return TagSummaryItem(name=dst_name, highlight_count=int(cnt))
 
 
-class _TagMergePayload(__import__("pydantic").BaseModel):
+class _TagMergePayload(BaseModel):
     into: str = Field(..., min_length=1, max_length=64)
 
 
@@ -1183,7 +1193,7 @@ def merge_tag(
     return TagSummaryItem(name=dst_name, highlight_count=int(cnt))
 
 
-class _AuthorRenamePayload(__import__("pydantic").BaseModel):
+class _AuthorRenamePayload(BaseModel):
     new_name: str = Field(..., min_length=1, max_length=512)
 
 

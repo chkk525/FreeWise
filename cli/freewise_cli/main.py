@@ -357,7 +357,10 @@ def cmd_health(args: argparse.Namespace) -> int:
     print(f"active:        {hl.get('active', '?')}")
     print(f"embedded:      {hl.get('embedded', '?')} ({hl.get('embedded_pct', '?')}%)")
     ok = "yes" if ol.get("reachable") else "no"
-    print(f"ollama:        {ok} @ {ol.get('url', '?')}")
+    # U67: /healthz now exposes host-only (not full url) to avoid leaking
+    # internal topology. Stay forward-compatible with both shapes.
+    target = ol.get("host") or ol.get("url") or "?"
+    print(f"ollama:        {ok} @ {target}")
     # Non-zero exit if degraded so it can drive monitor scripts.
     return 0 if status == "ok" else 1
 

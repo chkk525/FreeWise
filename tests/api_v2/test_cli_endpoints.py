@@ -336,6 +336,19 @@ def test_append_note_404_for_other_user(client, db, make_highlight):
     assert r.status_code == 404
 
 
+def test_append_note_rejects_combined_overflow(client, db, make_highlight):
+    """U67 hardening: existing 8000 + append 8000 must NOT silently
+    store a 16k-char note (SQLite has no hard cap)."""
+    headers = _auth_headers(db)
+    h = make_highlight(text="x", note="A" * 8000)
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/note/append", headers=headers,
+        json={"text": "B" * 5000},
+    )
+    assert r.status_code == 400
+    assert "8191" in r.json()["detail"]
+
+
 def test_append_note_rejects_empty(client, db, make_highlight):
     headers = _auth_headers(db)
     h = make_highlight(text="x")

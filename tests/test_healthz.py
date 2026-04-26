@@ -46,3 +46,16 @@ def test_healthz_ollama_reachable_field_always_present(client):
     resp = client.get("/healthz")
     assert resp.status_code == 200
     assert isinstance(resp.json()["ollama"]["reachable"], bool)
+
+
+def test_healthz_does_not_leak_full_ollama_url(client):
+    """U67 hardening: full URL was leaking internal topology to
+    unauthenticated callers. Host-only is acceptable; full URL is not."""
+    body = client.get("/healthz").json()
+    ol = body.get("ollama", {})
+    # Must NOT carry the raw url/scheme/port.
+    assert "url" not in ol
+    # Host present and not the full URL.
+    assert "host" in ol
+    assert "://" not in ol["host"]
+    assert ":" not in ol["host"]  # no port leaked either
