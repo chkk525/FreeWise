@@ -31,7 +31,7 @@ Compatibility scope and known limits:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, UTC
+from datetime import date, datetime, UTC
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -564,6 +564,49 @@ def find_duplicates(
         })
 
     return PaginatedResponse(count=len(results), results=results)
+
+
+@router.get("/highlights/today", response_model=HighlightDetail)
+def highlight_of_the_day(
+    salt: Optional[str] = Query(default=None, max_length=64,
+                                description="Optional salt to vary the daily pick (e.g. 'morning', 'evening')."),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> HighlightDetail:
+    """One stable "highlight of the day" — same row for all callers today.
+
+    Deterministic = a daily email, a calendar widget, and the in-app
+    dashboard can all show the SAME highlight today. Different from
+    /random (which changes per call). Refreshes at local midnight.
+
+    Implementation: use ``date.today()`` (server local) + total active
+    highlight count to seed an index into the ordered candidate list.
+    Mastered rows are *included* (mastery hides from review, not from
+    serendipitous re-exposure); discarded rows are excluded.
+    Optional ``salt`` varies the pick — useful for "morning/evening"
+    style multiple-per-day rotations.
+    """
+    import hashlib
+
+    base = (
+        select(Highlight.id)
+        .where(Highlight.user_id == token.user_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(Highlight.id.asc())
+    )
+    ids = [hid for hid in session.exec(base).all()]
+    if not ids:
+        raise HTTPException(status_code=404, detail="No highlights to pick from.")
+
+    seed = f"{date.today().isoformat()}:{salt or ''}".encode()
+    digest = int.from_bytes(hashlib.sha256(seed).digest()[:8], "big")
+    index = digest % len(ids)
+    chosen_id = ids[index]
+
+    h = session.get(Highlight, chosen_id)
+    book = session.get(Book, h.book_id) if h.book_id is not None else None
+    tags = _tags_for_highlight(session, h.id)
+    return _highlight_to_detail(h, book, tags=tags)
 
 
 @router.get("/highlights/random", response_model=HighlightDetail)

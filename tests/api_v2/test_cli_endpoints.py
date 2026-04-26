@@ -181,6 +181,56 @@ def test_duplicates_requires_auth(client):
     assert client.get("/api/v2/highlights/duplicates").status_code == 401
 
 
+def test_today_returns_stable_pick(client, db, make_highlight):
+    """Two consecutive calls on the same day should return the same row."""
+    headers = _auth_headers(db)
+    for i in range(20):
+        make_highlight(text=f"row-{i}")
+    a = client.get("/api/v2/highlights/today", headers=headers).json()
+    b = client.get("/api/v2/highlights/today", headers=headers).json()
+    assert a["id"] == b["id"]
+
+
+def test_today_salt_changes_pick(client, db, make_highlight):
+    """Different salts should generally pick different rows.
+
+    With 20 candidates the probability of two distinct salts colliding
+    is 1/20 = 5%. We try several salt pairs to keep flakes near zero.
+    """
+    headers = _auth_headers(db)
+    for i in range(20):
+        make_highlight(text=f"row-{i}")
+    seen = set()
+    for salt in ("morning", "afternoon", "evening", "night", "early"):
+        body = client.get(
+            "/api/v2/highlights/today", headers=headers, params={"salt": salt},
+        ).json()
+        seen.add(body["id"])
+    # At least 2 distinct picks across 5 salts on a 20-row corpus.
+    assert len(seen) >= 2
+
+
+def test_today_404_when_empty(client, db):
+    headers = _auth_headers(db)
+    resp = client.get("/api/v2/highlights/today", headers=headers)
+    assert resp.status_code == 404
+
+
+def test_today_excludes_discarded(client, db, make_highlight):
+    """The daily pick must never select a discarded row."""
+    headers = _auth_headers(db)
+    make_highlight(text="alive")
+    h = make_highlight(text="dead")
+    h.is_discarded = True
+    db.add(h); db.commit()
+    body = client.get("/api/v2/highlights/today", headers=headers).json()
+    assert body["text"] == "alive"
+
+
+def test_today_requires_auth(client):
+    assert client.get("/api/v2/highlights/today").status_code == 401
+
+
 def test_random_returns_one_highlight(client, db, make_highlight):
     headers = _auth_headers(db)
     make_highlight(text="alpha")

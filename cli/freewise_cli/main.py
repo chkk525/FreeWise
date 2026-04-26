@@ -332,6 +332,18 @@ def cmd_duplicates(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_today(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    h = client.today_highlight(salt=args.salt)
+    if args.json:
+        _print_json(h)
+        return 0
+    print(f"Highlight of the day ({getattr(args, 'salt', None) or 'default'}):")
+    print()
+    _print_highlight_full(h)
+    return 0
+
+
 def cmd_random(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     h = client.random_highlight(book_id=getattr(args, "book_id", None))
@@ -681,6 +693,11 @@ def _build_parser() -> argparse.ArgumentParser:
     rd = sub.add_parser("random", help="Pick one random highlight (surprise me).")
     rd.add_argument("--book-id", type=int, help="Limit to one book.")
     rd.set_defaults(func=cmd_random)
+
+    # today (deterministic daily pick)
+    td = sub.add_parser("today", help="Stable highlight of the day (same all day).")
+    td.add_argument("--salt", help="Optional salt to vary the pick (e.g. 'morning').")
+    td.set_defaults(func=cmd_today)
 
     # duplicates
     dp = sub.add_parser("duplicates", help="Find probable duplicate highlights (e.g. after re-import).")

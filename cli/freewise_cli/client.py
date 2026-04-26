@@ -136,6 +136,12 @@ class Client:
             },
         )
 
+    def today_highlight(self, *, salt: str | None = None) -> dict:
+        params: dict[str, Any] = {}
+        if salt:
+            params["salt"] = salt
+        return self._request("GET", "/api/v2/highlights/today", params=params)
+
     def random_highlight(self, *, include_discarded: bool = False,
                          include_mastered: bool = True,
                          book_id: int | None = None) -> dict:

@@ -31,6 +31,7 @@ TAG_RENAME = server.freewise_tag_rename
 TAG_MERGE = server.freewise_tag_merge
 AUTHOR_RENAME = server.freewise_author_rename
 RANDOM = server.freewise_random
+TODAY = server.freewise_today
 DUPLICATES = server.freewise_duplicates
 STATS = server.freewise_stats
 HEALTH = server.freewise_health
@@ -113,6 +114,13 @@ def test_random_returns_a_highlight(patched_client):
     _add("alpha"); _add("beta")
     out = json.loads(RANDOM())
     assert out["text"] in ("alpha", "beta")
+
+
+def test_today_returns_stable_pick(patched_client):
+    _add("alpha"); _add("beta")
+    a = json.loads(TODAY())
+    b = json.loads(TODAY())
+    assert a["id"] == b["id"]
 
 
 def test_show_returns_full_detail(patched_client):
@@ -308,14 +316,14 @@ def test_author_rename_via_mcp(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 26 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 27 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
-        "freewise_random", "freewise_related", "freewise_ask",
-        "freewise_summarize_book", "freewise_duplicates",
+        "freewise_random", "freewise_today", "freewise_related",
+        "freewise_ask", "freewise_summarize_book", "freewise_duplicates",
         "freewise_stats", "freewise_health",
         "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",

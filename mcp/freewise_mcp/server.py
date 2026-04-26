@@ -200,6 +200,22 @@ def freewise_duplicates(prefix_chars: int = 80, min_group_size: int = 2, limit: 
 
 
 @mcp.tool()
+def freewise_today(salt: str | None = None) -> str:
+    """Stable "highlight of the day" — same row for all callers today.
+
+    Different from ``freewise_random`` (which changes per call). Useful
+    for daily-focus prompts: "What's my highlight of the day, and what
+    other highlights in my library connect to it?"
+    Pass ``salt`` (e.g. "morning") to get a different stable pick within
+    the same day.
+    """
+    return _call(
+        "today failed",
+        lambda: _client().today_highlight(salt=salt),
+    )
+
+
+@mcp.tool()
 def freewise_random(book_id: int | None = None) -> str:
     """Return one random highlight from the user's library — "surprise me".
 
