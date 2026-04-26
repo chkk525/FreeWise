@@ -97,6 +97,16 @@ def freewise_show(highlight_id: int) -> str:
 
 
 @mcp.tool()
+def freewise_random(book_id: int | None = None) -> str:
+    """Return one random highlight from the user's library — "surprise me".
+
+    Optional ``book_id`` scopes to a single book. Mastered highlights are
+    included by default (mastery hides from review, not from serendipity).
+    """
+    return _call("random failed", lambda: _client().random_highlight(book_id=book_id))
+
+
+@mcp.tool()
 def freewise_stats() -> str:
     """Aggregate counts: total/active/discarded/favorited highlights, books, review-due."""
     return _call("stats failed", lambda: _client().stats())

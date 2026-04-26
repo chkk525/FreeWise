@@ -707,6 +707,34 @@ async def ui_discarded(
     )
 
 
+@router.get("/ui/random", response_class=HTMLResponse)
+async def ui_random(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Return the markup for one random non-discarded highlight.
+
+    Used by the dashboard "highlight of the moment" widget. Mastered
+    highlights are *included* — mastery means "stop quizzing me", not
+    "hide forever"; serendipitous re-exposure is fine.
+    """
+    h = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(func.random())
+        .limit(1)
+    ).first()
+    if h is None:
+        # Empty-state HTML so the widget can swap in something useful.
+        return HTMLResponse(
+            '<p class="text-sm text-gray-500 dark:text-gray-400">No highlights yet.</p>',
+        )
+    return templates.TemplateResponse(
+        request, "_random_highlight.html", {"highlight": h},
+    )
+
+
 @router.get("/ui/mastered", response_class=HTMLResponse)
 async def ui_mastered(
     request: Request,

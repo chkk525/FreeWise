@@ -481,6 +481,37 @@ def search_highlights(
     return PaginatedResponse(count=count, results=results)
 
 
+@router.get("/highlights/random", response_model=HighlightDetail)
+def random_highlight(
+    include_discarded: bool = Query(default=False),
+    include_mastered: bool = Query(default=True),
+    book_id: Optional[int] = Query(default=None),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> HighlightDetail:
+    """One random highlight from the user's library.
+
+    Useful for dashboard "highlight of the moment" widgets, daily emails,
+    and "surprise me" buttons. Defaults exclude discarded but include
+    mastered (mastery is just a review-queue exclusion — the highlight
+    is still surface-able for serendipitous re-exposure).
+    """
+    stmt = select(Highlight).where(Highlight.user_id == token.user_id)
+    if not include_discarded:
+        stmt = stmt.where(Highlight.is_discarded == False)  # noqa: E712
+    if not include_mastered:
+        stmt = stmt.where(Highlight.is_mastered == False)  # noqa: E712
+    if book_id is not None:
+        stmt = stmt.where(Highlight.book_id == book_id)
+    stmt = stmt.order_by(func.random()).limit(1)
+    h = session.exec(stmt).first()
+    if h is None:
+        raise HTTPException(status_code=404, detail="No highlights match the filter.")
+    book = session.get(Book, h.book_id) if h.book_id is not None else None
+    tags = _tags_for_highlight(session, h.id)
+    return _highlight_to_detail(h, book, tags=tags)
+
+
 @router.get("/highlights/{highlight_id}", response_model=HighlightDetail)
 def get_highlight(
     highlight_id: int,

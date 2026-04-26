@@ -258,6 +258,32 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestRandomHighlight:
+    """GET /highlights/ui/random — random-highlight HTML partial."""
+
+    def test_random_renders_partial(self, client, make_highlight):
+        make_highlight(text="surprise me")
+        resp = client.get("/highlights/ui/random")
+        assert resp.status_code == 200
+        assert "surprise me" in resp.text
+        # The shuffle button targets the wrapper id.
+        assert 'id="random-highlight-card"' in resp.text
+
+    def test_random_excludes_discarded(self, client, make_highlight):
+        make_highlight(text="alive")
+        make_highlight(text="dead", is_discarded=True)
+        # Sample several times to trip a regression in the filter.
+        for _ in range(8):
+            resp = client.get("/highlights/ui/random")
+            assert "alive" in resp.text
+            assert "dead" not in resp.text
+
+    def test_random_empty_state(self, client):
+        resp = client.get("/highlights/ui/random")
+        assert resp.status_code == 200
+        assert "No highlights" in resp.text
+
+
 class TestMasteredPage:
     """GET /highlights/ui/mastered — mastered listing."""
 

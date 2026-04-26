@@ -87,6 +87,17 @@ class Client:
     def get_highlight(self, highlight_id: int) -> dict:
         return self._request("GET", f"/api/v2/highlights/{highlight_id}")
 
+    def random_highlight(self, *, include_discarded: bool = False,
+                         include_mastered: bool = True,
+                         book_id: int | None = None) -> dict:
+        params: dict[str, Any] = {
+            "include_discarded": str(include_discarded).lower(),
+            "include_mastered": str(include_mastered).lower(),
+        }
+        if book_id is not None:
+            params["book_id"] = book_id
+        return self._request("GET", "/api/v2/highlights/random", params=params)
+
     def patch_highlight(self, highlight_id: int, **fields: Any) -> dict:
         return self._request(
             "PATCH",

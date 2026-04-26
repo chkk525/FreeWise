@@ -180,6 +180,16 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_random(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    h = client.random_highlight(book_id=getattr(args, "book_id", None))
+    if args.json:
+        _print_json(h)
+        return 0
+    _print_highlight_full(h)
+    return 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     s = client.stats()
@@ -406,6 +416,11 @@ def _build_parser() -> argparse.ArgumentParser:
     sh = sub.add_parser("show", help="Show a single highlight in full.")
     sh.add_argument("highlight_id", type=int)
     sh.set_defaults(func=cmd_show)
+
+    # random
+    rd = sub.add_parser("random", help="Pick one random highlight (surprise me).")
+    rd.add_argument("--book-id", type=int, help="Limit to one book.")
+    rd.set_defaults(func=cmd_random)
 
     # stats
     st = sub.add_parser("stats", help="Aggregate counts + review-due summary.")

@@ -24,6 +24,7 @@ import freewise_mcp.server as server
 SEARCH = server.freewise_search
 RECENT = server.freewise_recent
 SHOW = server.freewise_show
+RANDOM = server.freewise_random
 STATS = server.freewise_stats
 BOOKS = server.freewise_books
 SET_NOTE = server.freewise_set_note
@@ -94,6 +95,12 @@ def test_recent_returns_newest_first(patched_client):
     assert out["count"] == 2
     # Server orders by id desc (newest first)
     assert out["results"][0]["text"] == "second"
+
+
+def test_random_returns_a_highlight(patched_client):
+    _add("alpha"); _add("beta")
+    out = json.loads(RANDOM())
+    assert out["text"] in ("alpha", "beta")
 
 
 def test_show_returns_full_detail(patched_client):
@@ -215,12 +222,13 @@ def test_search_with_tag_filter(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 13 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 14 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
+        "freewise_random",
         "freewise_stats", "freewise_books", "freewise_set_note",
         "freewise_favorite", "freewise_discard", "freewise_master",
         "freewise_add",

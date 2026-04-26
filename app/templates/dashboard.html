@@ -82,6 +82,22 @@
 </div>
 {% endif %}
 
+<!-- Highlight of the Moment (random, shuffleable) -->
+{% if total_highlights and total_highlights > 0 %}
+<div class="mb-8">
+    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+        <i data-lucide="sparkles" class="w-5 h-5 text-amber-500"></i>
+        Highlight of the moment
+    </h3>
+    <div hx-get="/highlights/ui/random" hx-trigger="load" hx-swap="outerHTML">
+        <div id="random-highlight-card"
+             class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
+            <p class="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Review Activity Heatmap -->
 <div class="mb-10 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
     <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">

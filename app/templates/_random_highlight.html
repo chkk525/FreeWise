@@ -1,0 +1,37 @@
+{# Compact "highlight of the moment" partial for the dashboard.
+   Wrapped in a div with id="random-highlight-card" so the shuffle
+   button's HTMX swap can replace it cleanly. #}
+<div id="random-highlight-card"
+     class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
+    {% if highlight.book %}
+    <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
+        <a href="/library/ui/book/{{ highlight.book.id }}" class="hover:text-primary-600 dark:hover:text-primary-400">
+            {{ highlight.book.title }}{% if highlight.book.author %} — {{ highlight.book.author }}{% endif %}
+        </a>
+    </div>
+    {% endif %}
+    <p class="font-serif text-base leading-relaxed text-gray-900 dark:text-gray-100">
+        {{ highlight.text }}
+    </p>
+    {% if highlight.note %}
+    <p class="mt-2 text-sm italic text-gray-600 dark:text-gray-400 pl-3 border-l-2 border-gray-300 dark:border-gray-600">
+        {{ highlight.note }}
+    </p>
+    {% endif %}
+    <div class="flex items-center justify-between mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+        <span class="text-xs text-gray-500 dark:text-gray-400">
+            #{{ highlight.id }}
+            {% if highlight.is_favorited %} · ★{% endif %}
+            {% if highlight.is_mastered %} · 🎓{% endif %}
+        </span>
+        <button type="button"
+                hx-get="/highlights/ui/random"
+                hx-target="#random-highlight-card"
+                hx-swap="outerHTML"
+                class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title="Shuffle to another random highlight">
+            <i data-lucide="shuffle" class="w-3 h-3"></i>
+            <span>Shuffle</span>
+        </button>
+    </div>
+</div>

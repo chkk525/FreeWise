@@ -80,6 +80,14 @@ def test_show_full_detail(http_client, auth_token, capsys):
     assert "my note" in out
 
 
+def test_random_picks_one(http_client, auth_token, capsys):
+    _add_highlight("alpha")
+    _add_highlight("beta")
+    rc, out, _ = _run(["random"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert ("alpha" in out) or ("beta" in out)
+
+
 def test_stats_output(http_client, auth_token, capsys):
     _add_highlight("a"); _add_highlight("b", is_favorited=True)
     rc, out, _ = _run(["stats"], http_client, auth_token, capsys)

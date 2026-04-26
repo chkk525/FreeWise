@@ -101,6 +101,46 @@ def test_search_requires_auth(client, db, make_highlight):
 # ── GET /api/v2/highlights/{id} ──────────────────────────────────────────────
 
 
+def test_random_returns_one_highlight(client, db, make_highlight):
+    headers = _auth_headers(db)
+    make_highlight(text="alpha")
+    make_highlight(text="beta")
+    r = client.get("/api/v2/highlights/random", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["text"] in ("alpha", "beta")
+
+
+def test_random_404_when_empty(client, db):
+    headers = _auth_headers(db)
+    r = client.get("/api/v2/highlights/random", headers=headers)
+    assert r.status_code == 404
+
+
+def test_random_excludes_discarded_by_default(client, db, make_highlight):
+    headers = _auth_headers(db)
+    make_highlight(text="alive")
+    make_highlight(text="trashed", is_discarded=True)
+    # Run a few times to make it likely we'd hit the discarded one if filter broke.
+    for _ in range(10):
+        r = client.get("/api/v2/highlights/random", headers=headers)
+        assert r.json()["text"] == "alive"
+
+
+def test_random_book_id_filter(client, db, make_highlight, make_book):
+    headers = _auth_headers(db)
+    b1 = make_book(title="A")
+    b2 = make_book(title="B")
+    make_highlight(text="from a", book=b1)
+    make_highlight(text="from b", book=b2)
+    for _ in range(8):
+        r = client.get(
+            "/api/v2/highlights/random", headers=headers,
+            params={"book_id": b1.id},
+        )
+        assert r.json()["text"] == "from a"
+
+
 def test_get_highlight(client, db, make_highlight):
     headers = _auth_headers(db)
     h = make_highlight(text="Detail me", note="A note")
