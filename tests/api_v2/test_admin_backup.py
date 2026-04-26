@@ -72,6 +72,20 @@ def test_backup_service_unit(tmp_path, db):
     assert out.read_bytes()[:16] == b"SQLite format 3\x00"
 
 
+def test_backup_rate_limit_caps_at_three_per_minute(client, db):
+    """Backup is amplification-heavy; per-path bucket should kick in at 3/min."""
+    _seed_token(db, "good-token")
+    headers = {"Authorization": "Token good-token"}
+    # First 3 should pass (under MAX_HITS_BACKUP=3).
+    for _ in range(3):
+        r = client.get("/api/v2/admin/backup", headers=headers)
+        assert r.status_code == 200
+    # 4th hits the per-path cap → 429 with Retry-After.
+    r = client.get("/api/v2/admin/backup", headers=headers)
+    assert r.status_code == 429
+    assert "Retry-After" in r.headers
+
+
 def test_backup_service_rejects_non_sqlite():
     """Non-sqlite engines should fail fast rather than silently corrupting."""
     from unittest.mock import MagicMock

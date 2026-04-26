@@ -32,6 +32,10 @@ def make_backup_to_path(engine, out_path: str) -> int:
             )
         dst = sqlite3.connect(out_path)
         try:
+            # src.backup() blocks until the page-by-page copy completes,
+            # so the underlying sqlite3.Connection is still pinned by us
+            # when raw.close() runs below — the pool only re-issues it
+            # to a concurrent request after this function returns.
             src.backup(dst)
         finally:
             dst.close()

@@ -980,6 +980,9 @@ async def ui_duplicates(
     )
 
 
+_SEMDUP_RUNNING = False  # cheap process-local mutex; one matmul at a time
+
+
 @router.get("/ui/duplicates/semantic", response_class=HTMLResponse)
 async def ui_duplicates_semantic(
     request: Request,
@@ -994,7 +997,11 @@ async def ui_duplicates_semantic(
     /ui/duplicates page misses. Requires embeddings to be backfilled —
     surfaces a backfill prompt when coverage is below 10%.
     """
-    from app.services.embeddings import _env_model, find_semantic_duplicates
+    from app.services.embeddings import (
+        SEMANTIC_COVERAGE_THRESHOLD,
+        _env_model,
+        find_semantic_duplicates,
+    )
 
     settings = get_settings(session)
     threshold = max(0.5, min(1.0, float(threshold)))
@@ -1016,10 +1023,21 @@ async def ui_duplicates_semantic(
 
     coverage = (embedded_count / candidate_count) if candidate_count else 0.0
     pairs: list[dict] = []
-    if candidate_count and coverage >= 0.10:
-        pairs = find_semantic_duplicates(
-            session, threshold=threshold, limit=limit, user_id=1,
-        )
+    busy = False
+    if candidate_count and coverage >= SEMANTIC_COVERAGE_THRESHOLD:
+        global _SEMDUP_RUNNING
+        if _SEMDUP_RUNNING:
+            # Already computing for someone else — bail with a friendly
+            # banner instead of pinning a second vCPU on the matmul.
+            busy = True
+        else:
+            _SEMDUP_RUNNING = True
+            try:
+                pairs = find_semantic_duplicates(
+                    session, threshold=threshold, limit=limit, user_id=1,
+                )
+            finally:
+                _SEMDUP_RUNNING = False
 
     return templates.TemplateResponse(
         request, "semantic_duplicates.html",
@@ -1032,6 +1050,7 @@ async def ui_duplicates_semantic(
             "candidate_count": candidate_count,
             "embedded_count": embedded_count,
             "coverage": coverage,
+            "busy": busy,
         },
     )
 

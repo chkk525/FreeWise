@@ -18,7 +18,19 @@
         <code>{{ model_name }}</code> · threshold ≥ {{ "%.2f"|format(threshold) }}.
     </p>
 
-    {% if candidate_count == 0 %}
+    {% if busy %}
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-6">
+        <div class="flex items-start gap-3">
+            <i data-lucide="loader" class="w-6 h-6 mt-0.5 text-amber-600 dark:text-amber-400 shrink-0 animate-spin"></i>
+            <div>
+                <p class="font-medium text-amber-900 dark:text-amber-100">Another semantic-dupes scan is already running.</p>
+                <p class="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                    The matmul pins one CPU for several seconds on a 25k-row library, so we serialize requests. Reload in a moment.
+                </p>
+            </div>
+        </div>
+    </div>
+    {% elif candidate_count == 0 %}
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
         <i data-lucide="inbox" class="w-10 h-10 mx-auto mb-3 text-gray-400"></i>
         <p class="text-gray-700 dark:text-gray-200 font-medium">No highlights to compare yet.</p>

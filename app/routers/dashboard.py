@@ -137,10 +137,11 @@ async def ui_dashboard(
         .group_by(func.substr(Highlight.text, 1, 80))
         .having(func.count(Highlight.id) >= 2)
     ).all()
+    from app.services.embeddings import SEMANTIC_COVERAGE_THRESHOLD
     library_health = {
         "dup_groups": len(dup_group_sizes),
         "dup_redundant": sum(int(c) - 1 for c in dup_group_sizes),
-        "semantic_ready": embedding_coverage["percent"] >= 10.0,
+        "semantic_ready": embedding_coverage["percent"] >= SEMANTIC_COVERAGE_THRESHOLD * 100,
     }
 
     # Tag cloud — counts of highlight-level tags, sorted desc, capped to keep

@@ -187,8 +187,12 @@ async def add_security_headers(request: Request, call_next):
 # limit — this is the second layer for direct LAN access.
 _RATE_LIMIT_BUCKET: dict[tuple[str, str], list[float]] = {}
 _RATE_LIMIT_LOCK_API = "/api/v2/"
+_RATE_LIMIT_LOCK_BACKUP = "/api/v2/admin/backup"
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMIT_MAX_HITS = 60  # 60 req / IP / minute on /api/v2/*
+# Backup is amplification-heavy (whole DB → /tmp + bytes back). Cap per
+# IP to a handful per minute so a runaway script can't fill the disk.
+_RATE_LIMIT_MAX_HITS_BACKUP = 3
 
 
 @app.middleware("http")
@@ -198,21 +202,35 @@ async def rate_limit_api(request: Request, call_next):
         return await call_next(request)
     import time
     from fastapi.responses import JSONResponse
-    client = (request.client.host if request.client else "unknown", _RATE_LIMIT_LOCK_API)
+    # Pick the tightest applicable bucket. The backup path matches both
+    # the general /api/v2/ rule and its own; we want each to count
+    # independently so backup hits also burn the general budget.
+    is_backup = path.startswith(_RATE_LIMIT_LOCK_BACKUP)
+    ip = request.client.host if request.client else "unknown"
     now = time.monotonic()
-    bucket = _RATE_LIMIT_BUCKET.setdefault(client, [])
     cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
-    # Drop expired
-    while bucket and bucket[0] < cutoff:
-        bucket.pop(0)
-    if len(bucket) >= _RATE_LIMIT_MAX_HITS:
-        retry_after = max(1, int(_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
-        return JSONResponse(
-            {"detail": "Rate limit exceeded"},
-            status_code=429,
-            headers={"Retry-After": str(retry_after)},
-        )
-    bucket.append(now)
+
+    buckets: list[tuple[tuple[str, str], int]] = [
+        ((ip, _RATE_LIMIT_LOCK_API), _RATE_LIMIT_MAX_HITS),
+    ]
+    if is_backup:
+        buckets.append(((ip, _RATE_LIMIT_LOCK_BACKUP), _RATE_LIMIT_MAX_HITS_BACKUP))
+
+    for key, max_hits in buckets:
+        bucket = _RATE_LIMIT_BUCKET.setdefault(key, [])
+        while bucket and bucket[0] < cutoff:
+            bucket.pop(0)
+        if len(bucket) >= max_hits:
+            retry_after = max(1, int(_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+            return JSONResponse(
+                {"detail": "Rate limit exceeded"},
+                status_code=429,
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    # All buckets accepted — record the hit on each.
+    for key, _ in buckets:
+        _RATE_LIMIT_BUCKET[key].append(now)
     return await call_next(request)
 
 

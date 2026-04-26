@@ -29,6 +29,13 @@ import httpx
 # ── Configuration ──────────────────────────────────────────────────────────
 
 
+# Minimum embedding coverage (fraction in [0, 1]) before semantic-dupes
+# pages render results. Below this we surface a backfill prompt instead
+# of running an under-informed matmul. Shared between the UI route and
+# the dashboard health card so the two views stay consistent.
+SEMANTIC_COVERAGE_THRESHOLD: float = 0.10
+
+
 def _env_url() -> str:
     return os.environ.get("FREEWISE_OLLAMA_URL", "http://localhost:11434").rstrip("/")
 
