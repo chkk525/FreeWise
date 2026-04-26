@@ -2,7 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session
@@ -323,6 +323,82 @@ async def healthz():
         pass
 
     return out
+
+
+@app.get("/metrics", response_class=Response)
+async def metrics():
+    """Prometheus exposition format. Plain text, no auth.
+
+    Same counts that /healthz returns, reformatted so a Grafana / Prom
+    scraper can chart them over time. Public for the same reason
+    /healthz is — counts are not PII and the operator wants the
+    scraper to work without credentials.
+
+    No new dependency: Prometheus text format is just lines of
+    `# HELP <metric> <text>\\n# TYPE <metric> <kind>\\n<metric> <value>\\n`.
+    """
+    from sqlmodel import Session, select, func
+    from app.db import get_engine
+    from app.models import Book, Embedding, Highlight
+    from app.services.embeddings import _env_model
+
+    engine = get_engine()
+    lines: list[str] = []
+
+    def _gauge(name: str, help_text: str, value: float, labels: str = "") -> None:
+        lines.append(f"# HELP {name} {help_text}")
+        lines.append(f"# TYPE {name} gauge")
+        lines.append(f"{name}{labels} {value}")
+
+    try:
+        with Session(engine) as s:
+            total = int(s.exec(select(func.count(Highlight.id))).one() or 0)
+            active = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_discarded == False)  # noqa: E712
+            ).one() or 0)
+            favorited = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_favorited == True)  # noqa: E712
+            ).one() or 0)
+            mastered = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_mastered == True)  # noqa: E712
+            ).one() or 0)
+            books = int(s.exec(select(func.count(Book.id))).one() or 0)
+            embed_model = _env_model()
+            embedded = int(s.exec(
+                select(func.count(func.distinct(Embedding.highlight_id)))
+                .where(Embedding.model_name == embed_model)
+            ).one() or 0)
+        _gauge("freewise_highlights_total", "Total highlights including discarded.", total)
+        _gauge("freewise_highlights_active", "Active (non-discarded) highlights.", active)
+        _gauge("freewise_highlights_favorited", "Highlights flagged is_favorited.", favorited)
+        _gauge("freewise_highlights_mastered", "Highlights flagged is_mastered.", mastered)
+        _gauge("freewise_books_total", "Books known to the library.", books)
+        _gauge(
+            "freewise_embeddings_count",
+            "Distinct highlights with an embedding for the configured model.",
+            embedded,
+            labels=f'{{model="{embed_model}"}}',
+        )
+        # Coverage as a fraction in [0, 1] for easy alerting.
+        coverage = (embedded / active) if active else 0.0
+        _gauge(
+            "freewise_embedding_coverage",
+            "Fraction of active highlights with an embedding (0..1).",
+            round(coverage, 4),
+            labels=f'{{model="{embed_model}"}}',
+        )
+        # Up = 1 if the DB read succeeded.
+        _gauge("freewise_up", "1 if the app is healthy and the DB is reachable.", 1)
+    except Exception:  # noqa: BLE001
+        # Surface the failure as an explicit gauge so a Prom alert can
+        # fire on freewise_up == 0 without needing extra bookkeeping.
+        _gauge("freewise_up", "1 if the app is healthy and the DB is reachable.", 0)
+
+    body = "\n".join(lines) + "\n"
+    return Response(content=body, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/sw.js")
