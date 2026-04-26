@@ -2,7 +2,9 @@
 //
 // Wires a right-click context menu on selected text → POST to the configured
 // FreeWise /api/v2/highlights endpoint with the Readwise-shaped JSON body.
-// Token + base URL are stored via chrome.storage.sync.
+// Token + base URL are stored via chrome.storage.local — explicitly NOT
+// chrome.storage.sync so the bearer token never reaches Google's Chrome
+// Sync infrastructure (single-device storage only).
 
 const MENU_ID = "freewise-save-selection";
 
@@ -18,7 +20,7 @@ function notify(title, message) {
 }
 
 async function loadConfig() {
-  const { baseUrl, token } = await chrome.storage.sync.get(["baseUrl", "token"]);
+  const { baseUrl, token } = await chrome.storage.local.get(["baseUrl", "token"]);
   return { baseUrl: baseUrl || "", token: token || "" };
 }
 

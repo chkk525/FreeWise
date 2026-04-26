@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
 async function load() {
-  const { baseUrl = "", token = "" } = await chrome.storage.sync.get(["baseUrl", "token"]);
+  const { baseUrl = "", token = "" } = await chrome.storage.local.get(["baseUrl", "token"]);
   $("baseUrl").value = baseUrl;
   $("token").value = token;
 }
@@ -19,7 +19,7 @@ $("save").addEventListener("click", async () => {
     status("Both fields are required.", "err");
     return;
   }
-  await chrome.storage.sync.set({ baseUrl, token });
+  await chrome.storage.local.set({ baseUrl, token });
   status("Saved.", "ok");
 });
 
@@ -36,8 +36,10 @@ $("test").addEventListener("click", async () => {
       method: "GET",
       headers: { "Authorization": `Token ${token}` },
     });
-    if (r.status === 204) {
-      status("OK (204).", "ok");
+    // FreeWise returns 204 on success, but some reverse proxies / older
+    // FastAPI versions normalise to 200 — accept any 2xx.
+    if (r.status >= 200 && r.status < 300) {
+      status(`OK (${r.status}).`, "ok");
     } else if (r.status === 401) {
       status("Auth rejected (401). Check token.", "err");
     } else {
