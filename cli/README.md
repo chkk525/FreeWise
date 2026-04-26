@@ -16,7 +16,7 @@ PYTHONPATH=cli python -m freewise_cli ...
 
 The CLI talks to the FreeWise server's `/api/v2/*` endpoints. You need a token:
 
-1. Open `https://<your-server>/api-tokens` in a browser, click **New token**.
+1. Open `https://<your-server>/import/api-token` in a browser (or press `g t` from any FreeWise page), click **New token**.
 2. Copy the raw token (shown only once).
 3. Save it:
 
