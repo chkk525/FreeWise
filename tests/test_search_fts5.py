@@ -49,6 +49,22 @@ class TestFTS5Migration:
         )).all()
         assert (h.id,) in rows
 
+    def test_non_indexed_column_update_skips_reindex(self, db, make_highlight):
+        """U92 fix: AFTER UPDATE trigger uses OF text, note so churn on
+        review-state columns (last_reviewed_at, review_count) doesn't
+        rewrite the FTS5 row. We verify by changing only is_favorited
+        and re-querying — the row is still indexed."""
+        h = make_highlight(text="indexed body stays put")
+        # Touch a non-indexed column.
+        h.is_favorited = True
+        h.review_count = 5
+        db.add(h); db.commit()
+        # Index entry should still match.
+        rows = db.exec(text(
+            "SELECT rowid FROM highlight_fts WHERE highlight_fts MATCH 'indexed'"
+        )).all()
+        assert (h.id,) in rows
+
     def test_index_drops_on_delete(self, db, make_highlight):
         h = make_highlight(text="ephemeral content")
         hid = h.id

@@ -478,10 +478,11 @@ def cmd_backup(args: argparse.Namespace) -> int:
             print("--to-dir and --out are mutually exclusive", file=sys.stderr)
             return 2
         os.makedirs(args.to_dir, exist_ok=True)
-        # Sub-second granularity in the timestamp prevents two cron
+        # Millisecond precision in the timestamp prevents two cron
         # invocations within the same second from clobbering each other.
+        # strftime alone is second-precision; we append .NNN by hand.
         now_utc = _datetime.now(_tz.utc)
-        stamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
+        stamp = now_utc.strftime("%Y%m%dT%H%M%S") + f".{now_utc.microsecond // 1000:03d}Z"
         out = os.path.join(args.to_dir, f"freewise-{stamp}.sqlite")
     else:
         out = args.out or f"freewise-{_datetime.now(_tz.utc).date().isoformat()}.sqlite"

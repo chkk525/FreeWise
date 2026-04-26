@@ -199,14 +199,19 @@ def ensure_schema_migrations(engine=None) -> None:
                 )
             )
 
-        # ── FTS5 substring index (U91) ───────────────────────────────────
-        # Trigram tokenizer works for any language including Japanese /
-        # Chinese (no MeCab/ICU dependency). Queries < 3 chars must fall
-        # back to LIKE because trigram needs at least one full trigram.
-        # On environments without FTS5+trigram (rare; older SQLite builds)
-        # we leave FTS5_AVAILABLE False and the search route stays on LIKE.
-        global FTS5_AVAILABLE
-        try:
+    # ── FTS5 substring index (U91) ───────────────────────────────────────
+    # Trigram tokenizer works for any language including Japanese / Chinese
+    # (no MeCab/ICU dependency). Queries < 3 chars must fall back to LIKE
+    # because trigram needs at least one full trigram. On environments
+    # without FTS5+trigram (rare; older SQLite builds) we leave
+    # FTS5_AVAILABLE False and the search route stays on LIKE.
+    #
+    # Run in a SEPARATE transaction so a missing FTS5 module can't roll
+    # back the column migrations above. Caught here so the app still
+    # starts on FTS5-less SQLite builds.
+    global FTS5_AVAILABLE
+    try:
+        with engine.begin() as conn:
             conn.execute(text(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS highlight_fts USING fts5("
                 "  text, note, tokenize='trigram'"
@@ -223,8 +228,13 @@ def ensure_schema_migrations(engine=None) -> None:
                 "END"
             ))
             conn.execute(text("DROP TRIGGER IF EXISTS highlight_fts_au"))
+            # OF text, note: only re-index when the indexed columns
+            # actually change. Without this, every review-queue write
+            # (last_reviewed_at / review_count / next_review) churns
+            # the FTS5 index even though the searchable content is
+            # unchanged.
             conn.execute(text(
-                "CREATE TRIGGER highlight_fts_au AFTER UPDATE ON highlight BEGIN "
+                "CREATE TRIGGER highlight_fts_au AFTER UPDATE OF text, note ON highlight BEGIN "
                 "  DELETE FROM highlight_fts WHERE rowid = old.id; "
                 "  INSERT INTO highlight_fts(rowid, text, note) "
                 "  VALUES (new.id, COALESCE(new.text, ''), COALESCE(new.note, '')); "
@@ -251,11 +261,11 @@ def ensure_schema_migrations(engine=None) -> None:
                     "SELECT id, COALESCE(text, ''), COALESCE(note, '') FROM highlight"
                 ))
             FTS5_AVAILABLE = True
-        except Exception as e:  # noqa: BLE001
-            _log.warning(
-                "FTS5 unavailable, search will use LIKE fallback: %s", e,
-            )
-            FTS5_AVAILABLE = False
+    except Exception as e:  # noqa: BLE001
+        _log.warning(
+            "FTS5 unavailable, search will use LIKE fallback: %s", e,
+        )
+        FTS5_AVAILABLE = False
 
 
 def get_session():
