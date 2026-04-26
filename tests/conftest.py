@@ -56,6 +56,22 @@ def _reset_db():
         s.add(Settings(daily_review_count=5, highlight_recency=5, theme="light"))
         s.commit()
 
+    # Clear in-process state shared across tests so they don't bleed:
+    #  - rate limit bucket (else /api/v2/* tests after the rate-limit test
+    #    inherit a saturated bucket and start failing with 429)
+    #  - last_used_at debounce cache
+    #  - review_sessions in-memory dict
+    try:
+        from app.main import _RATE_LIMIT_BUCKET
+        _RATE_LIMIT_BUCKET.clear()
+    except Exception:
+        pass
+    try:
+        from app.api_v2.auth import _last_used_at_cache
+        _last_used_at_cache.clear()
+    except Exception:
+        pass
+
     yield  # test runs here
 
     # Clean up in-memory review sessions between tests
