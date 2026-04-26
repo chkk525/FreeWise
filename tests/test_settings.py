@@ -21,6 +21,18 @@ class TestSettingsPage:
         assert resp.status_code == 200
         # The page should display "2" somewhere for the highlight count
 
+    def test_reset_modal_requires_typed_confirmation(self, client):
+        """Type-to-confirm guard for the destructive reset library button."""
+        resp = client.get("/settings/ui")
+        assert resp.status_code == 200
+        # The new modal must include the typed-confirm input + disabled button
+        # so that the reset cannot be triggered by accidental clicks.
+        assert 'id="reset-confirm-input"' in resp.text
+        assert 'id="reset-confirm-btn"' in resp.text
+        assert "Type RESET" in resp.text or "type RESET" in resp.text
+        # The submit button must start in the disabled state.
+        assert "disabled" in resp.text
+
 
 class TestUpdateSettings:
     """POST /settings/ui — update settings with clamping."""
