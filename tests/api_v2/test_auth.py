@@ -134,3 +134,30 @@ def test_auth_debounce_suppresses_repeat_writes(client, db):
     db.expire_all()
     second_touch = db.get(ApiToken, token.id).last_used_at
     assert second_touch == first_touch  # still the first value
+
+
+# ── Rate limit + security headers ───────────────────────────────────────────
+
+
+def test_security_headers_present(client):
+    """Every response should carry the defence-in-depth headers."""
+    resp = client.get("/api/v2/auth/", headers={"Authorization": "Token nope"})
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("x-frame-options") == "DENY"
+    assert "default-src 'self'" in (resp.headers.get("content-security-policy") or "")
+
+
+def test_rate_limit_429_after_burst(client):
+    """61 unauthenticated calls within the window should yield at least one 429."""
+    # Reset the bucket so this test isn't ordering-sensitive.
+    from app.main import _RATE_LIMIT_BUCKET
+    _RATE_LIMIT_BUCKET.clear()
+
+    seen_429 = False
+    for _ in range(70):
+        r = client.get("/api/v2/auth/", headers={"Authorization": "Token x"})
+        if r.status_code == 429:
+            seen_429 = True
+            assert int(r.headers.get("retry-after", "0")) >= 1
+            break
+    assert seen_429, "expected at least one 429 inside 70 calls/window"

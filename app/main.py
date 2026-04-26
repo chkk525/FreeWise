@@ -151,6 +151,71 @@ async def inject_streak(request: Request, call_next):
     return await call_next(request)
 
 
+# Security HTTP headers (Phase 4 hardening — H9). Cheap defence-in-depth
+# layered above Cloudflare Access. Static asset paths get the headers too;
+# they're idempotent so caching is unaffected.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    # Conservative CSP: app uses inline <script> in api_tokens.html copy
+    # button + several htmx data attrs, so we permit 'unsafe-inline' for now.
+    # A future tightening pass should add per-script nonces.
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'"
+    ),
+}
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in _SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    return response
+
+
+# Rate limiting on the API surface (H8). In-process token-bucket per
+# (client_ip, path-prefix). NOT a substitute for Cloudflare's edge rate
+# limit — this is the second layer for direct LAN access.
+_RATE_LIMIT_BUCKET: dict[tuple[str, str], list[float]] = {}
+_RATE_LIMIT_LOCK_API = "/api/v2/"
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMIT_MAX_HITS = 60  # 60 req / IP / minute on /api/v2/*
+
+
+@app.middleware("http")
+async def rate_limit_api(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith(_RATE_LIMIT_LOCK_API):
+        return await call_next(request)
+    import time
+    from fastapi.responses import JSONResponse
+    client = (request.client.host if request.client else "unknown", _RATE_LIMIT_LOCK_API)
+    now = time.monotonic()
+    bucket = _RATE_LIMIT_BUCKET.setdefault(client, [])
+    cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
+    # Drop expired
+    while bucket and bucket[0] < cutoff:
+        bucket.pop(0)
+    if len(bucket) >= _RATE_LIMIT_MAX_HITS:
+        retry_after = max(1, int(_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+        return JSONResponse(
+            {"detail": "Rate limit exceeded"},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+    bucket.append(now)
+    return await call_next(request)
+
+
 # Setup templates and static files
 templates = Jinja2Templates(directory="app/templates")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
