@@ -55,8 +55,28 @@ class TestTriggerScrape:
                 break
             time.sleep(0.05)
         assert s.running is False
-        assert s.exit_code in (0, -1)  # -1 = unreaped but dead, also OK
+        # The reap path captures the real exit status (0 for `pass`).
+        # None is also acceptable if reapership was lost between threads
+        # (rare in tests but possible).
+        assert s.exit_code in (0, None)
         assert s.started_at is not None
+
+    def test_nonzero_exit_code_is_captured(self, isolated_state, monkeypatch):
+        """Regression: the reaper must surface the real exit code, not
+        the previous always-fallback of -1."""
+        monkeypatch.setenv(
+            "KINDLE_SCRAPE_CMD",
+            f"{sys.executable} -c \"import sys; sys.exit(7)\"",
+        )
+        trig.trigger_scrape()
+        for _ in range(40):
+            s = trig.get_status()
+            if not s.running:
+                break
+            time.sleep(0.05)
+        s = trig.get_status()
+        assert s.running is False
+        assert s.exit_code == 7
 
     def test_concurrent_trigger_raises(self, isolated_state, monkeypatch):
         # Use /bin/sleep 1 so the first run is still going when we

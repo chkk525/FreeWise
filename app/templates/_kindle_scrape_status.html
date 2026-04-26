@@ -65,6 +65,13 @@
       ·
       <time data-iso="{{ scrape.finished_at }}">{{ scrape.finished_at }}</time>
     </span>
+    {% elif scrape.exit_code is none %}
+    <span class="text-xs text-amber-700 dark:text-amber-300">
+      <i data-lucide="help-circle" class="w-3 h-3 inline-block"></i>
+      Last run finished (status unknown — worker restart)
+      ·
+      <time data-iso="{{ scrape.finished_at }}">{{ scrape.finished_at }}</time>
+    </span>
     {% else %}
     <span class="text-xs text-red-700 dark:text-red-300">
       <i data-lucide="alert-circle" class="w-3 h-3 inline-block"></i>

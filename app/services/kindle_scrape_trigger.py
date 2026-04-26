@@ -105,33 +105,48 @@ def _write_handle(h: _ProcessHandle) -> None:
     p.write_text(json.dumps(asdict(h)))
 
 
-def _process_alive(pid: int) -> bool:
-    """Cross-platform liveness check.
+def _check_and_reap(pid: int) -> tuple[bool, Optional[int]]:
+    """Cross-platform liveness check that captures the exit code on reap.
+
+    Returns ``(alive, exit_code)``:
+    - alive=True, exit_code=None: process is still running
+    - alive=False, exit_code=N: we just reaped it; N is the real status
+    - alive=False, exit_code=None: dead but unreaped by us (different
+      parent, e.g. uvicorn worker restart) — caller marks unknown
 
     ``os.kill(pid, 0)`` alone returns True for zombies (the kernel slot
-    is still allocated until reaped). We also try a non-blocking
-    ``waitpid``: if it returns the pid, the process was a zombie that's
-    now reaped — alive=False. ChildProcessError means we're not the
-    parent (e.g. another worker spawned it) and the kill probe is the
-    only signal we have.
+    is still allocated until reaped), so we always attempt a non-blocking
+    ``waitpid`` to harvest the exit status before it's lost. The previous
+    version reaped via ``waitpid`` but discarded the status, causing
+    ``get_status`` to retry and always fall back to exit_code=-1.
     """
     if pid <= 0:
-        return False
+        return False, None
     try:
         os.kill(pid, 0)
     except (ProcessLookupError, PermissionError, OSError):
-        return False
+        return False, None
     # Reap zombies. WNOHANG returns (0, 0) for a still-running child.
     try:
-        reaped_pid, _ = os.waitpid(pid, os.WNOHANG)
+        reaped_pid, status = os.waitpid(pid, os.WNOHANG)
         if reaped_pid == pid:
-            return False
+            if os.WIFEXITED(status):
+                return False, os.WEXITSTATUS(status)
+            if os.WIFSIGNALED(status):
+                return False, -os.WTERMSIG(status)
+            return False, None
     except ChildProcessError:
         # Not our child anymore (or never was). Trust the kill probe.
         pass
     except OSError:
         pass
-    return True
+    return True, None
+
+
+def _process_alive(pid: int) -> bool:
+    """Backwards-compatible bool wrapper around :func:`_check_and_reap`."""
+    alive, _ = _check_and_reap(pid)
+    return alive
 
 
 def _read_log_tail(log_path: str, n: int) -> str:
@@ -161,23 +176,16 @@ def get_status() -> ScrapeStatus:
     if h is None:
         return ScrapeStatus(enabled=True, running=False, cmd=os.environ.get(_ENV_CMD))
 
-    alive = _process_alive(h.pid) if h.exit_code is None else False
+    if h.exit_code is None:
+        alive, reaped_rc = _check_and_reap(h.pid)
+    else:
+        alive, reaped_rc = False, None
 
     # If the handle says "no exit_code" but the process is dead, reap it.
     if not alive and h.exit_code is None:
-        # Try to harvest a real exit code via os.waitpid; if the parent
-        # has lost reapership (most likely — uvicorn worker restart) we
-        # mark exit_code=-1 to signal "unknown — dead but unreaped".
-        rc: Optional[int] = -1
-        try:
-            _, status = os.waitpid(h.pid, os.WNOHANG)
-            if os.WIFEXITED(status):
-                rc = os.WEXITSTATUS(status)
-            elif os.WIFSIGNALED(status):
-                rc = -os.WTERMSIG(status)
-        except (ChildProcessError, OSError):
-            pass
-        h.exit_code = rc
+        # exit_code=None below (rather than -1) means "dead but unreaped
+        # by us" — reapership was lost (e.g. uvicorn worker restart).
+        h.exit_code = reaped_rc
         h.finished_at = _now_iso()
         _write_handle(h)
 
