@@ -27,12 +27,14 @@
             {% endif %}
         </p>
         {% if highlights %}
+            {% set enable_bulk_select = True %}
             <div class="space-y-4">
                 {% for highlight in highlights %}
                     {% include "_highlight_row.html" %}
                 {% endfor %}
             </div>
             {% with pagination_label='matches' %}{% include "_pagination_footer.html" %}{% endwith %}
+            {% include "_bulk_action_bar.html" %}
         {% elif total == 0 %}
             <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
                 <i data-lucide="search-x" class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"></i>

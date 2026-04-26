@@ -1051,3 +1051,144 @@ async def remove_highlight_tag_html(
 
     return _render_highlight_after_tag_change(request, highlight, session, context)
 
+
+# ── Bulk operations ─────────────────────────────────────────────────────────
+
+
+_ALLOWED_BULK_ACTIONS = {"favorite", "unfavorite", "discard", "restore", "tag", "untag"}
+
+
+def _parse_bulk_ids(raw: str) -> list[int]:
+    """Parse a comma-separated list of integer IDs from form input.
+
+    The bulk-action UI sends ids as a single comma-joined string in a
+    hidden field rather than a repeated form key — that survives long
+    selections without bumping into per-key form-data limits.
+    """
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    out: list[int] = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except ValueError:
+            # Skip garbage rather than 400ing — the UI controls input but
+            # an extension or stale page state shouldn't crash the round-trip.
+            continue
+    return out
+
+
+@router.post("/bulk", response_class=HTMLResponse)
+async def bulk_action(
+    request: Request,
+    action: str = Form(...),
+    ids: str = Form(...),
+    tag: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Apply one action to many highlights. Returns a status banner partial.
+
+    Supported actions:
+      favorite   set is_favorited=True (skips already-discarded rows)
+      unfavorite clear is_favorited
+      discard    set is_discarded=True (also clears is_favorited)
+      restore    clear is_discarded
+      tag        attach `tag` to every id (idempotent)
+      untag      remove `tag` from every id (idempotent)
+
+    Response is a tiny HTML banner so the HTMX caller can swap it in and
+    show the user how many rows changed. The list page itself is reloaded
+    via HX-Refresh because a list-wide swap would otherwise need every
+    target endpoint to know about every list shape.
+    """
+    if action not in _ALLOWED_BULK_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action!r}")
+    if action in ("tag", "untag") and not (tag and tag.strip()):
+        raise HTTPException(status_code=400, detail="`tag` is required for tag/untag.")
+
+    id_list = _parse_bulk_ids(ids)
+    if not id_list:
+        raise HTTPException(status_code=400, detail="No highlight ids supplied.")
+
+    # Pull all targeted highlights in one IN query — N=1 round-trip even
+    # for thousand-row selections.
+    highlights = session.exec(
+        select(Highlight).where(Highlight.id.in_(id_list))
+    ).all()
+
+    changed = 0
+    skipped = 0
+
+    if action == "favorite":
+        for h in highlights:
+            if h.is_discarded:
+                skipped += 1; continue
+            if not h.is_favorited:
+                h.is_favorited = True; session.add(h); changed += 1
+    elif action == "unfavorite":
+        for h in highlights:
+            if h.is_favorited:
+                h.is_favorited = False; session.add(h); changed += 1
+    elif action == "discard":
+        for h in highlights:
+            if not h.is_discarded:
+                h.is_discarded = True
+                # Mirror discard endpoint: discarding auto-unfavorites.
+                h.is_favorited = False
+                session.add(h); changed += 1
+    elif action == "restore":
+        for h in highlights:
+            if h.is_discarded:
+                h.is_discarded = False; session.add(h); changed += 1
+    elif action == "tag":
+        name = _normalize_tag_name(tag)
+        if not name or name in ("favorite", "discard"):
+            raise HTTPException(status_code=400, detail="Invalid or reserved tag name.")
+        # Find or create the tag once.
+        tag_row = session.exec(select(Tag).where(Tag.name == name)).first()
+        if tag_row is None:
+            tag_row = Tag(name=name)
+            session.add(tag_row); session.commit(); session.refresh(tag_row)
+        # Skip rows that already have it.
+        existing_links = {
+            l.highlight_id for l in session.exec(
+                select(HighlightTag)
+                .where(HighlightTag.highlight_id.in_(id_list))
+                .where(HighlightTag.tag_id == tag_row.id)
+            ).all()
+        }
+        for h in highlights:
+            if h.id in existing_links:
+                skipped += 1; continue
+            session.add(HighlightTag(highlight_id=h.id, tag_id=tag_row.id))
+            changed += 1
+    elif action == "untag":
+        name = _normalize_tag_name(tag)
+        tag_row = session.exec(select(Tag).where(Tag.name == name)).first()
+        if tag_row is not None:
+            links = session.exec(
+                select(HighlightTag)
+                .where(HighlightTag.highlight_id.in_(id_list))
+                .where(HighlightTag.tag_id == tag_row.id)
+            ).all()
+            for l in links:
+                session.delete(l); changed += 1
+            skipped = len(highlights) - len(links)
+        else:
+            skipped = len(highlights)
+
+    session.commit()
+
+    # Build a tiny banner HTML response. HX-Refresh forces a full reload of
+    # the underlying list page so the UI reflects the changed rows without
+    # us needing per-list re-render logic.
+    msg = f"{changed} highlight{'s' if changed != 1 else ''} {action}d"
+    if skipped:
+        msg += f" — {skipped} skipped"
+    response = HTMLResponse(
+        f'<div class="text-sm text-green-700 dark:text-green-300">{msg}</div>',
+    )
+    response.headers["HX-Refresh"] = "true"
+    return response
+

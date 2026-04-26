@@ -1,4 +1,13 @@
 <div class="relative p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow" id="highlight-{{ highlight.id }}">
+    {# Bulk-selection checkbox. Only rendered on list pages that opt into
+       bulk mode by setting `enable_bulk_select=True` in their context. #}
+    {% if enable_bulk_select %}
+    <label class="absolute top-3 right-3 inline-flex items-center cursor-pointer z-10">
+        <input type="checkbox" name="bulk-select" value="{{ highlight.id }}"
+               class="bulk-select-checkbox w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+               aria-label="Select highlight #{{ highlight.id }}">
+    </label>
+    {% endif %}
     <!-- Book Information -->
     {% if highlight.book %}
     <div class="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">

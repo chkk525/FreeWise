@@ -39,12 +39,14 @@
 
         <div id="highlights-container">
             {% if highlights %}
+                {% set enable_bulk_select = True %}
                 <div class="space-y-4 opacity-75">
                     {% for highlight in highlights %}
                         {% include "_highlight_row.html" %}
                     {% endfor %}
                 </div>
                 {% with pagination_label='discarded highlights' %}{% include "_pagination_footer.html" %}{% endwith %}
+                {% include "_bulk_action_bar.html" %}
             {% else %}
                 <div class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
                     <i data-lucide="trash-2" class="w-20 h-20 mx-auto mb-6 text-gray-300 dark:text-gray-600"></i>

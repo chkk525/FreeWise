@@ -258,6 +258,121 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestBulkOperations:
+    """POST /highlights/bulk — favorite/discard/tag many at once."""
+
+    def test_bulk_favorite(self, client, make_highlight, db):
+        h1 = make_highlight(text="a")
+        h2 = make_highlight(text="b")
+        h3 = make_highlight(text="c", is_favorited=True)
+        resp = client.post(
+            "/highlights/bulk",
+            data={"action": "favorite", "ids": f"{h1.id},{h2.id},{h3.id}"},
+        )
+        assert resp.status_code == 200
+        assert resp.headers.get("hx-refresh") == "true"
+        assert "2 highlights favorited" in resp.text  # h3 was already → no change
+        for h in (h1, h2, h3):
+            db.refresh(h)
+            assert h.is_favorited
+
+    def test_bulk_favorite_skips_discarded(self, client, make_highlight, db):
+        h1 = make_highlight(text="x")
+        h2 = make_highlight(text="y", is_discarded=True)
+        resp = client.post(
+            "/highlights/bulk",
+            data={"action": "favorite", "ids": f"{h1.id},{h2.id}"},
+        )
+        assert resp.status_code == 200
+        assert "skipped" in resp.text
+        db.refresh(h1); db.refresh(h2)
+        assert h1.is_favorited is True
+        assert h2.is_favorited is False
+
+    def test_bulk_discard_auto_unfavorites(self, client, make_highlight, db):
+        h = make_highlight(text="x", is_favorited=True)
+        client.post("/highlights/bulk", data={"action": "discard", "ids": str(h.id)})
+        db.refresh(h)
+        assert h.is_discarded is True
+        assert h.is_favorited is False
+
+    def test_bulk_restore(self, client, make_highlight, db):
+        h = make_highlight(text="x", is_discarded=True)
+        client.post("/highlights/bulk", data={"action": "restore", "ids": str(h.id)})
+        db.refresh(h)
+        assert h.is_discarded is False
+
+    def test_bulk_tag(self, client, make_highlight):
+        h1 = make_highlight(text="x")
+        h2 = make_highlight(text="y")
+        resp = client.post(
+            "/highlights/bulk",
+            data={"action": "tag", "ids": f"{h1.id},{h2.id}", "tag": "important"},
+        )
+        assert resp.status_code == 200
+        # Verify by reading back via the API
+        from app.models import Tag, HighlightTag
+        for h in (h1, h2):
+            r = client.post(
+                f"/highlights/{h.id}/tags/add", data={"new_tag": "important"},
+            )
+            # Adding "important" again should be idempotent — chip still appears.
+            assert "important" in r.text
+
+    def test_bulk_untag(self, client, make_highlight, db):
+        h = make_highlight(text="x")
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "drop"})
+        resp = client.post(
+            "/highlights/bulk",
+            data={"action": "untag", "ids": str(h.id), "tag": "drop"},
+        )
+        assert resp.status_code == 200
+        # Verify the tag is gone
+        from app.models import HighlightTag
+        links = db.exec(select(HighlightTag).where(HighlightTag.highlight_id == h.id)).all()
+        assert links == []
+
+    def test_bulk_tag_rejects_reserved(self, client, make_highlight):
+        h = make_highlight(text="x")
+        for name in ("favorite", "discard", "FAVORITE"):
+            resp = client.post(
+                "/highlights/bulk",
+                data={"action": "tag", "ids": str(h.id), "tag": name},
+            )
+            assert resp.status_code == 400
+
+    def test_bulk_tag_requires_tag_field(self, client, make_highlight):
+        h = make_highlight(text="x")
+        resp = client.post(
+            "/highlights/bulk", data={"action": "tag", "ids": str(h.id)},
+        )
+        assert resp.status_code == 400
+
+    def test_bulk_unknown_action_400(self, client, make_highlight):
+        h = make_highlight(text="x")
+        resp = client.post(
+            "/highlights/bulk", data={"action": "explode", "ids": str(h.id)},
+        )
+        assert resp.status_code == 400
+
+    def test_bulk_empty_ids_rejected(self, client):
+        """Empty ids string should be rejected (FastAPI Form validation
+        gives 422 for empty; 400 if the endpoint reaches the body check)."""
+        resp = client.post("/highlights/bulk", data={"action": "favorite", "ids": ""})
+        assert resp.status_code in (400, 422)
+
+    def test_bulk_garbage_ids_filtered(self, client, make_highlight, db):
+        """Stale page state could send 'abc' alongside real ids; skip the trash."""
+        h = make_highlight(text="x")
+        resp = client.post(
+            "/highlights/bulk",
+            data={"action": "favorite", "ids": f"abc,{h.id},xyz"},
+        )
+        assert resp.status_code == 200
+        db.refresh(h)
+        assert h.is_favorited is True
+
+
 class TestHighlightTagUI:
     """POST /highlights/{id}/tags/add and /tags/remove — HTMX endpoints."""
 
