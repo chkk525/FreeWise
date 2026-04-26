@@ -134,6 +134,48 @@ def test_book_highlights_lists_book_only(http_client, auth_token, capsys):
     assert "from-a2" not in out
 
 
+def test_import_csv_uploads_and_creates_highlights(
+    http_client, auth_token, capsys, tmp_path,
+):
+    """`freewise import path/to.csv` should POST to /import/ui/readwise
+    and report new-highlight delta from before/after stats."""
+    csv_path = tmp_path / "tiny.csv"
+    csv_path.write_text(
+        "Highlight,Book Title,Book Author,Amazon Book ID,Note,Color,Tags,"
+        "Location Type,Location,Highlighted at,Document tags\n"
+        '"a fresh imported quote","Imported Book","Author A",,,,,,,,\n',
+        encoding="utf-8",
+    )
+    rc, out, _ = _run(["import", str(csv_path)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "uploading" in out
+    assert "import succeeded" in out
+    # Highlight should land in DB.
+    with Session(_test_engine) as s:
+        rows = s.exec(
+            __import__("sqlmodel").select(Highlight)
+            .where(Highlight.text == "a fresh imported quote")
+        ).all()
+        assert len(rows) == 1
+
+
+def test_import_missing_file_returns_2(http_client, auth_token, capsys, tmp_path):
+    rc, _, err = _run(
+        ["import", str(tmp_path / "nope.csv")], http_client, auth_token, capsys,
+    )
+    assert rc == 2
+    assert "not found" in err
+
+
+def test_import_unsupported_extension(http_client, auth_token, capsys, tmp_path):
+    bad = tmp_path / "thing.xyz"
+    bad.write_text("garbage")
+    rc, _, err = _run(["import", str(bad)], http_client, auth_token, capsys)
+    # FreewiseError wraps as a non-zero exit via main()'s catch.
+    assert rc == 1
+    assert "unsupported" in err
+
+
 def test_health_output(http_client, auth_token, capsys):
     """`freewise health` should pretty-print the /healthz response."""
     rc, out, _ = _run(["health"], http_client, auth_token, capsys)

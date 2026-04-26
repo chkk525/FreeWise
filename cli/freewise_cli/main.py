@@ -354,6 +354,41 @@ def cmd_random(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_import(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    import os
+    if not os.path.exists(args.path):
+        print(f"error: file not found: {args.path}", file=sys.stderr)
+        return 2
+    # Snapshot stats before so we can report deltas.
+    stats_before = None
+    try:
+        stats_before = client.stats()
+    except FreewiseError:
+        # Stats requires a token; fail soft so users can still import
+        # even if they haven't configured a token.
+        pass
+
+    print(f"uploading {args.path}…")
+    status, body = client.import_file(args.path)
+    if status >= 400:
+        print(f"import failed (HTTP {status}): {body}", file=sys.stderr)
+        return 1
+
+    print(f"import succeeded (HTTP {status})")
+    if stats_before is not None:
+        try:
+            stats_after = client.stats()
+            new = stats_after["highlights_total"] - stats_before["highlights_total"]
+            print(
+                f"  {new:+d} highlight{'s' if new != 1 else ''} "
+                f"(was {stats_before['highlights_total']}, now {stats_after['highlights_total']})"
+            )
+        except FreewiseError:
+            pass
+    return 0
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body = client.healthz()
@@ -744,6 +779,11 @@ def _build_parser() -> argparse.ArgumentParser:
     # health
     hc = sub.add_parser("health", help="Liveness/readiness probe (status, counts, Ollama).")
     hc.set_defaults(func=cmd_health)
+
+    # import
+    im = sub.add_parser("import", help="Upload a CSV (Readwise), JSON (Kindle), or HTML (Meebook) file.")
+    im.add_argument("path", help="Path to the file to upload. Format detected by extension.")
+    im.set_defaults(func=cmd_import)
 
     # books
     b = sub.add_parser("books", help="List books that have at least one highlight.")

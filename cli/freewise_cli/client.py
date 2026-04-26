@@ -71,6 +71,40 @@ class Client:
         """Hit the public /healthz probe. Doesn't need auth."""
         return self._request("GET", "/healthz")
 
+    def import_file(self, path: str) -> tuple[int, str]:
+        """Upload a CSV or Kindle JSON file to the corresponding /import/ui
+        endpoint. Returns (status_code, body_excerpt). The endpoint is
+        cookie/single-user gated (no token), so we don't add the auth
+        header — Cloudflare Access is the real gate in production.
+        """
+        import os
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".csv":
+            target = "/import/ui/readwise"
+        elif ext == ".json":
+            target = "/import/ui/kindle"
+        elif ext in (".html", ".htm"):
+            target = "/import/ui/meebook"
+        else:
+            raise FreewiseError(0, f"unsupported file extension: {ext!r}")
+
+        with open(path, "rb") as fh:
+            content = fh.read()
+        files = {"file": (os.path.basename(path), content,
+                          "text/csv" if ext == ".csv" else "application/octet-stream")}
+        # Don't include the Bearer token header — these endpoints are HTML
+        # forms that don't accept it. Strip auth for the upload.
+        headers = {k: v for k, v in self._headers().items() if k != "Authorization"}
+        if self.http is not None:
+            r = self.http.request("POST", target, headers=headers, files=files,
+                                  data={"diagnostic": "true"})
+        else:
+            full = f"{self.url.rstrip('/')}{target}"
+            with httpx.Client(timeout=300.0) as c:
+                r = c.post(full, headers=headers, files=files,
+                           data={"diagnostic": "true"})
+        return r.status_code, (r.text[:200] if r.status_code >= 400 else "")
+
     def search(self, q: str, *, page: int = 1, page_size: int = 50,
                include_discarded: bool = False, tag: str | None = None) -> dict:
         params: dict[str, Any] = {
