@@ -590,39 +590,76 @@ def _paginated_highlights(
 async def ui_search(
     request: Request,
     q: Optional[str] = None,
+    tag: Optional[str] = None,
+    favorited_only: bool = False,
+    has_note: bool = False,
     page: int = 1,
     page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
     session: Session = Depends(get_session),
 ):
-    """Full-text search across non-discarded highlights (text + note).
+    """Full-text search with optional facets (tag, favorites-only, has-note).
 
     SQLite LIKE is fine at the current ~25k-row scale. If this hits a
     perf wall later, swap to FTS5 — the query stays the same.
+
+    All filters are conjunctive. A search with only facets and no q is
+    valid: "favorited highlights with notes" needs no text query.
     """
+    from sqlalchemy import and_
+
     settings = get_settings(session)
     q_clean = (q or "").strip()
-    if not q_clean:
+    tag_clean = (tag or "").strip()
+
+    has_any_filter = bool(q_clean or tag_clean or favorited_only or has_note)
+    active_filters = {
+        "q": q_clean or None,
+        "tag": tag_clean or None,
+        "favorited_only": favorited_only or None,
+        "has_note": has_note or None,
+    }
+
+    if not has_any_filter:
         return templates.TemplateResponse(
             request, "search.html",
             {
                 "settings": settings,
                 "q": "",
+                "active_filters": active_filters,
                 "highlights": [],
                 "page": 1, "page_size": page_size,
                 "total": 0, "total_pages": 1,
                 "showing_first": 0, "showing_last": 0,
             },
         )
-    # Escape LIKE wildcards in user input.
-    needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    pattern = f"%{needle}%"
-    base_filter = (
-        (Highlight.is_discarded == False)  # noqa: E712
-        & (
+
+    conditions = [Highlight.is_discarded == False]  # noqa: E712
+
+    if q_clean:
+        # Escape LIKE wildcards in user input.
+        needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        conditions.append(
             Highlight.text.like(pattern, escape="\\")
             | Highlight.note.like(pattern, escape="\\")
         )
-    )
+
+    if tag_clean:
+        conditions.append(
+            Highlight.id.in_(
+                select(HighlightTag.highlight_id)
+                .join(Tag, Tag.id == HighlightTag.tag_id)
+                .where(Tag.name == tag_clean)
+            )
+        )
+
+    if favorited_only:
+        conditions.append(Highlight.is_favorited == True)  # noqa: E712
+
+    if has_note:
+        conditions.append((Highlight.note.is_not(None)) & (Highlight.note != ""))
+
+    base_filter = and_(*conditions)
     rows, total, total_pages, page, page_size, showing_first, showing_last = (
         _paginated_highlights(
             session, base_filter, page=page, page_size=page_size,
@@ -633,6 +670,7 @@ async def ui_search(
         {
             "settings": settings,
             "q": q_clean,
+            "active_filters": active_filters,
             "highlights": rows,
             "page": page,
             "page_size": page_size,

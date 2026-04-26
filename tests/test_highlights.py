@@ -1000,3 +1000,73 @@ class TestSearchPage:
         # Only the highlight that literally contains "%" should match.
         assert "50% off" in resp.text
         assert "completely different" not in resp.text
+
+
+class TestSearchFacets:
+    """Filter chips on /highlights/ui/search — favorited_only, has_note, tag."""
+
+    def test_favorited_only_filter(self, client, make_highlight):
+        make_highlight(text="favorite one", is_favorited=True)
+        make_highlight(text="favorite two", is_favorited=True)
+        make_highlight(text="not favorited")
+        r = client.get("/highlights/ui/search",
+                       params={"q": "favorite", "favorited_only": "true"})
+        assert r.status_code == 200
+        assert "favorite one" in r.text
+        assert "favorite two" in r.text
+        assert "not favorited" not in r.text
+        # 2 matches, not 3
+        assert ">2</span>" in r.text
+
+    def test_has_note_filter(self, client, make_highlight):
+        make_highlight(text="annotated", note="my thoughts here")
+        make_highlight(text="bare", note=None)
+        r = client.get("/highlights/ui/search",
+                       params={"q": "annotated bare", "has_note": "true"})
+        assert r.status_code == 200
+        # Without `q` matching, the user may also send q="" — let's narrow
+        # by sending q that matches both, then has_note filter trims.
+        # Actually `q` here matches neither because it has no overlap.
+        # Better: filter only.
+        r2 = client.get("/highlights/ui/search", params={"has_note": "true"})
+        assert r2.status_code == 200
+        assert "annotated" in r2.text
+        assert "bare" not in r2.text
+
+    def test_tag_filter(self, client, db, make_highlight):
+        from app.models import Tag, HighlightTag
+        h1 = make_highlight(text="ml content")
+        h2 = make_highlight(text="other content")
+        t = Tag(name="ml")
+        db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h1.id, tag_id=t.id))
+        db.commit()
+        r = client.get("/highlights/ui/search", params={"tag": "ml"})
+        assert r.status_code == 200
+        assert "ml content" in r.text
+        assert "other content" not in r.text
+        # Active tag chip rendered
+        assert "#ml" in r.text
+
+    def test_filter_only_with_no_query_works(self, client, make_highlight):
+        make_highlight(text="favorited", is_favorited=True)
+        make_highlight(text="not favorited")
+        r = client.get("/highlights/ui/search", params={"favorited_only": "true"})
+        assert r.status_code == 200
+        assert "favorited" in r.text
+        # Result count rendered (not the empty placeholder copy)
+        assert "Type a query above" not in r.text
+
+    def test_no_filters_renders_empty_prompt(self, client, make_highlight):
+        make_highlight(text="something")
+        r = client.get("/highlights/ui/search")
+        assert r.status_code == 200
+        assert "Type a query above" in r.text
+        # No result rows
+        assert "something" not in r.text or r.text.count("something") <= 1
+
+    def test_facet_chips_present(self, client):
+        r = client.get("/highlights/ui/search?q=anything")
+        assert r.status_code == 200
+        assert "Favorites only" in r.text
+        assert "Has note" in r.text
