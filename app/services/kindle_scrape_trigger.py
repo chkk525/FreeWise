@@ -278,19 +278,38 @@ def _cancel_scrape_blocking() -> ScrapeStatus:
     except (ProcessLookupError, PermissionError):
         return get_status()
 
-    # Wait up to ~1.5s for graceful exit.
+    # Wait up to ~1.5s for graceful exit. Use _check_and_reap directly
+    # so the SIGTERM exit status (typically -15) isn't lost — the bool
+    # wrapper _process_alive would discard it, leaving get_status to
+    # retry on an already-reaped pid and fall back to exit_code=None.
+    captured_rc: Optional[int] = None
     for _ in range(15):
         time.sleep(0.1)
-        if not _process_alive(pid):
+        alive, rc = _check_and_reap(pid)
+        if not alive:
+            captured_rc = rc
             break
 
-    if _process_alive(pid):
+    alive, rc = _check_and_reap(pid)
+    if alive:
         try:
             os.kill(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
-        # Give the kernel a beat to mark the entry dead.
+        # Give the kernel a beat to mark the entry dead, then reap.
         time.sleep(0.1)
+        _, rc = _check_and_reap(pid)
+        captured_rc = rc
+    elif captured_rc is None:
+        captured_rc = rc
+
+    # Persist the captured exit code so get_status doesn't try to
+    # waitpid an already-reaped pid (which would yield exit_code=None).
+    h = _read_handle()
+    if h is not None and h.exit_code is None:
+        h.exit_code = captured_rc
+        h.finished_at = _now_iso()
+        _write_handle(h)
     return get_status()
 
 

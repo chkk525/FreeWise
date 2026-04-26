@@ -151,6 +151,33 @@ class TestTriggerScrape:
             time.sleep(0.05)
         assert trig.get_status().running is False
 
+    def test_cancel_captures_signal_exit_code(self, isolated_state, monkeypatch):
+        """Regression: cancel must persist the SIGTERM signal as a
+        negative exit code (-15), not lose it to None. Previously the
+        bool wrapper ``_process_alive`` discarded the reap status."""
+        # Use a process that ignores SIGTERM via a custom handler so we
+        # would normally need SIGKILL, BUT here we want the SIGTERM
+        # path: a plain time.sleep child gets the default handler which
+        # exits with -SIGTERM = -15.
+        monkeypatch.setenv(
+            "KINDLE_SCRAPE_CMD",
+            f"{sys.executable} -c \"import time; time.sleep(30)\"",
+        )
+        trig.trigger_scrape()
+        assert trig.get_status().running is True
+        s = trig._cancel_scrape_blocking()
+        # Wait briefly for the reap to settle.
+        for _ in range(60):
+            s = trig.get_status()
+            if not s.running:
+                break
+            time.sleep(0.05)
+        assert s.running is False
+        # SIGTERM = 15, so signaled exit is -15. SIGKILL escalation
+        # would yield -9. Either is acceptable; what we forbid is None
+        # (lost the status).
+        assert s.exit_code in (-15, -9), f"expected -15 or -9, got {s.exit_code}"
+
 
 # ── Endpoint integration ────────────────────────────────────────────────
 
