@@ -41,9 +41,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
-        | tar -xz -C /tmp \
+        -o /tmp/docker.tgz \
+    && tar -xzf /tmp/docker.tgz -C /tmp docker/docker \
     && install -m 0755 /tmp/docker/docker /usr/local/bin/docker \
-    && rm -rf /tmp/docker \
+    && rm -rf /tmp/docker /tmp/docker.tgz \
     && mkdir -p /usr/libexec/docker/cli-plugins \
     && curl -fsSL "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" \
         -o /usr/libexec/docker/cli-plugins/docker-compose \
