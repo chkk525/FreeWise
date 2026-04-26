@@ -114,7 +114,19 @@ def scan_and_import(
         target = processed_dir / path.name
         if target.exists():
             target = processed_dir / _stamp_name(path.name)
-        shutil.move(str(path), str(target))
+        # Race-tolerant move: if a sibling tick (scheduler vs scan-now)
+        # got there first, the source disappears between the glob above
+        # and this move. Treat that as "the other run already imported
+        # it" rather than a failure.
+        try:
+            shutil.move(str(path), str(target))
+        except FileNotFoundError:
+            log.debug(
+                "Kindle file %s vanished before move — likely a concurrent "
+                "scan; treating as already-processed",
+                path.name,
+            )
+            continue
         log.info(
             "Kindle imported %s: %d books (%d new, %d matched), %d highlights "
             "(%d skipped duplicates) -> %s",
