@@ -101,6 +101,53 @@ def test_search_requires_auth(client, db, make_highlight):
 # ── GET /api/v2/highlights/{id} ──────────────────────────────────────────────
 
 
+# ── GET /api/v2/highlights/duplicates/semantic ───────────────────────────────
+
+
+def test_semantic_duplicates_endpoint(client, db, make_highlight):
+    from app.models import Embedding
+    from app.services.embeddings import pack_vector
+    headers = _auth_headers(db)
+    h_a = make_highlight(text="alpha")
+    h_b = make_highlight(text="beta")
+    db.add(Embedding(highlight_id=h_a.id, model_name="nomic-embed-text",
+                     dim=2, vector=pack_vector([1.0, 0.0])))
+    db.add(Embedding(highlight_id=h_b.id, model_name="nomic-embed-text",
+                     dim=2, vector=pack_vector([0.99, 0.14])))
+    db.commit()
+    resp = client.get(
+        "/api/v2/highlights/duplicates/semantic", headers=headers,
+        params={"threshold": 0.9},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    pair = body["results"][0]
+    assert {pair["a_id"], pair["b_id"]} == {h_a.id, h_b.id}
+
+
+def test_semantic_duplicates_empty_when_no_embeddings(client, db, make_highlight):
+    headers = _auth_headers(db)
+    make_highlight(text="x")
+    resp = client.get("/api/v2/highlights/duplicates/semantic", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 0
+
+
+def test_semantic_duplicates_threshold_clamped(client, db):
+    headers = _auth_headers(db)
+    # threshold=2.0 should be 422 (le=1.0).
+    resp = client.get(
+        "/api/v2/highlights/duplicates/semantic", headers=headers,
+        params={"threshold": 2.0},
+    )
+    assert resp.status_code == 422
+
+
+def test_semantic_duplicates_requires_auth(client):
+    assert client.get("/api/v2/highlights/duplicates/semantic").status_code == 401
+
+
 # ── GET /api/v2/highlights/duplicates ────────────────────────────────────────
 
 

@@ -159,6 +159,15 @@ class Client:
             "GET", f"/api/v2/highlights/{highlight_id}/related", params=params,
         )
 
+    def find_semantic_duplicates(self, *, threshold: float = 0.92,
+                                 limit: int = 100, model: str | None = None) -> dict:
+        params: dict[str, Any] = {"threshold": threshold, "limit": limit}
+        if model:
+            params["model"] = model
+        return self._request(
+            "GET", "/api/v2/highlights/duplicates/semantic", params=params,
+        )
+
     def find_duplicates(self, *, prefix_chars: int = 80,
                         min_group_size: int = 2, limit: int = 50) -> dict:
         return self._request(

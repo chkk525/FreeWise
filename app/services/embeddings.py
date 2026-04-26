@@ -415,6 +415,117 @@ def backfill_embeddings(
     )
 
 
+# ── Semantic near-duplicate detection ─────────────────────────────────────
+
+
+def find_semantic_duplicates(
+    session,  # sqlmodel Session
+    *,
+    threshold: float = 0.92,
+    limit: int = 100,
+    model: str | None = None,
+    user_id: int | None = None,
+    chunk_size: int = 1024,
+) -> list[dict]:
+    """Find pairs of highlights with cosine similarity >= ``threshold``.
+
+    Strategy: load all embeddings into a (N, D) matrix, normalize once,
+    then chunk M_chunk × M.T to compute cosine in chunks of ``chunk_size``
+    rows at a time. For 25k × 768 vectors this fits in <100MB per chunk
+    and completes in a few seconds.
+
+    Returns ``[{a_id, b_id, similarity, a_text, b_text}, ...]`` sorted by
+    similarity desc, capped at ``limit`` pairs. Discarded highlights are
+    excluded; mastered are included (mastery is review-only).
+
+    Pure-Python equivalent would be 25k² = 625M cosines. Numpy chunked
+    matmul does this in O(N·D + N²/chunk_size) with C-level speed.
+    """
+    import heapq
+
+    import numpy as np
+    from sqlmodel import select
+
+    from app.models import Embedding, Highlight
+
+    model_name = model or _env_model()
+
+    # Pull (id, vector, text) — we materialize text now so the result
+    # rows can be returned without a second hydration pass.
+    base = (
+        select(Embedding.highlight_id, Embedding.vector, Highlight.text)
+        .join(Highlight, Highlight.id == Embedding.highlight_id)
+        .where(Embedding.model_name == model_name)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    )
+    if user_id is not None:
+        base = base.where(Highlight.user_id == user_id)
+    rows = session.exec(base).all()
+    if len(rows) < 2:
+        return []
+
+    n = len(rows)
+    # All embeddings for one model share the same dim; sample the first.
+    dim = len(rows[0][1]) // 4  # bytes → float32 count
+    matrix = np.empty((n, dim), dtype=np.float32)
+    ids = np.empty(n, dtype=np.int64)
+    texts: list[str] = []
+    for i, (hl_id, blob, text) in enumerate(rows):
+        if len(blob) != dim * 4:
+            # Skip malformed row by zeroing it out — its norm will be 0
+            # and cosine will be 0 against everything (gets filtered).
+            matrix[i] = 0.0
+        else:
+            matrix[i] = np.frombuffer(blob, dtype=np.float32)
+        ids[i] = hl_id
+        texts.append(text or "")
+
+    # Normalize once. Zero vectors stay zero (won't match anyone).
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms[norms == 0.0] = 1.0   # avoid div-by-zero; row is still zeros
+    normalized = matrix / norms
+
+    # Heap of (-similarity, a_id, b_id) — negative because heapq is min-heap
+    # and we want the largest similarities. Capped at ``limit``.
+    top: list[tuple[float, int, int]] = []
+
+    for start in range(0, n, chunk_size):
+        end = min(n, start + chunk_size)
+        # Chunk @ full-matrix.T gives an (chunk_size, N) sim matrix.
+        sims = normalized[start:end] @ normalized.T  # cosine since normalized
+        # We only care about upper triangle (i < j) to avoid (a,b) and
+        # (b,a) double-counting plus self-pairs.
+        for local_i in range(end - start):
+            i = start + local_i
+            row = sims[local_i]
+            # Mask everything at index <= i (already handled in earlier chunks).
+            row[: i + 1] = -2.0
+            # Pull all positions above threshold.
+            hits = np.where(row >= threshold)[0]
+            for j in hits:
+                sim = float(row[j])
+                a_id = int(ids[i])
+                b_id = int(ids[j])
+                if len(top) < limit:
+                    heapq.heappush(top, (sim, a_id, b_id))
+                elif sim > top[0][0]:
+                    heapq.heapreplace(top, (sim, a_id, b_id))
+
+    # Heap is min-first; sort descending for the output.
+    top.sort(key=lambda t: -t[0])
+
+    id_to_text = {int(ids[i]): texts[i] for i in range(n)}
+    return [
+        {
+            "a_id": a_id, "b_id": b_id,
+            "similarity": round(sim, 4),
+            "a_text": id_to_text.get(a_id, ""),
+            "b_text": id_to_text.get(b_id, ""),
+        }
+        for sim, a_id, b_id in top
+    ]
+
+
 # ── RAG: retrieve-then-generate ────────────────────────────────────────────
 
 

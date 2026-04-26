@@ -33,6 +33,7 @@ AUTHOR_RENAME = server.freewise_author_rename
 RANDOM = server.freewise_random
 TODAY = server.freewise_today
 DUPLICATES = server.freewise_duplicates
+SEMANTIC_DUPES = server.freewise_semantic_dupes
 STATS = server.freewise_stats
 HEALTH = server.freewise_health
 BOOKS = server.freewise_books
@@ -114,6 +115,21 @@ def test_random_returns_a_highlight(patched_client):
     _add("alpha"); _add("beta")
     out = json.loads(RANDOM())
     assert out["text"] in ("alpha", "beta")
+
+
+def test_semantic_dupes_via_mcp(patched_client):
+    from app.models import Embedding
+    from app.services.embeddings import pack_vector
+    h_a = _add("alpha")
+    h_b = _add("beta")
+    with Session(_test_engine) as s:
+        s.add(Embedding(highlight_id=h_a, model_name="nomic-embed-text",
+                        dim=2, vector=pack_vector([1.0, 0.0])))
+        s.add(Embedding(highlight_id=h_b, model_name="nomic-embed-text",
+                        dim=2, vector=pack_vector([0.99, 0.14])))
+        s.commit()
+    out = json.loads(SEMANTIC_DUPES(threshold=0.9))
+    assert out["count"] == 1
 
 
 def test_today_returns_stable_pick(patched_client):
@@ -316,14 +332,15 @@ def test_author_rename_via_mcp(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 27 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 28 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_random", "freewise_today", "freewise_related",
-        "freewise_ask", "freewise_summarize_book", "freewise_duplicates",
+        "freewise_ask", "freewise_summarize_book",
+        "freewise_duplicates", "freewise_semantic_dupes",
         "freewise_stats", "freewise_health",
         "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",

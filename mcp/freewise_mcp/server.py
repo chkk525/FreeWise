@@ -181,6 +181,24 @@ def freewise_related(highlight_id: int, limit: int = 10) -> str:
 
 
 @mcp.tool()
+def freewise_semantic_dupes(threshold: float = 0.92, limit: int = 100) -> str:
+    """Find paraphrase / same-idea highlight pairs via embedding cosine.
+
+    Complements ``freewise_duplicates`` (prefix match): semantic dedup
+    catches paraphrases and same-idea repeats across different books
+    that prefix matching can't see. Requires Ollama embeddings to be
+    backfilled — returns ``count: 0`` until then.
+
+    The default threshold of 0.92 is fairly strict; lower it (e.g. 0.85)
+    for fuzzier matches.
+    """
+    return _call(
+        "semantic_dupes failed",
+        lambda: _client().find_semantic_duplicates(threshold=threshold, limit=limit),
+    )
+
+
+@mcp.tool()
 def freewise_duplicates(prefix_chars: int = 80, min_group_size: int = 2, limit: int = 50) -> str:
     """Find probable duplicate highlights by leading-character match.
 

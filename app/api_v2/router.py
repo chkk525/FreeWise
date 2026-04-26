@@ -62,6 +62,7 @@ from app.services.embeddings import (
     OllamaUnavailable,
     ask_library,
     backfill_embeddings,
+    find_semantic_duplicates,
     top_k_similar,
 )
 
@@ -489,6 +490,36 @@ def search_highlights(
         for h in rows
     ]
     return PaginatedResponse(count=count, results=results)
+
+
+@router.get("/highlights/duplicates/semantic", response_model=PaginatedResponse)
+def find_semantic_duplicates_endpoint(
+    threshold: float = Query(default=0.92, ge=0.5, le=1.0,
+                             description="Minimum cosine similarity to count as duplicate."),
+    limit: int = Query(default=100, ge=1, le=500),
+    model: Optional[str] = Query(default=None, max_length=128),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> PaginatedResponse:
+    """Find semantically near-duplicate highlight pairs via embedding cosine.
+
+    Complements ``/highlights/duplicates`` (which uses leading-character
+    prefix match) — semantic dedup catches paraphrases and same-idea
+    repeats across different books that prefix matching can't see.
+
+    Requires embeddings to be backfilled. Returns ``count: 0`` and
+    ``results: []`` when no embeddings exist for the chosen model;
+    callers should treat that as "not yet computed", not "no duplicates".
+
+    Heavy operation: at 25k highlights × 768 dims it loads a ~75 MB
+    matrix and runs chunked matmul. Token-gated so it can't be triggered
+    by an anonymous request.
+    """
+    pairs = find_semantic_duplicates(
+        session, threshold=threshold, limit=limit, model=model,
+        user_id=token.user_id,
+    )
+    return PaginatedResponse(count=len(pairs), results=pairs)
 
 
 @router.get("/highlights/duplicates", response_model=PaginatedResponse)

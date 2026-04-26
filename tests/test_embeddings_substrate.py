@@ -228,6 +228,90 @@ def test_top_k_handles_zero_candidate_vector():
     assert all(not math.isnan(s) for s in sims)
 
 
+def test_find_semantic_duplicates_pairs_close_vectors(db, make_highlight):
+    from app.models import Embedding
+    from app.services.embeddings import find_semantic_duplicates
+
+    h_a = make_highlight(text="Alpha")
+    h_b = make_highlight(text="Beta — near-paraphrase of Alpha")
+    h_far = make_highlight(text="Completely different topic")
+    db.add(Embedding(highlight_id=h_a.id, model_name="m", dim=2,
+                     vector=pack_vector([1.0, 0.0])))
+    db.add(Embedding(highlight_id=h_b.id, model_name="m", dim=2,
+                     vector=pack_vector([0.99, 0.14])))  # ~0.99 cos similarity
+    db.add(Embedding(highlight_id=h_far.id, model_name="m", dim=2,
+                     vector=pack_vector([-1.0, 0.0])))
+    db.commit()
+
+    pairs = find_semantic_duplicates(db, threshold=0.9, model="m")
+    assert len(pairs) == 1
+    pair = pairs[0]
+    assert {pair["a_id"], pair["b_id"]} == {h_a.id, h_b.id}
+    assert pair["similarity"] >= 0.9
+
+
+def test_find_semantic_duplicates_excludes_discarded(db, make_highlight):
+    from app.models import Embedding
+    from app.services.embeddings import find_semantic_duplicates
+
+    h_a = make_highlight(text="kept")
+    h_b = make_highlight(text="trashed")
+    h_b.is_discarded = True
+    db.add(h_b)
+    db.add(Embedding(highlight_id=h_a.id, model_name="m", dim=2,
+                     vector=pack_vector([1.0, 0.0])))
+    db.add(Embedding(highlight_id=h_b.id, model_name="m", dim=2,
+                     vector=pack_vector([1.0, 0.0])))
+    db.commit()
+    pairs = find_semantic_duplicates(db, threshold=0.9, model="m")
+    assert pairs == []
+
+
+def test_find_semantic_duplicates_user_scoped(db, make_highlight):
+    from app.models import Embedding
+    from app.services.embeddings import find_semantic_duplicates
+
+    h_mine = make_highlight(text="mine")
+    h_theirs = make_highlight(text="theirs")
+    h_theirs.user_id = 2
+    db.add(h_theirs)
+    db.add(Embedding(highlight_id=h_mine.id, model_name="m", dim=2,
+                     vector=pack_vector([1.0, 0.0])))
+    db.add(Embedding(highlight_id=h_theirs.id, model_name="m", dim=2,
+                     vector=pack_vector([1.0, 0.0])))
+    db.commit()
+    pairs = find_semantic_duplicates(db, threshold=0.9, model="m", user_id=1)
+    # Only one user-1 vector — no pairs possible.
+    assert pairs == []
+
+
+def test_find_semantic_duplicates_caps_at_limit(db, make_highlight):
+    """Heap-bounded top-K: with 6 near-identical vectors and limit=2,
+    only the 2 highest-similarity pairs come back."""
+    from app.models import Embedding
+    from app.services.embeddings import find_semantic_duplicates
+
+    ids = []
+    for i in range(6):
+        h = make_highlight(text=f"x{i}")
+        ids.append(h.id)
+        db.add(Embedding(
+            highlight_id=h.id, model_name="m", dim=2,
+            vector=pack_vector([1.0, 0.001 * i]),  # all ≈ identical direction
+        ))
+    db.commit()
+    pairs = find_semantic_duplicates(db, threshold=0.9, model="m", limit=2)
+    assert len(pairs) == 2
+    # Sorted descending by similarity
+    assert pairs[0]["similarity"] >= pairs[1]["similarity"]
+
+
+def test_find_semantic_duplicates_empty_when_no_embeddings(db, make_highlight):
+    from app.services.embeddings import find_semantic_duplicates
+    make_highlight(text="x")
+    assert find_semantic_duplicates(db, model="m") == []
+
+
 def test_top_k_empty_candidates_returns_empty():
     from app.services.embeddings import top_k_similar
     out = top_k_similar(pack_vector([1.0]), [], dim=1, k=5)

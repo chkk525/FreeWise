@@ -305,6 +305,34 @@ def cmd_related(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_semantic_dupes(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.find_semantic_duplicates(
+        threshold=args.threshold, limit=args.limit,
+    )
+    if args.json:
+        _print_json(body)
+        return 0
+    if body["count"] == 0:
+        print(
+            "No semantic duplicates found. "
+            "If embedded == 0 in `freewise health`, run `freewise embed-backfill` first."
+        )
+        return 0
+    print(f"{body['count']} semantically-similar pair{'s' if body['count'] != 1 else ''} (threshold {args.threshold}):")
+    print()
+    for pair in body["results"]:
+        sim = pair["similarity"]
+        a = (pair["a_text"] or "").replace("\n", " ").strip()
+        b = (pair["b_text"] or "").replace("\n", " ").strip()
+        if len(a) > 70: a = a[:67] + "…"
+        if len(b) > 70: b = b[:67] + "…"
+        print(f"  [{sim:.3f}]  #{pair['a_id']:<6} {a}")
+        print(f"           #{pair['b_id']:<6} {b}")
+        print()
+    return 0
+
+
 def cmd_duplicates(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body = client.find_duplicates(
@@ -743,6 +771,15 @@ def _build_parser() -> argparse.ArgumentParser:
     dp.add_argument("--limit", type=int, default=50,
                     help="Max groups returned (default 50).")
     dp.set_defaults(func=cmd_duplicates)
+
+    # semantic-dupes (embedding-based)
+    sd = sub.add_parser("semantic-dupes",
+                        help="Find paraphrase / same-idea highlight pairs via embeddings (needs Ollama backfill).")
+    sd.add_argument("--threshold", type=float, default=0.92,
+                    help="Min cosine similarity to count as duplicate (0.5-1.0, default 0.92).")
+    sd.add_argument("--limit", type=int, default=100,
+                    help="Max pairs returned (default 100).")
+    sd.set_defaults(func=cmd_semantic_dupes)
 
     # related
     rl = sub.add_parser("related", help="Top-K semantically related highlights (needs embeddings).")
