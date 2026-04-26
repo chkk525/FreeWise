@@ -102,7 +102,7 @@
     </div>
 
     <!-- Import Form -->
-    <form method="post" action="/import/ui/readwise" enctype="multipart/form-data" id="import-form" onsubmit="showProgress()">
+    <form method="post" action="/import/ui/readwise" enctype="multipart/form-data" id="import-form" onsubmit="return showProgress(this);">
         <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 mb-6">
             <div class="flex items-start gap-4 mb-4">
                 <div class="pt-1">
@@ -205,44 +205,66 @@
         thumb.style.transform = on ? 'translateX(20px)' : 'translateX(0px)';
     }
 
-    function showProgress() {
-        document.getElementById('submit-btn').disabled = true;
-        document.getElementById('submit-btn').style.opacity = '0.5';
+    /**
+     * Honest progress bar driven by XHR upload events. The previous
+     * implementation simulated progress with Math.random and declared
+     * "Import complete" before the server even responded — so a 500 left
+     * the user thinking the import succeeded. This version reflects the
+     * actual upload, then transitions to "Importing…" while waiting for
+     * the server response, and finally surfaces success/failure.
+     */
+    function showProgress(form) {
+        const submitBtn = document.getElementById('submit-btn');
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.5';
         document.getElementById('progress-container').style.display = 'block';
-        
-        let progress = 0;
         const progressBar = document.getElementById('progress-bar');
         const progressText = document.getElementById('progress-text');
-        
-        const messages = [
-            'Reading CSV file...',
-            'Processing rows...',
-            'Creating books...',
-            'Importing highlights...',
-            'Parsing tags...',
-            'Finalizing import...'
-        ];
-        
-        let messageIndex = 0;
-        progressText.textContent = messages[0];
-        
-        const interval = setInterval(() => {
-            progress += Math.random() * 12 + 5;
-            if (progress > 100) progress = 100;
-            
-            progressBar.style.width = progress + '%';
-            
-            const messageThreshold = (messageIndex + 1) * (100 / messages.length);
-            if (progress > messageThreshold && messageIndex < messages.length - 1) {
-                messageIndex++;
-                progressText.textContent = messages[messageIndex];
+        progressText.textContent = 'Uploading…';
+
+        const xhr = new XMLHttpRequest();
+        xhr.open(form.method.toUpperCase() || 'POST', form.action, true);
+
+        xhr.upload.onprogress = (e) => {
+            if (!e.lengthComputable) return;
+            const pct = Math.round((e.loaded / e.total) * 90); // upload = 0–90%
+            progressBar.style.width = pct + '%';
+        };
+        xhr.upload.onload = () => {
+            // Upload done; server is now processing.
+            progressBar.style.width = '90%';
+            progressText.textContent = 'Server is importing… (this can take a minute)';
+        };
+        xhr.onload = () => {
+            progressBar.style.width = '100%';
+            if (xhr.status >= 200 && xhr.status < 300) {
+                progressText.textContent = 'Import complete!';
+                // Replace the page with the server-rendered response
+                // (which includes the success/error summary).
+                document.open();
+                document.write(xhr.responseText);
+                document.close();
+            } else {
+                progressText.textContent = `Import failed (HTTP ${xhr.status}). See response below.`;
+                progressBar.style.background = '#dc2626';
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+                // Render the server's error page in place.
+                document.open();
+                document.write(xhr.responseText || `<pre>HTTP ${xhr.status}</pre>`);
+                document.close();
             }
-            
-            if (progress >= 100) {
-                clearInterval(interval);
-                progressText.textContent = 'Import complete! Redirecting...';
-            }
-        }, 300);
+        };
+        xhr.onerror = () => {
+            progressText.textContent = 'Network error during upload. Refresh and retry.';
+            progressBar.style.background = '#dc2626';
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '1';
+        };
+
+        const fd = new FormData(form);
+        xhr.send(fd);
+        return false; // prevent native form submit
     }
 
     document.addEventListener('DOMContentLoaded', lucide.createIcons);
