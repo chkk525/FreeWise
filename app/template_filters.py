@@ -64,5 +64,28 @@ def autolink(text: str | None) -> Markup:
 
 
 def register(templates) -> None:
-    """Attach all custom filters to a ``Jinja2Templates`` instance."""
+    """Attach all custom filters to a ``Jinja2Templates`` instance.
+
+    Kept for callers that have already constructed a Jinja2Templates;
+    new code should prefer ``make_templates()`` which builds and
+    registers in one call.
+    """
     templates.env.filters["autolink"] = autolink
+
+
+def make_templates(directory: str = "app/templates"):
+    """Construct a ``Jinja2Templates`` with all custom filters attached.
+
+    Replaces the boilerplate that every router previously duplicated:
+
+        templates = Jinja2Templates(directory="app/templates")
+        from app.template_filters import register as _register_filters
+        _register_filters(templates)
+
+    Single call site, no post-construction setup, no E402 import-after-
+    statement noise.
+    """
+    from fastapi.templating import Jinja2Templates
+    templates = Jinja2Templates(directory=directory)
+    register(templates)
+    return templates

@@ -2,7 +2,6 @@ from dataclasses import asdict
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from datetime import datetime, date
@@ -10,12 +9,11 @@ from datetime import datetime, date
 from app.db import get_session, get_settings, get_current_streak
 from app.models import Book, Highlight, Settings, ReviewSession
 from app.services.kindle_import_status import get_status as get_kindle_status
+from app.template_filters import make_templates
 
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-templates = Jinja2Templates(directory="app/templates")
-from app.template_filters import register as _register_filters  # noqa: E402
-_register_filters(templates)
+templates = make_templates()
 
 
 

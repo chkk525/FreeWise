@@ -24,18 +24,16 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.db import get_session, get_settings
 from app.models import ApiToken
+from app.template_filters import make_templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/import/api-token", tags=["api-tokens"])
-templates = Jinja2Templates(directory="app/templates")
-from app.template_filters import register as _register_filters  # noqa: E402
-_register_filters(templates)
+templates = make_templates()
 
 
 # Single-user FreeWise: token always belongs to user_id=1. Callers cannot

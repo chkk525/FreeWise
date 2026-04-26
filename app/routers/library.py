@@ -1,7 +1,6 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Request, Form, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 from datetime import datetime
 import os
@@ -11,12 +10,11 @@ import httpx
 
 from app.db import get_session, get_settings
 from app.models import Book, Highlight, Settings
+from app.template_filters import make_templates
 
 
 router = APIRouter(prefix="/library", tags=["library"])
-templates = Jinja2Templates(directory="app/templates")
-from app.template_filters import register as _register_filters  # noqa: E402
-_register_filters(templates)
+templates = make_templates()
 
 COVER_UPLOAD_DIR = os.path.join("app", "static", "uploads", "covers")
 ALLOWED_COVER_TYPES = {"image/jpeg", "image/png", "image/webp"}

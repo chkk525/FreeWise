@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from app.template_filters import make_templates
 from sqlmodel import Session
 
 from app.db import (
@@ -235,9 +235,7 @@ async def rate_limit_api(request: Request, call_next):
 
 
 # Setup templates and static files
-templates = Jinja2Templates(directory="app/templates")
-from app.template_filters import register as _register_filters  # noqa: E402
-_register_filters(templates)
+templates = make_templates()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Include routers

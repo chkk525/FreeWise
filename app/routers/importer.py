@@ -5,18 +5,16 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.db import get_session, get_settings
 from app.models import Highlight, Tag, HighlightTag, Settings, Book
+from app.template_filters import make_templates
 from app.utils.tags import parse_tags
 
 
 router = APIRouter(prefix="/import", tags=["import"])
-templates = Jinja2Templates(directory="app/templates")
-from app.template_filters import register as _register_filters  # noqa: E402
-_register_filters(templates)
+templates = make_templates()
 
 
 def parse_readwise_datetime(dt_str: str) -> Optional[datetime]:

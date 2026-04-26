@@ -6,19 +6,17 @@ import random
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
 from fastapi.responses import HTMLResponse, PlainTextResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from app.db import get_session, get_settings
 from app.models import Embedding, Highlight, HighlightTag, ReviewSession, Tag
+from app.template_filters import make_templates
 
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
-templates = Jinja2Templates(directory="app/templates")
-from app.template_filters import register as _register_filters  # noqa: E402
-_register_filters(templates)
+templates = make_templates()
 
 # In-memory session storage for review queues
 # Format: {session_id: {"highlight_ids": [int], "current_index": int, "timestamp": datetime}}

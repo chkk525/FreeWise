@@ -4,21 +4,19 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 from sqlmodel import Session, select, func
 from starlette.background import BackgroundTask
 
 from app.db import get_engine, get_session, get_settings
 from app.models import Settings, Highlight
+from app.template_filters import make_templates
 
 THEME_CYCLE = ("light", "dark", "auto")
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
-templates = Jinja2Templates(directory="app/templates")
-from app.template_filters import register as _register_filters  # noqa: E402
-_register_filters(templates)
+templates = make_templates()
 
 
 # ============ HTML/HTMX Endpoints ============
