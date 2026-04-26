@@ -7,6 +7,8 @@
 {% block content %}
 <p class="text-gray-600 dark:text-gray-400 mb-3">
     Browse your collection of {{ total if total is defined else books|length }} book{{ 's' if (total if total is defined else books|length) != 1 else '' }}.
+    ·
+    <a href="/library/ui/authors" class="underline hover:text-primary-600 dark:hover:text-primary-400">view authors</a>
 </p>
 
 <form method="get" action="/library/ui" class="mb-4">

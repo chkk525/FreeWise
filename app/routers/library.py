@@ -200,6 +200,76 @@ async def ui_library(
     )
 
 
+@router.get("/ui/authors", response_class=HTMLResponse)
+async def ui_authors(
+    request: Request,
+    sort: str = "highlights",
+    session: Session = Depends(get_session),
+):
+    """List every author with book/highlight counts and last activity.
+
+    Single GROUP BY query with an outer-join to Highlight; authors with
+    no highlights still appear (book count > 0). Sort options:
+      - highlights (default): most highlighted authors first
+      - books: most books first
+      - name: alphabetical
+      - recent: most recently captured highlight first
+    Each row links to /library/ui?author=<name> which already renders
+    the U74 per-author summary card and book list.
+    """
+    settings = get_settings(session)
+    if sort not in {"highlights", "books", "name", "recent"}:
+        sort = "highlights"
+
+    from sqlmodel import case as sa_case
+    stmt = (
+        select(
+            Book.author,
+            func.count(func.distinct(Book.id)).label("book_count"),
+            func.count(Highlight.id).label("highlight_count"),
+            func.sum(
+                sa_case((Highlight.is_favorited == True, 1), else_=0)  # noqa: E712
+            ).label("favorited"),
+            func.max(Highlight.created_at).label("last_at"),
+        )
+        .outerjoin(Highlight, (Highlight.book_id == Book.id) & (Highlight.user_id == 1))
+        .where(Book.author.is_not(None))
+        .where(Book.author != "")
+        .group_by(Book.author)
+    )
+    if sort == "highlights":
+        stmt = stmt.order_by(func.count(Highlight.id).desc(), Book.author.asc())
+    elif sort == "books":
+        stmt = stmt.order_by(func.count(func.distinct(Book.id)).desc(), Book.author.asc())
+    elif sort == "name":
+        stmt = stmt.order_by(Book.author.asc())
+    else:  # recent
+        stmt = stmt.order_by(func.max(Highlight.created_at).desc().nullslast(), Book.author.asc())
+
+    rows = session.exec(stmt).all()
+    authors = [
+        {
+            "name": r[0],
+            "book_count": int(r[1] or 0),
+            "highlight_count": int(r[2] or 0),
+            "favorited": int(r[3] or 0),
+            "last_at": r[4],
+        }
+        for r in rows
+    ]
+
+    return templates.TemplateResponse(
+        request, "authors.html",
+        {
+            "settings": settings,
+            "authors": authors,
+            "current_sort": sort,
+            "total_authors": len(authors),
+            "total_highlights": sum(a["highlight_count"] for a in authors),
+        },
+    )
+
+
 @router.get("/ui/book/{book_id}", response_class=HTMLResponse)
 async def ui_book_detail(
     request: Request,

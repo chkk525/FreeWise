@@ -559,3 +559,58 @@ class TestLibraryPagination:
         # link to next page (if any) should preserve sort=author
         # (we only have 1 book so no next link, but the sort header should still reflect)
         assert "sort=author" in r.text or "current_sort" not in r.text  # sort applied
+
+
+class TestAuthorsIndex:
+    """GET /library/ui/authors — index of every author with stats."""
+
+    def test_empty_state(self, client):
+        r = client.get("/library/ui/authors")
+        assert r.status_code == 200
+        assert "No authors yet" in r.text
+
+    def test_lists_authors_with_counts(self, client, make_book, make_highlight):
+        a = make_book(title="A1", author="Alice")
+        b = make_book(title="A2", author="Alice")
+        c = make_book(title="B1", author="Bob")
+        for _ in range(3):
+            make_highlight(book=a, text="x")
+        make_highlight(book=b, text="y", is_favorited=True)
+        make_highlight(book=c, text="z")
+
+        r = client.get("/library/ui/authors")
+        assert r.status_code == 200
+        assert "Alice" in r.text
+        assert "Bob" in r.text
+        # Default sort = highlights desc → Alice (4) before Bob (1)
+        assert r.text.index("Alice") < r.text.index("Bob")
+        # Link to filtered library view
+        assert 'href="/library/ui?author=Alice"' in r.text
+
+    def test_books_with_no_author_excluded(self, client, make_book, make_highlight):
+        nobody = make_book(title="Anon", author=None)
+        make_highlight(book=nobody, text="x")
+        r = client.get("/library/ui/authors")
+        assert r.status_code == 200
+        assert "No authors yet" in r.text
+
+    def test_sort_by_name_alphabetical(self, client, make_book, make_highlight):
+        z = make_book(title="zz", author="Zoe")
+        a = make_book(title="aa", author="Anna")
+        make_highlight(book=z, text="x"); make_highlight(book=z, text="y")
+        make_highlight(book=a, text="z")
+        r = client.get("/library/ui/authors?sort=name")
+        assert r.status_code == 200
+        assert r.text.index("Anna") < r.text.index("Zoe")
+
+    def test_invalid_sort_falls_back_to_default(self, client, make_book, make_highlight):
+        a = make_book(title="A", author="Alice")
+        make_highlight(book=a, text="x")
+        r = client.get("/library/ui/authors?sort=INVALID")
+        assert r.status_code == 200
+        assert "Alice" in r.text
+
+    def test_link_from_library_header(self, client):
+        r = client.get("/library/ui")
+        assert r.status_code == 200
+        assert 'href="/library/ui/authors"' in r.text
