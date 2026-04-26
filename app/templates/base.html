@@ -474,6 +474,27 @@
             });
         }
 
+        // Copy a highlight as a formatted quote. Buttons opt in by setting
+        // data-copy-quote and data-text / data-author / data-title.
+        // Format: "highlight text"\n— Author, Book Title (if present).
+        window.copyQuote = async function (btn) {
+            const text = (btn.dataset.text || '').trim();
+            if (!text) return;
+            const author = (btn.dataset.author || '').trim();
+            const title = (btn.dataset.title || '').trim();
+            let attribution = '';
+            if (author && title) attribution = '— ' + author + ', ' + title;
+            else if (title)      attribution = '— ' + title;
+            else if (author)     attribution = '— ' + author;
+            const out = attribution ? ('"' + text + '"\n' + attribution) : ('"' + text + '"');
+            try {
+                await navigator.clipboard.writeText(out);
+                if (window.showToast) window.showToast('Quote copied', 'success');
+            } catch (err) {
+                if (window.showToast) window.showToast('Copy blocked — check clipboard permissions', 'error');
+            }
+        };
+
         // Toast notifications. Anyone can call window.showToast(msg, type, ms).
         // HTMX requests auto-toast: success when the trigger has data-toast-success,
         // error on any non-2xx response.

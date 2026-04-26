@@ -128,6 +128,40 @@ class TestDiscardJSON:
 
 # ── HTML/HTMX endpoints ──────────────────────────────────────────────────────
 
+class TestCopyQuoteButton:
+    """The copy-as-quote button on _highlight_row carries the right data."""
+
+    def test_button_renders_with_text_author_title(self, client, db, make_highlight, make_book):
+        book = make_book(title="Sapiens", author="Yuval Noah Harari")
+        h = make_highlight(text="History helps us see further", book=book)
+        resp = client.get(f"/highlights/ui/h/{h.id}")
+        assert resp.status_code == 200
+        assert "data-copy-quote" in resp.text
+        assert 'data-text="History helps us see further"' in resp.text
+        assert 'data-author="Yuval Noah Harari"' in resp.text
+        assert 'data-title="Sapiens"' in resp.text
+        # JS handler is wired
+        assert "window.copyQuote(this)" in resp.text
+
+    def test_button_handles_missing_author(self, client, db, make_highlight, make_book):
+        book = make_book(title="Untitled", author=None)
+        h = make_highlight(text="standalone quote", book=book)
+        resp = client.get(f"/highlights/ui/h/{h.id}")
+        assert resp.status_code == 200
+        assert 'data-author=""' in resp.text
+        assert 'data-title="Untitled"' in resp.text
+
+    def test_button_html_escapes_quote_in_text(self, client, db, make_highlight):
+        # Embedded " in text must be escaped in the data-text attr or it
+        # would terminate the attribute and inject markup.
+        h = make_highlight(text='He said "go"')
+        resp = client.get(f"/highlights/ui/h/{h.id}")
+        assert resp.status_code == 200
+        # Jinja2 autoescape uses &#34; for "
+        assert ('data-text="He said &#34;go&#34;"' in resp.text
+                or 'data-text="He said &quot;go&quot;"' in resp.text)
+
+
 class TestHighlightEdit:
     """POST /highlights/{id}/edit — save edited highlight text/note/weight."""
 
