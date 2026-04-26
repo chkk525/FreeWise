@@ -97,6 +97,20 @@ def freewise_show(highlight_id: int) -> str:
 
 
 @mcp.tool()
+def freewise_related(highlight_id: int, limit: int = 10) -> str:
+    """Top-K semantically similar highlights to ``highlight_id``.
+
+    Backed by Ollama embeddings (must have been backfilled — returns
+    ``count: 0`` if not). Useful for "show me other thoughts I've had
+    on this same theme" prompts. The source highlight itself is excluded.
+    """
+    return _call(
+        "related failed",
+        lambda: _client().related_highlights(highlight_id, limit=limit),
+    )
+
+
+@mcp.tool()
 def freewise_random(book_id: int | None = None) -> str:
     """Return one random highlight from the user's library — "surprise me".
 

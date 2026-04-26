@@ -21,6 +21,10 @@ dev = [
     "fastapi>=0.136.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
+    # numpy is used by app/services/embeddings.py to compute cosine
+    # similarity over thousands of vectors. Pure-Python is ~10s/query at
+    # 25k highlights × 768 dims; numpy matmul drops that to <50ms.
+    "numpy>=2.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "python-multipart>=0.0.26",

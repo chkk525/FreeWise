@@ -87,6 +87,15 @@ class Client:
     def get_highlight(self, highlight_id: int) -> dict:
         return self._request("GET", f"/api/v2/highlights/{highlight_id}")
 
+    def related_highlights(self, highlight_id: int, *, limit: int = 10,
+                           model: str | None = None) -> dict:
+        params: dict[str, Any] = {"limit": limit}
+        if model:
+            params["model"] = model
+        return self._request(
+            "GET", f"/api/v2/highlights/{highlight_id}/related", params=params,
+        )
+
     def random_highlight(self, *, include_discarded: bool = False,
                          include_mastered: bool = True,
                          book_id: int | None = None) -> dict:

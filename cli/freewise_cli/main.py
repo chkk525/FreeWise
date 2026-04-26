@@ -193,6 +193,68 @@ def cmd_book_highlights(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_embed_backfill(args: argparse.Namespace) -> int:
+    """Drive the embedding backfill loop until no rows remain or --max is hit.
+
+    Talks to the *running* FreeWise server via a new HTTP endpoint that
+    runs one batch and returns a JSON report. We loop client-side so the
+    user sees progress and can Ctrl-C cleanly.
+    """
+    client = _client_from_args(args)
+    total_embedded = 0
+    total_failed = 0
+    iterations = 0
+    while True:
+        body = client._request(
+            "POST",
+            "/api/v2/embeddings/backfill",
+            json={"batch_size": args.batch_size, "model": args.model},
+        )
+        iterations += 1
+        total_embedded += body["embedded"]
+        total_failed += body["failed"]
+        remaining = body["remaining"]
+        print(
+            f"  [iter {iterations:>3}] embedded={body['embedded']:>4} "
+            f"skipped={body['skipped']:>4} failed={body['failed']:>4} "
+            f"remaining={remaining:>5}"
+        )
+        if remaining == 0:
+            break
+        if args.max and total_embedded >= args.max:
+            print(f"  reached --max {args.max}; stopping early")
+            break
+        if body["embedded"] == 0 and body["skipped"] == 0:
+            # Nothing to do but failures — bail out so we don't loop forever.
+            print("  all remaining rows failed; stopping")
+            break
+    print()
+    print(f"done: embedded {total_embedded}, failed {total_failed}, remaining {remaining}")
+    return 1 if total_failed else 0
+
+
+def cmd_related(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.related_highlights(args.highlight_id, limit=args.limit)
+    if args.json:
+        _print_json(body)
+        return 0
+    if body["count"] == 0:
+        print(f"#{args.highlight_id}: no related highlights yet — run `freewise embed-backfill` first?")
+        return 0
+    print(f"Top {body['count']} highlights related to #{args.highlight_id}:")
+    print()
+    for h in body["results"]:
+        sim = h.get("similarity", 0.0)
+        score = f"{sim:.3f}"
+        title = h.get("title") or "(unbound)"
+        snippet = (h.get("text") or "").replace("\n", " ").strip()
+        if len(snippet) > 80:
+            snippet = snippet[:77] + "…"
+        print(f"  [{score}]  #{h['id']:<6} {title[:30]:<30}  {snippet}")
+    return 0
+
+
 def cmd_random(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     h = client.random_highlight(book_id=getattr(args, "book_id", None))
@@ -468,6 +530,19 @@ def _build_parser() -> argparse.ArgumentParser:
     rd = sub.add_parser("random", help="Pick one random highlight (surprise me).")
     rd.add_argument("--book-id", type=int, help="Limit to one book.")
     rd.set_defaults(func=cmd_random)
+
+    # related
+    rl = sub.add_parser("related", help="Top-K semantically related highlights (needs embeddings).")
+    rl.add_argument("highlight_id", type=int)
+    rl.add_argument("--limit", type=int, default=10)
+    rl.set_defaults(func=cmd_related)
+
+    # embed-backfill
+    eb = sub.add_parser("embed-backfill", help="Generate embeddings for highlights that don't have them yet.")
+    eb.add_argument("--batch-size", type=int, default=64, help="How many highlights per batch (default 64).")
+    eb.add_argument("--max", type=int, default=0, help="Stop after this many embeddings (0 = no cap).")
+    eb.add_argument("--model", help="Override FREEWISE_OLLAMA_EMBED_MODEL.")
+    eb.set_defaults(func=cmd_embed_backfill)
 
     # stats
     st = sub.add_parser("stats", help="Aggregate counts + review-due summary.")

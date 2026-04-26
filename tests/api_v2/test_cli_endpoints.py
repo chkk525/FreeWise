@@ -368,6 +368,137 @@ def test_search_results_include_tags(client, db, make_highlight):
     assert r.json()["results"][0]["tags"] == ["topic"]
 
 
+# ── GET /api/v2/highlights/{id}/related (semantic similarity) ────────────────
+
+
+def _seed_embedding(db, highlight_id: int, vec: list[float], model: str = "test-model"):
+    """Helper: write an Embedding row for the given highlight."""
+    from app.models import Embedding
+    from app.services.embeddings import pack_vector
+    db.add(Embedding(
+        highlight_id=highlight_id, model_name=model,
+        dim=len(vec), vector=pack_vector(vec),
+    ))
+    db.commit()
+
+
+def test_related_returns_top_k(client, db, make_highlight):
+    headers = _auth_headers(db)
+    target = make_highlight(text="target")
+    near = make_highlight(text="near")
+    far = make_highlight(text="far")
+    _seed_embedding(db, target.id, [1.0, 0.0, 0.0])
+    _seed_embedding(db, near.id, [0.9, 0.1, 0.0])
+    _seed_embedding(db, far.id, [-1.0, 0.0, 0.0])
+    resp = client.get(
+        f"/api/v2/highlights/{target.id}/related",
+        headers=headers, params={"model": "test-model"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 2
+    # `near` should rank above `far`.
+    assert body["results"][0]["id"] == near.id
+    assert body["results"][1]["id"] == far.id
+    # Each result should have a similarity score field.
+    assert "similarity" in body["results"][0]
+
+
+def test_related_excludes_self(client, db, make_highlight):
+    """Source highlight must NOT appear in its own related list."""
+    headers = _auth_headers(db)
+    h = make_highlight(text="lonely")
+    _seed_embedding(db, h.id, [1.0, 0.0])
+    resp = client.get(
+        f"/api/v2/highlights/{h.id}/related", headers=headers,
+        params={"model": "test-model"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert all(r["id"] != h.id for r in body["results"])
+
+
+def test_related_returns_empty_when_no_target_embedding(client, db, make_highlight):
+    """When the target highlight has no embedding for this model, count=0."""
+    headers = _auth_headers(db)
+    h = make_highlight(text="never embedded")
+    resp = client.get(
+        f"/api/v2/highlights/{h.id}/related", headers=headers,
+        params={"model": "test-model"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 0
+    assert body["results"] == []
+
+
+def test_related_excludes_discarded_candidates(client, db, make_highlight):
+    headers = _auth_headers(db)
+    target = make_highlight(text="target")
+    alive = make_highlight(text="alive")
+    dead = make_highlight(text="dead", is_discarded=True)
+    _seed_embedding(db, target.id, [1.0, 0.0])
+    _seed_embedding(db, alive.id, [1.0, 0.0])
+    _seed_embedding(db, dead.id, [1.0, 0.0])
+    resp = client.get(
+        f"/api/v2/highlights/{target.id}/related", headers=headers,
+        params={"model": "test-model"},
+    )
+    body = resp.json()
+    ids = [r["id"] for r in body["results"]]
+    assert alive.id in ids
+    assert dead.id not in ids
+
+
+def test_related_404_for_other_user(client, db, make_highlight):
+    h = make_highlight(text="theirs")
+    h.user_id = 2
+    db.add(h); db.commit()
+    headers = _auth_headers(db)
+    resp = client.get(f"/api/v2/highlights/{h.id}/related", headers=headers)
+    assert resp.status_code == 404
+
+
+def test_related_requires_auth(client):
+    assert client.get("/api/v2/highlights/1/related").status_code == 401
+
+
+# ── POST /api/v2/embeddings/backfill (CLI driver endpoint) ───────────────────
+
+
+def test_backfill_endpoint_returns_report(client, db, make_highlight, monkeypatch):
+    """The endpoint should call the backfill service and return its report."""
+    headers = _auth_headers(db)
+    make_highlight(text="hi")
+
+    # Patch the OllamaClient to a deterministic fake.
+    import httpx, json as _json
+    from app.services import embeddings as emb_svc
+
+    def handler(request):
+        body = _json.loads(request.content)
+        return httpx.Response(200, json={"embedding": [float(len(body["prompt"]))]})
+
+    fake_client = emb_svc.OllamaClient(
+        base_url="http://x", model="test-model",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    real_client_cls = emb_svc.OllamaClient
+    monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake_client)
+    try:
+        resp = client.post(
+            "/api/v2/embeddings/backfill",
+            headers=headers, json={"batch_size": 10, "model": "test-model"},
+        )
+    finally:
+        monkeypatch.setattr(emb_svc, "OllamaClient", real_client_cls)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["embedded"] == 1
+    assert body["remaining"] == 0
+    assert body["model"] == "test-model"
+
+
 # ── GET /api/v2/tags ─────────────────────────────────────────────────────────
 
 

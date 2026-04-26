@@ -186,6 +186,130 @@ def test_embedding_table_created(db, make_highlight):
     assert unpack_vector(fetched.vector, fetched.dim) == pytest.approx([0.1, 0.2, 0.3])
 
 
+def test_top_k_similar_orders_by_similarity():
+    """top_k_similar should return ids sorted by descending cosine similarity."""
+    from app.services.embeddings import top_k_similar
+    target = pack_vector([1.0, 0.0, 0.0])
+    candidates = [
+        (101, pack_vector([1.0, 0.0, 0.0])),  # identical → 1.0
+        (102, pack_vector([0.5, 0.5, 0.0])),  # 0.707
+        (103, pack_vector([0.0, 1.0, 0.0])),  # 0.0
+        (104, pack_vector([-1.0, 0.0, 0.0])), # -1.0
+    ]
+    out = top_k_similar(target, candidates, dim=3, k=4)
+    ids = [hid for hid, _ in out]
+    assert ids == [101, 102, 103, 104]
+    # Spot-check scores.
+    assert out[0][1] == pytest.approx(1.0, abs=1e-5)
+    assert out[3][1] == pytest.approx(-1.0, abs=1e-5)
+
+
+def test_top_k_truncates_to_k():
+    from app.services.embeddings import top_k_similar
+    target = pack_vector([1.0, 0.0])
+    candidates = [(i, pack_vector([1.0, 0.0])) for i in range(20)]
+    out = top_k_similar(target, candidates, dim=2, k=5)
+    assert len(out) == 5
+
+
+def test_top_k_handles_zero_candidate_vector():
+    """Zero-norm candidates should not produce NaN — they get sim=0."""
+    from app.services.embeddings import top_k_similar
+    target = pack_vector([1.0, 0.0])
+    candidates = [
+        (1, pack_vector([0.0, 0.0])),  # zero vec
+        (2, pack_vector([1.0, 0.0])),
+    ]
+    out = top_k_similar(target, candidates, dim=2, k=2)
+    assert out[0][0] == 2
+    # The zero-vec result should have sim=0, not NaN.
+    import math
+    sims = [s for _, s in out]
+    assert all(not math.isnan(s) for s in sims)
+
+
+def test_top_k_empty_candidates_returns_empty():
+    from app.services.embeddings import top_k_similar
+    out = top_k_similar(pack_vector([1.0]), [], dim=1, k=5)
+    assert out == []
+
+
+# ── Backfill ─────────────────────────────────────────────────────────────
+
+
+def _fake_ollama(mapping: dict[str, list[float]]):
+    """Build an OllamaClient with a MockTransport that returns
+    ``mapping[prompt]`` as the embedding."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        prompt = body["prompt"]
+        if prompt in mapping:
+            return httpx.Response(200, json={"embedding": mapping[prompt]})
+        return httpx.Response(404, text="not configured for this prompt")
+
+    from app.services.embeddings import OllamaClient
+    return OllamaClient(
+        base_url="http://fake", model="test-model",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+
+def test_backfill_embeds_pending_rows(db, make_highlight):
+    from app.services.embeddings import backfill_embeddings
+
+    h1 = make_highlight(text="hello")
+    h2 = make_highlight(text="world")
+    client = _fake_ollama({"hello": [1.0, 0.0], "world": [0.0, 1.0]})
+
+    report = backfill_embeddings(db, model="test-model", batch_size=10, client=client)
+    assert report.embedded == 2
+    assert report.failed == 0
+    assert report.remaining == 0
+    assert report.dim == 2
+
+    # Re-running is a no-op.
+    report2 = backfill_embeddings(db, model="test-model", batch_size=10, client=client)
+    assert report2.embedded == 0
+    assert report2.skipped == 0
+
+
+def test_backfill_skips_empty_text(db, make_highlight):
+    from app.services.embeddings import backfill_embeddings
+
+    make_highlight(text="real")
+    make_highlight(text="   ")  # whitespace-only
+    client = _fake_ollama({"real": [1.0]})
+    report = backfill_embeddings(db, model="m", batch_size=10, client=client)
+    assert report.embedded == 1
+    assert report.skipped == 1
+
+
+def test_backfill_excludes_discarded(db, make_highlight):
+    from app.services.embeddings import backfill_embeddings
+
+    make_highlight(text="alive")
+    make_highlight(text="dead", is_discarded=True)
+    client = _fake_ollama({"alive": [1.0]})
+    report = backfill_embeddings(db, model="m", batch_size=10, client=client)
+    assert report.embedded == 1
+    assert report.remaining == 0  # discarded doesn't count
+
+
+def test_backfill_failed_count_on_ollama_error(db, make_highlight):
+    """When Ollama errors out for a row, that row is counted as failed but
+    the loop keeps going for the others."""
+    from app.services.embeddings import backfill_embeddings
+
+    make_highlight(text="ok")
+    make_highlight(text="boom")
+    client = _fake_ollama({"ok": [1.0]})  # "boom" not configured → 404
+    report = backfill_embeddings(db, model="m", batch_size=10, client=client)
+    assert report.embedded == 1
+    assert report.failed == 1
+    # The failed row stays in pending so the next backfill run will try it again.
+    assert report.remaining == 1
+
+
 def test_embedding_unique_per_highlight_model(db, make_highlight):
     """The (highlight_id, model_name) unique index should reject duplicates."""
     from sqlalchemy.exc import IntegrityError

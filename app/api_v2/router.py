@@ -54,8 +54,9 @@ from app.api_v2.schemas import (
     TagSummaryItem,
 )
 from app.db import get_session
-from app.models import ApiToken, Book, Highlight, HighlightTag, Tag
+from app.models import ApiToken, Book, Embedding, Highlight, HighlightTag, Tag
 from app.routers.importer import get_or_create_book
+from app.services.embeddings import _env_model, backfill_embeddings, top_k_similar
 
 logger = logging.getLogger(__name__)
 
@@ -574,6 +575,125 @@ def update_highlight(
 
 
 # ── Highlight-level tags ────────────────────────────────────────────────────
+
+
+class _BackfillRequest(__import__("pydantic").BaseModel):
+    """POST body for /api/v2/embeddings/backfill."""
+
+    batch_size: int = 64
+    model: Optional[str] = None
+
+
+@router.post("/embeddings/backfill")
+def embeddings_backfill(
+    payload: _BackfillRequest,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Run one batch of the embedding backfill, return a progress report.
+
+    Designed to be called repeatedly by the CLI's loop so each batch
+    commits independently. The actual loop lives in the client; this
+    endpoint stays stateless. Token-gated like every /api/v2 route —
+    accidental triggering by a crawler is impossible.
+    """
+    report = backfill_embeddings(
+        session, model=payload.model, batch_size=payload.batch_size,
+    )
+    return report.as_dict()
+
+
+@router.get("/highlights/{highlight_id}/related", response_model=PaginatedResponse)
+def related_highlights(
+    highlight_id: int,
+    limit: int = Query(default=10, ge=1, le=50),
+    model: Optional[str] = Query(default=None, max_length=128),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> PaginatedResponse:
+    """Top-K semantically similar highlights to ``highlight_id``.
+
+    Requires that embeddings have been backfilled for the chosen model
+    (see ``freewise embed-backfill``). Returns ``count = 0`` and
+    ``results = []`` when no embeddings exist yet — callers should
+    treat that as "not yet computed" rather than "no related items".
+
+    The source highlight itself is excluded from results. Mastered rows
+    are *included* (mastery hides from review, not from semantic
+    discovery). Discarded rows are excluded.
+    """
+    target_h = session.get(Highlight, highlight_id)
+    if target_h is None or target_h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+
+    model_name = model or _env_model()
+    target_emb = session.exec(
+        select(Embedding)
+        .where(Embedding.highlight_id == highlight_id)
+        .where(Embedding.model_name == model_name)
+    ).first()
+    if target_emb is None:
+        # Coverage hole — return an empty list. The UI will surface a
+        # "not yet embedded" hint based on count == 0.
+        return PaginatedResponse(count=0, results=[])
+
+    # Pull all candidate vectors for this model. For the current 25k-
+    # highlight scale this is well under 100MB in RAM and the matmul
+    # is sub-100ms. If we ever scale past ~250k vectors we'd switch to
+    # an ANN index (sqlite-vec or hnsw).
+    candidate_rows = session.exec(
+        select(Embedding.highlight_id, Embedding.vector, Highlight.is_discarded)
+        .join(Highlight, Highlight.id == Embedding.highlight_id)
+        .where(Embedding.model_name == model_name)
+        .where(Embedding.dim == target_emb.dim)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(Highlight.id != highlight_id)
+        .where(Highlight.user_id == token.user_id)
+    ).all()
+    candidates = [(hl_id, blob) for hl_id, blob, _ in candidate_rows]
+    top = top_k_similar(target_emb.vector, candidates, dim=target_emb.dim, k=limit)
+
+    # Hydrate each top-K id back into a HighlightDetail. One IN-query
+    # for the highlights, one for their books, one for their tags.
+    if not top:
+        return PaginatedResponse(count=0, results=[])
+
+    ids = [hl_id for hl_id, _ in top]
+    hl_rows = session.exec(select(Highlight).where(Highlight.id.in_(ids))).all()
+    hl_by_id = {h.id: h for h in hl_rows}
+    book_ids = {h.book_id for h in hl_rows if h.book_id is not None}
+    books_by_id: dict[int, Book] = {}
+    if book_ids:
+        books = session.exec(select(Book).where(Book.id.in_(book_ids))).all()
+        books_by_id = {b.id: b for b in books}
+    tag_pairs = session.exec(
+        select(HighlightTag.highlight_id, Tag.name)
+        .join(Tag, HighlightTag.tag_id == Tag.id)
+        .where(HighlightTag.highlight_id.in_(ids))
+    ).all()
+    tags_by_hl: dict[int, list[str]] = {}
+    for hl_id, name in tag_pairs:
+        if name and name.lower() not in ("favorite", "discard"):
+            tags_by_hl.setdefault(hl_id, []).append(name)
+    for k in tags_by_hl:
+        tags_by_hl[k].sort()
+
+    results: list[dict] = []
+    for hl_id, score in top:
+        h = hl_by_id.get(hl_id)
+        if h is None:
+            continue
+        detail = _highlight_to_detail(
+            h,
+            books_by_id.get(h.book_id) if h.book_id else None,
+            tags=tags_by_hl.get(h.id, []),
+        ).model_dump(mode="json")
+        # Surface the similarity score so clients can choose to display
+        # or threshold-filter. Rounded for readable JSON.
+        detail["similarity"] = round(score, 4)
+        results.append(detail)
+
+    return PaginatedResponse(count=len(results), results=results)
 
 
 @router.get("/highlights/{highlight_id}/tags", response_model=TagListResponse)
