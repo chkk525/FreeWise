@@ -518,6 +518,64 @@ class TestRandomHighlight:
         assert "No highlights" in resp.text
 
 
+class TestTagDetailPage:
+    """GET /highlights/ui/tag/{name} — per-tag listing."""
+
+    def test_renders_highlights_with_tag(self, client, make_highlight):
+        h1 = make_highlight(text="alpha")
+        h2 = make_highlight(text="beta")
+        client.post(f"/highlights/{h1.id}/tags/add", data={"new_tag": "topic"})
+        client.post(f"/highlights/{h2.id}/tags/add", data={"new_tag": "other"})
+        resp = client.get("/highlights/ui/tag/topic")
+        assert resp.status_code == 200
+        assert "alpha" in resp.text
+        assert "beta" not in resp.text
+        # The highlight-count line splits the number from the word with
+        # span tags; check both pieces appear in order.
+        assert ">1</span>" in resp.text
+        assert "tagged" in resp.text
+
+    def test_empty_state_for_unknown_tag(self, client):
+        """Unknown tag → 200 with empty-state hint, not 404."""
+        resp = client.get("/highlights/ui/tag/never-existed")
+        assert resp.status_code == 200
+        assert "No active highlights tagged" in resp.text
+
+    def test_normalizes_case_and_whitespace(self, client, make_highlight):
+        h = make_highlight(text="x")
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "Multi  Word"})
+        # Lookup with the same human-typed casing should match the stored
+        # normalized value.
+        resp = client.get("/highlights/ui/tag/Multi%20%20Word")
+        assert resp.status_code == 200
+        assert "x" in resp.text
+
+    def test_excludes_discarded(self, client, make_highlight, db):
+        from app.models import Tag, HighlightTag
+        # Create a tag + link an active and a discarded highlight to it.
+        h_active = make_highlight(text="alive")
+        h_dead = make_highlight(text="trashed", is_discarded=True)
+        client.post(f"/highlights/{h_active.id}/tags/add", data={"new_tag": "shared"})
+        # Manually attach 'shared' to discarded since the tag UI is gated
+        # for discarded highlights.
+        tag = db.exec(select(Tag).where(Tag.name == "shared")).first()
+        db.add(HighlightTag(highlight_id=h_dead.id, tag_id=tag.id))
+        db.commit()
+        resp = client.get("/highlights/ui/tag/shared")
+        assert "alive" in resp.text
+        assert "trashed" not in resp.text
+
+    def test_favorite_tag_redirects_to_favorites(self, client):
+        resp = client.get("/highlights/ui/tag/favorite", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/highlights/ui/favorites" in resp.headers["location"]
+
+    def test_discard_tag_redirects_to_discarded(self, client):
+        resp = client.get("/highlights/ui/tag/discard", follow_redirects=False)
+        assert resp.status_code == 302
+        assert "/highlights/ui/discarded" in resp.headers["location"]
+
+
 class TestMasteredPage:
     """GET /highlights/ui/mastered — mastered listing."""
 

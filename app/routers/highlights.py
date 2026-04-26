@@ -1045,6 +1045,75 @@ async def ui_today(
     )
 
 
+@router.get("/ui/tag/{name:path}", response_class=HTMLResponse)
+async def ui_tag_detail(
+    request: Request,
+    name: str,
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
+):
+    """Render all highlights carrying one tag, paginated.
+
+    Tag name comes via path param so URL-encoded names with spaces /
+    multibyte chars round-trip safely. Single-user mode (user_id=1).
+    Reserved pseudo-tags (favorite/discard) explicitly handled — they
+    have dedicated dashboard pages, so we redirect there rather than
+    showing a confusing duplicate listing.
+    """
+    settings = get_settings(session)
+    name_norm = " ".join((name or "").strip().split()).lower()
+    if not name_norm:
+        raise HTTPException(status_code=404, detail="Tag name required.")
+    if name_norm == "favorite":
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/highlights/ui/favorites", status_code=302)
+    if name_norm == "discard":
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/highlights/ui/discarded", status_code=302)
+
+    tag_row = session.exec(select(Tag).where(Tag.name == name_norm)).first()
+    if tag_row is None:
+        # Empty page rather than 404 — gives the user a helpful "no
+        # highlights with this tag yet" state instead of a hard error.
+        return templates.TemplateResponse(
+            request, "tag_detail.html",
+            {
+                "settings": settings,
+                "tag_name": name_norm,
+                "highlights": [],
+                "page": 1, "page_size": page_size,
+                "total": 0, "total_pages": 1,
+                "showing_first": 0, "showing_last": 0,
+            },
+        )
+
+    base_filter = (
+        (Highlight.user_id == 1)
+        & (Highlight.is_discarded == False)  # noqa: E712
+        & Highlight.id.in_(
+            select(HighlightTag.highlight_id).where(HighlightTag.tag_id == tag_row.id)
+        )
+    )
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(session, base_filter, page=page, page_size=page_size)
+    )
+    return templates.TemplateResponse(
+        request, "tag_detail.html",
+        {
+            "settings": settings,
+            "tag_name": name_norm,
+            "highlights": rows,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
+
+
 @router.get("/ui/mastered", response_class=HTMLResponse)
 async def ui_mastered(
     request: Request,
