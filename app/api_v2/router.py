@@ -1572,3 +1572,43 @@ def _silent_unlink(path: str) -> None:
         os.unlink(path)
     except OSError:
         pass
+
+
+@router.post("/admin/digest/send")
+def admin_digest_send(
+    dry_run: bool = Query(default=False, description="If true, build the digest but skip SMTP send."),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Build and send the daily email digest.
+
+    Token-gated. Set ``dry_run=true`` to inspect the rendered subject /
+    text body without contacting SMTP — handy for testing the
+    composition end-to-end before wiring up cron.
+
+    SMTP credentials come from env vars (SMTP_HOST/PORT/USER/PASS/FROM/TO).
+    Returns the digest subject + text preview + send status; the HTML
+    body is only kept in the email itself, not echoed back, to keep the
+    response payload bounded.
+    """
+    from app.services.digest import build_digest
+    from app.services.email import EmailNotConfigured, send_email
+
+    digest = build_digest(session, user_id=token.user_id)
+    out: dict = {
+        "subject": digest.subject,
+        "text_preview": digest.text_body[:1000],
+        "sent": False,
+    }
+    if dry_run:
+        out["dry_run"] = True
+        return out
+    try:
+        send_email(digest.subject, digest.text_body, html_body=digest.html_body)
+        out["sent"] = True
+    except EmailNotConfigured as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"SMTP not configured on the server: {e}",
+        )
+    return out

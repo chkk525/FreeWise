@@ -462,6 +462,24 @@ def cmd_health(args: argparse.Namespace) -> int:
     return 0 if status == "ok" else 1
 
 
+def cmd_digest(args: argparse.Namespace) -> int:
+    """Build and send (or preview) the daily email digest."""
+    client = _client_from_args(args)
+    body = client.digest_send(dry_run=not args.send)
+    if args.json:
+        _print_json(body)
+        return 0
+    print(body.get("subject", "(no subject)"))
+    print("-" * 40)
+    print(body.get("text_preview", ""))
+    print("-" * 40)
+    if body.get("sent"):
+        print("✔ sent")
+    elif body.get("dry_run"):
+        print("(dry-run — pass --send to actually email)")
+    return 0
+
+
 def cmd_backup(args: argparse.Namespace) -> int:
     """Download an atomic SQLite snapshot.
 
@@ -905,6 +923,15 @@ def _build_parser() -> argparse.ArgumentParser:
     # health
     hc = sub.add_parser("health", help="Liveness/readiness probe (status, counts, Ollama).")
     hc.set_defaults(func=cmd_health)
+
+    # digest
+    dg = sub.add_parser(
+        "digest",
+        help="Build the daily email digest. Default is dry-run; pass --send to email it.",
+    )
+    dg.add_argument("--send", action="store_true",
+                    help="Actually send via SMTP (uses env vars on the server side).")
+    dg.set_defaults(func=cmd_digest)
 
     # backup
     bk = sub.add_parser("backup", help="Download an atomic SQLite snapshot of the database.")

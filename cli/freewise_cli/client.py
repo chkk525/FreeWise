@@ -71,6 +71,19 @@ class Client:
         """Hit the public /healthz probe. Doesn't need auth."""
         return self._request("GET", "/healthz")
 
+    def digest_send(self, *, dry_run: bool = False) -> dict:
+        """Build (and optionally send) the daily email digest.
+
+        Token-gated. Returns the rendered subject + text preview +
+        send status. SMTP creds live on the server (env vars), not the
+        CLI, so this endpoint must be hit *over the wire* — running the
+        CLI from a host without SMTP credentials is fine.
+        """
+        return self._request(
+            "POST", "/api/v2/admin/digest/send",
+            params={"dry_run": "true" if dry_run else "false"},
+        )
+
     def backup(self, out_path: str) -> int:
         """Download a SQLite snapshot from /api/v2/admin/backup to ``out_path``.
 
