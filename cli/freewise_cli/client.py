@@ -118,7 +118,7 @@ class Client:
             "DELETE", f"/api/v2/highlights/{highlight_id}/tags/{quote(name, safe='')}",
         )
 
-    def stream_export(self, fmt: str) -> tuple[bytes, str | None]:
+    def stream_export(self, fmt: str, *, book_id: int | None = None) -> tuple[bytes, str | None]:
         """Fetch /export/<fmt> and return (bytes, suggested filename).
 
         Streams when possible — uses httpx.stream in production. With an
@@ -129,6 +129,10 @@ class Client:
             path = "/export/csv"
         elif fmt in ("md", "markdown"):
             path = "/export/markdown.zip"
+        elif fmt in ("atomic", "atomic-notes"):
+            path = "/export/atomic-notes.zip"
+            if book_id is not None:
+                path = f"{path}?book_id={book_id}"
         else:
             raise ValueError(f"Unknown export format: {fmt!r}")
 

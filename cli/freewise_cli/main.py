@@ -286,7 +286,9 @@ def cmd_tag_remove(args: argparse.Namespace) -> int:
 
 def cmd_export(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
-    body, suggested_name = client.stream_export(args.format)
+    body, suggested_name = client.stream_export(
+        args.format, book_id=getattr(args, "book_id", None),
+    )
     if args.output is None or args.output == "-":
         # Stream to stdout. CSV is text — write to the encoding-aware buffer.
         # Markdown ZIP is binary — write to the underlying buffer.
@@ -415,11 +417,18 @@ def _build_parser() -> argparse.ArgumentParser:
     rest.set_defaults(func=cmd_restore)
 
     # export
-    ex = sub.add_parser("export", help="Download CSV or Markdown ZIP export.")
+    ex = sub.add_parser("export", help="Download CSV / Markdown / atomic-notes export.")
     ex.add_argument(
         "format",
-        choices=["csv", "markdown", "md"],
-        help="csv = Readwise-compatible CSV; markdown/md = Obsidian-ready ZIP.",
+        choices=["csv", "markdown", "md", "atomic", "atomic-notes"],
+        help=(
+            "csv = Readwise-compatible CSV; markdown/md = one .md per book ZIP; "
+            "atomic/atomic-notes = one .md per highlight ZIP (Zettelkasten-style)."
+        ),
+    )
+    ex.add_argument(
+        "--book-id", type=int,
+        help="(atomic only) Limit to highlights from one book.",
     )
     ex.add_argument(
         "-o", "--output",

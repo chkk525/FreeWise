@@ -186,6 +186,18 @@ def test_export_markdown_to_file(http_client, auth_token, capsys, tmp_path):
     assert any(n.endswith(".md") for n in names)
 
 
+def test_export_atomic_notes_to_file(http_client, auth_token, capsys, tmp_path):
+    import zipfile
+    hid = _add_highlight("atomic note content")
+    out = tmp_path / "atomic.zip"
+    rc, _, _ = _run(["export", "atomic", "-o", str(out)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert zipfile.is_zipfile(out)
+    names = zipfile.ZipFile(out).namelist()
+    # Atomic export uses hl-{id}-{slug}.md naming.
+    assert any(n.startswith(f"hl-{hid}-") and n.endswith(".md") for n in names)
+
+
 # ── add (manual capture) ──────────────────────────────────────────────────
 
 

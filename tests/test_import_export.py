@@ -363,6 +363,88 @@ class TestCSVExport:
         # Either {"Same Name.md", "Same Name (1).md"} or similar — must be 2 distinct.
         assert len(set(names)) == 2
 
+    def test_atomic_notes_returns_zip(self, client, make_highlight, make_book):
+        import io as _io, zipfile as _zip
+        b = make_book(title="My Book", author="Alice", document_tags="philosophy")
+        h1 = make_highlight(text="An idea worth pondering", note="why this matters", book=b, location=42)
+        h2 = make_highlight(text="another quote", book=b, is_favorited=True)
+
+        resp = client.get("/export/atomic-notes.zip")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/zip"
+        zf = _zip.ZipFile(_io.BytesIO(resp.content))
+        names = zf.namelist()
+        # One file per highlight, named hl-{id}-{slug}.md
+        assert len(names) == 2
+        assert any(n.startswith(f"hl-{h1.id}-") and n.endswith(".md") for n in names)
+        assert any(n.startswith(f"hl-{h2.id}-") and n.endswith(".md") for n in names)
+
+        # Inspect h1's note: frontmatter + blockquote + Note section + backlink
+        h1_name = next(n for n in names if n.startswith(f"hl-{h1.id}-"))
+        body = zf.read(h1_name).decode("utf-8")
+        assert body.startswith("---")
+        assert f"id: freewise-{h1.id}" in body
+        assert 'book: "My Book"' in body
+        assert 'author: "Alice"' in body
+        assert "location: 42" in body
+        assert "is_favorited: false" in body
+        assert "> An idea worth pondering" in body
+        assert "## Note" in body
+        assert "why this matters" in body
+        assert "[[My Book]]" in body
+        # Book document_tags merged into the per-highlight tags.
+        assert '"philosophy"' in body
+
+        # h2 (favorited, no note) — flag flips, no Note section.
+        h2_body = zf.read(next(n for n in names if n.startswith(f"hl-{h2.id}-"))).decode("utf-8")
+        assert "is_favorited: true" in h2_body
+        assert "## Note" not in h2_body
+
+    def test_atomic_notes_includes_highlight_tags(self, client, db, make_highlight, make_book):
+        """Per-highlight tags from HighlightTag must surface in frontmatter."""
+        import io as _io, zipfile as _zip
+        from app.models import Tag, HighlightTag
+        b = make_book(title="B")
+        h = make_highlight(text="tagged", book=b)
+        for name in ("python", "favorite", "django"):  # 'favorite' is reserved → filtered
+            t = Tag(name=name)
+            db.add(t); db.commit(); db.refresh(t)
+            db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
+        db.commit()
+        resp = client.get("/export/atomic-notes.zip")
+        body = _zip.ZipFile(_io.BytesIO(resp.content)).read(
+            next(n for n in _zip.ZipFile(_io.BytesIO(resp.content)).namelist() if n.startswith(f"hl-{h.id}-"))
+        ).decode("utf-8")
+        assert '"python"' in body
+        assert '"django"' in body
+        assert '"favorite"' not in body  # reserved-name filter applies
+
+    def test_atomic_notes_excludes_discarded(self, client, make_highlight, make_book):
+        import io as _io, zipfile as _zip
+        b = make_book(title="B")
+        make_highlight(text="alive", book=b)
+        make_highlight(text="dead", book=b, is_discarded=True)
+        resp = client.get("/export/atomic-notes.zip")
+        names = _zip.ZipFile(_io.BytesIO(resp.content)).namelist()
+        assert len(names) == 1
+
+    def test_atomic_notes_filter_by_book(self, client, make_highlight, make_book):
+        import io as _io, zipfile as _zip
+        b1 = make_book(title="A")
+        b2 = make_book(title="B")
+        make_highlight(text="from a", book=b1)
+        make_highlight(text="from b", book=b2)
+        resp = client.get("/export/atomic-notes.zip", params={"book_id": b1.id})
+        assert resp.status_code == 200
+        names = _zip.ZipFile(_io.BytesIO(resp.content)).namelist()
+        assert len(names) == 1
+        body = _zip.ZipFile(_io.BytesIO(resp.content)).read(names[0]).decode("utf-8")
+        assert "from a" in body
+
+    def test_atomic_notes_400_when_empty(self, client):
+        resp = client.get("/export/atomic-notes.zip")
+        assert resp.status_code == 400
+
     def test_export_loads_tags_in_one_query(self, client, db, make_highlight):
         """Tags must be bulk-loaded — N highlights must NOT emit N tag queries."""
         h1 = make_highlight(text="With tags A")

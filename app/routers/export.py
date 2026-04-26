@@ -4,7 +4,7 @@ import re
 import zipfile
 from collections import defaultdict
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
@@ -258,6 +258,163 @@ async def export_markdown_zip(session: Session = Depends(get_session)):
         yield buf.getvalue()
 
     fname = f"freewise-vault-{datetime.now().strftime('%Y%m%d')}.zip"
+    return StreamingResponse(
+        _gen(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ── Atomic-note Markdown export (Zettelkasten-style: one .md per highlight) ──
+
+
+def _slug(text: str, max_len: int = 40) -> str:
+    """Filesystem-safe slug from arbitrary text (UTF-8 letters preserved).
+
+    Used to build human-readable atomic-note filenames like
+    ``hl-1234-the-quick-brown-fox.md``. Collapses whitespace + bad chars
+    to single hyphens, trims to ``max_len`` chars.
+    """
+    cleaned = _FILENAME_BAD.sub(" ", text or "")
+    cleaned = re.sub(r"\s+", "-", cleaned).strip("-").strip(".")
+    return cleaned[:max_len] or "untitled"
+
+
+def _yaml_list(items: list[str]) -> str:
+    """Render a YAML list inline if short, block-style otherwise. Always quotes items."""
+    if not items:
+        return "[]"
+    return "[" + ", ".join(_yaml_escape(t) for t in items) + "]"
+
+
+def _render_atomic_note(
+    h: Highlight,
+    book: Book | None,
+    tags: list[str],
+) -> str:
+    """One Zettelkasten-style atomic Markdown note for a single highlight.
+
+    Frontmatter exposes everything a PKM tool would want to filter on; the
+    body keeps the highlight + note clearly separated. A `[[Book Title]]`
+    wikilink at the bottom hooks the note into the book's note (if the user
+    also imports the per-book Markdown export into the same vault).
+    """
+    title_text = (h.text or "").strip().splitlines()[0] if h.text else ""
+    if len(title_text) > 80:
+        title_text = title_text[:77] + "…"
+
+    book_title = book.title if book else None
+    book_author = book.author if book else None
+    book_doc_tags: list[str] = []
+    if book and book.document_tags:
+        book_doc_tags = [t.strip() for t in book.document_tags.split(",") if t.strip()]
+    # Merge highlight tags + book document tags, dedup but preserve order.
+    all_tags: list[str] = []
+    seen: set[str] = set()
+    for t in (tags or []) + book_doc_tags:
+        key = t.lower()
+        if key not in seen:
+            seen.add(key)
+            all_tags.append(t)
+
+    lines: list[str] = ["---"]
+    lines.append(f"id: freewise-{h.id}")
+    lines.append(f"title: {_yaml_escape(title_text or f'Highlight #{h.id}')}")
+    if book_title:
+        lines.append(f"book: {_yaml_escape(book_title)}")
+    if book_author:
+        lines.append(f"author: {_yaml_escape(book_author)}")
+    if h.location is not None:
+        lines.append(f"location: {h.location}")
+    if h.location_type:
+        lines.append(f"location_type: {_yaml_escape(h.location_type)}")
+    if h.created_at:
+        lines.append(f"highlighted_at: {_yaml_escape(h.created_at.isoformat(timespec='seconds'))}")
+    lines.append(f"exported_at: {_yaml_escape(datetime.now().isoformat(timespec='seconds'))}")
+    lines.append(f"is_favorited: {'true' if h.is_favorited else 'false'}")
+    lines.append("source: freewise")
+    if all_tags:
+        lines.append(f"tags: {_yaml_list(all_tags)}")
+    lines.append("---")
+    lines.append("")
+
+    # Body: the highlight as a blockquote so the .md still reads as a quote
+    # if rendered, but is also the canonical "atom" of the note.
+    for ln in (h.text or "").splitlines() or [""]:
+        lines.append(f"> {ln}")
+    lines.append("")
+
+    if h.note:
+        lines.append("## Note")
+        lines.append("")
+        lines.append(h.note)
+        lines.append("")
+
+    # Backlink to the book's vault note if the user also exported per-book MD.
+    if book_title:
+        lines.append("---")
+        lines.append(f"From [[{book_title}]]")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@router.get("/atomic-notes.zip")
+async def export_atomic_notes_zip(
+    book_id: int | None = Query(default=None, description="Limit to highlights from one book."),
+    session: Session = Depends(get_session),
+):
+    """Stream a ZIP of one Markdown file per highlight (atomic notes).
+
+    Each file is shaped for Zettelkasten / PKM workflows: rich YAML frontmatter
+    (id, title, book, author, location, tags, flags), the highlight as the
+    body, an optional ``## Note`` section, and a ``[[Book Title]]`` backlink.
+    Excludes discarded highlights. Optional ``book_id`` scopes to one book.
+    """
+    stmt = select(Highlight).where(Highlight.is_discarded == False)  # noqa: E712
+    if book_id is not None:
+        stmt = stmt.where(Highlight.book_id == book_id)
+    stmt = stmt.order_by(Highlight.id.asc())
+    highlights = session.exec(stmt).all()
+
+    if not highlights:
+        raise HTTPException(status_code=400, detail="No active highlights to export.")
+
+    # Bulk-load related books in one query.
+    book_ids = {h.book_id for h in highlights if h.book_id is not None}
+    books_by_id: dict[int, Book] = {}
+    if book_ids:
+        books = session.exec(select(Book).where(Book.id.in_(book_ids))).all()
+        books_by_id = {b.id: b for b in books}
+
+    # Bulk-load all (highlight_id, tag_name) pairs in one query — no N+1.
+    tag_pairs = session.exec(
+        select(HighlightTag.highlight_id, Tag.name)
+        .join(Tag, HighlightTag.tag_id == Tag.id)
+        .where(HighlightTag.highlight_id.in_([h.id for h in highlights] or [None]))
+    ).all()
+    tags_by_hl: dict[int, list[str]] = defaultdict(list)
+    for hl_id, name in tag_pairs:
+        if name and name.lower() not in ("favorite", "discard"):
+            tags_by_hl[hl_id].append(name)
+    for k in tags_by_hl:
+        tags_by_hl[k].sort()
+
+    def _gen():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for h in highlights:
+                book = books_by_id.get(h.book_id) if h.book_id is not None else None
+                slug = _slug(h.text or "", max_len=40)
+                fname = f"hl-{h.id}-{slug}.md"
+                zf.writestr(
+                    fname,
+                    _render_atomic_note(h, book, tags_by_hl.get(h.id, [])),
+                )
+        buf.seek(0)
+        yield buf.getvalue()
+
+    suffix = f"-book{book_id}" if book_id is not None else ""
+    fname = f"freewise-atomic-notes{suffix}-{datetime.now().strftime('%Y%m%d')}.zip"
     return StreamingResponse(
         _gen(),
         media_type="application/zip",

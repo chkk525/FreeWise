@@ -93,6 +93,7 @@ Beyond the upstream HTML/HTMX UI:
 | GET   | `/api/v2/stats`              | Counts + review-due — fork extension |
 | GET   | `/export/csv`                | Readwise-compatible CSV |
 | GET   | `/export/markdown.zip`       | Obsidian/Logseq vault ZIP — fork addition |
+| GET   | `/export/atomic-notes.zip`   | One .md per highlight (Zettelkasten atoms) — fork addition |
 | POST  | `/settings/backup.db`        | SQLite VACUUM INTO snapshot |
 | POST  | `/settings/theme/toggle`     | Cycle light → dark → auto |
 

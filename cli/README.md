@@ -52,9 +52,11 @@ freewise tag remove 1234 "deep learning"
 freewise tag list 1234
 freewise search "x" --tag "deep learning"  # search filtered by tag
 
-freewise export csv -o backup.csv          # Readwise-compatible CSV
-freewise export markdown -o vault.zip      # Obsidian/Logseq-ready ZIP
-freewise export csv | head                 # any export streams to stdout if -o omitted
+freewise export csv -o backup.csv             # Readwise-compatible CSV
+freewise export markdown -o vault.zip         # one .md per book (Obsidian/Logseq vault)
+freewise export atomic -o atomic.zip          # one .md per highlight (Zettelkasten atoms)
+freewise export atomic --book-id 42 -o b42.zip  # atomic notes for a single book
+freewise export csv | head                    # any export streams to stdout if -o omitted
 ```
 
 ## Using from Claude Code
