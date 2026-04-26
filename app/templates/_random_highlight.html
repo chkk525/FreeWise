@@ -20,7 +20,9 @@
     {% endif %}
     <div class="flex items-center justify-between mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
         <span class="text-xs text-gray-500 dark:text-gray-400">
-            #{{ highlight.id }}
+            <a href="/highlights/ui/h/{{ highlight.id }}"
+               class="hover:text-primary-600 dark:hover:text-primary-400"
+               title="Open permalink for this highlight">#{{ highlight.id }}</a>
             {% if highlight.is_favorited %} · ★{% endif %}
             {% if highlight.is_mastered %} · 🎓{% endif %}
         </span>

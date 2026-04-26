@@ -108,6 +108,30 @@ async def ui_dashboard(
 
     kindle_status = get_kindle_status(session)
 
+    # Tag cloud — counts of highlight-level tags, sorted desc, capped to keep
+    # the dashboard widget readable. Single GROUP BY query — no N+1.
+    from app.models import HighlightTag, Tag
+    tag_counts_stmt = (
+        select(Tag.name, func.count(HighlightTag.tag_id))
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(Tag.name)
+        .order_by(func.count(HighlightTag.tag_id).desc())
+        .limit(40)
+    )
+    tag_cloud: list[dict[str, object]] = []
+    for name, count in session.exec(tag_counts_stmt).all():
+        if name and name.lower() not in ("favorite", "discard"):
+            tag_cloud.append({"name": name, "count": count})
+    # Pre-compute a font-size bucket (1..5) per tag so the template stays clean.
+    if tag_cloud:
+        max_count = max(t["count"] for t in tag_cloud)
+        for t in tag_cloud:
+            ratio = t["count"] / max_count if max_count else 0
+            # 1..5 buckets for sm/base/lg/xl/2xl in the template.
+            t["size"] = max(1, min(5, 1 + int(ratio * 4 + 0.5)))
+
     return templates.TemplateResponse(request, "dashboard.html", {"settings": settings,
         "daily_review_count": daily_review_count,
         "reviewed_today": reviewed_today,
@@ -124,6 +148,7 @@ async def ui_dashboard(
         "review_heatmap_data": review_heatmap_data,
         "current_streak": current_streak,
         "longest_streak": longest_streak,
+        "tag_cloud": tag_cloud,
         "kindle_status": kindle_status})
 
 

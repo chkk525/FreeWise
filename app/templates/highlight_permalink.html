@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Highlight #{{ highlight.id }}{% if highlight.book %} — {{ highlight.book.title }}{% endif %} — FreeWise{% endblock %}
+
+{% block heading %}Highlight #{{ highlight.id }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    {# Reuse the standard row partial so the page automatically inherits
+       favorite/discard/edit/master/tag UI. The partial gates bulk-select
+       UI behind enable_bulk_select; we leave it off for a single-row page. #}
+    {% include "_highlight_row.html" %}
+
+    <div class="mt-6 flex flex-wrap items-center justify-center gap-3 text-sm">
+        {% if highlight.book %}
+        <a href="/library/ui/book/{{ highlight.book.id }}"
+           class="inline-flex items-center gap-1 text-primary-600 dark:text-primary-400 hover:underline">
+            <i data-lucide="library" class="w-4 h-4"></i>
+            <span>{{ highlight.book.title }}</span>
+        </a>
+        {% endif %}
+        <a href="/highlights/ui/random"
+           class="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+            <i data-lucide="shuffle" class="w-4 h-4"></i>
+            <span>Random highlight</span>
+        </a>
+        <button type="button"
+                class="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
+                onclick="navigator.clipboard.writeText(window.location.href).then(() => window.showToast && window.showToast('Permalink copied', 'success'))">
+            <i data-lucide="link" class="w-4 h-4"></i>
+            <span>Copy permalink</span>
+        </button>
+    </div>
+</div>
+{% endblock %}

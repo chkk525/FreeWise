@@ -258,6 +258,33 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestPermalinkPage:
+    """GET /highlights/ui/h/{id} — shareable single-highlight page."""
+
+    def test_renders_for_existing_highlight(self, client, make_highlight):
+        h = make_highlight(text="link me", note="my note")
+        resp = client.get(f"/highlights/ui/h/{h.id}")
+        assert resp.status_code == 200
+        assert "link me" in resp.text
+        assert "my note" in resp.text
+        # Permalink-specific Copy permalink button is rendered.
+        assert "Copy permalink" in resp.text
+
+    def test_404_for_missing(self, client):
+        assert client.get("/highlights/ui/h/9999999").status_code == 404
+
+    def test_row_partial_renders_permalink_icon(self, client, make_highlight):
+        """Every row should expose a small permalink anchor for discoverability."""
+        make_highlight(text="X")
+        resp = client.get("/highlights/ui/favorites")
+        # Even with no favorites, the page still loads. Make a highlight
+        # favorited to ensure rows render.
+        h = make_highlight(text="Y", is_favorited=True)
+        resp = client.get("/highlights/ui/favorites")
+        assert resp.status_code == 200
+        assert f"/highlights/ui/h/{h.id}" in resp.text
+
+
 class TestRandomHighlight:
     """GET /highlights/ui/random — random-highlight HTML partial."""
 

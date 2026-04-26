@@ -82,6 +82,24 @@
 </div>
 {% endif %}
 
+{# ── Tag cloud ─────────────────────────────────────────────────────── #}
+{% if tag_cloud and tag_cloud|length > 0 %}
+{% set _SIZE_CLS = {1: 'text-sm', 2: 'text-base', 3: 'text-lg', 4: 'text-xl', 5: 'text-2xl'} %}
+<div class="mb-8 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
+    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+        <i data-lucide="tags" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+        Tags
+    </h3>
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+        {% for t in tag_cloud %}
+        <a href="/highlights/ui/search?q={{ t.name }}&tag={{ t.name }}"
+           class="{{ _SIZE_CLS.get(t.size, 'text-base') }} font-medium text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 hover:underline transition-colors"
+           title="{{ t.count }} highlight{{ 's' if t.count != 1 else '' }}">{{ t.name }}<span class="text-xs text-gray-500 dark:text-gray-400 ml-0.5">·{{ t.count }}</span></a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Highlight of the Moment (random, shuffleable) -->
 {% if total_highlights and total_highlights > 0 %}
 <div class="mb-8">

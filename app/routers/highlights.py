@@ -707,6 +707,33 @@ async def ui_discarded(
     )
 
 
+@router.get("/ui/h/{id}", response_class=HTMLResponse)
+async def ui_highlight_permalink(
+    request: Request,
+    id: int,
+    session: Session = Depends(get_session),
+):
+    """Stable, shareable, single-highlight page.
+
+    Direct link of the form ``/highlights/ui/h/1234`` so users can
+    bookmark or share a specific highlight without navigating through
+    the book detail page. Renders the existing _highlight_row.html
+    partial inside the standard base.html chrome.
+    """
+    settings = get_settings(session)
+    h = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.id == id)
+    ).first()
+    if h is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    return templates.TemplateResponse(
+        request, "highlight_permalink.html",
+        {"highlight": h, "settings": settings},
+    )
+
+
 @router.get("/ui/random", response_class=HTMLResponse)
 async def ui_random(
     request: Request,
