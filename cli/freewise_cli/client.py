@@ -117,6 +117,13 @@ class Client:
             params["q"] = q
         return self._request("GET", "/api/v2/authors", params=params)
 
+    def list_tag_summary(self, *, page: int = 1, page_size: int = 100,
+                         q: str | None = None) -> dict:
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if q:
+            params["q"] = q
+        return self._request("GET", "/api/v2/tags", params=params)
+
     def stats(self) -> dict:
         return self._request("GET", "/api/v2/stats")
 

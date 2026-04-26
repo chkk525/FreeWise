@@ -226,6 +226,20 @@ def cmd_books(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tags(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.list_tag_summary(
+        page=1, page_size=args.limit, q=getattr(args, "query", None),
+    )
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"{len(body['results'])} of {body['count']} tags (sorted by use)")
+    for t in body["results"]:
+        print(f"  {t['highlight_count']:>5}  {t['name']}")
+    return 0
+
+
 def cmd_authors(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body = client.list_authors(
@@ -418,6 +432,12 @@ def _build_parser() -> argparse.ArgumentParser:
     s.add_argument("--include-discarded", action="store_true")
     s.add_argument("--tag", help="Filter to highlights carrying this tag (case-insensitive).")
     s.set_defaults(func=cmd_search)
+
+    # tags (summary listing)
+    tgs = sub.add_parser("tags", help="List all highlight-level tags with counts.")
+    tgs.add_argument("query", nargs="?", help="Optional substring filter.")
+    tgs.add_argument("--limit", type=int, default=100)
+    tgs.set_defaults(func=cmd_tags)
 
     # tag list/add/remove
     tg = sub.add_parser("tag", help="Manage highlight tags.")

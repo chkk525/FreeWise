@@ -368,6 +368,67 @@ def test_search_results_include_tags(client, db, make_highlight):
     assert r.json()["results"][0]["tags"] == ["topic"]
 
 
+# ── GET /api/v2/tags ─────────────────────────────────────────────────────────
+
+
+def test_list_tag_summary_with_counts(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h1 = make_highlight(text="x")
+    h2 = make_highlight(text="y")
+    client.post(f"/highlights/{h1.id}/tags/add", data={"new_tag": "python"})
+    client.post(f"/highlights/{h2.id}/tags/add", data={"new_tag": "python"})
+    client.post(f"/highlights/{h1.id}/tags/add", data={"new_tag": "ml"})
+    resp = client.get("/api/v2/tags", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    by_name = {r["name"]: r for r in body["results"]}
+    assert by_name["python"]["highlight_count"] == 2
+    assert by_name["ml"]["highlight_count"] == 1
+    # python sorted before ml (more uses).
+    assert body["results"][0]["name"] == "python"
+
+
+def test_list_tag_summary_excludes_reserved(client, db, make_highlight):
+    """Legacy pseudo-tags 'favorite'/'discard' must never appear."""
+    from app.models import Tag, HighlightTag
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    for name in ("favorite", "discard", "real-tag"):
+        t = Tag(name=name)
+        db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
+    db.commit()
+    resp = client.get("/api/v2/tags", headers=headers)
+    names = {r["name"] for r in resp.json()["results"]}
+    assert "real-tag" in names
+    assert "favorite" not in names
+    assert "discard" not in names
+
+
+def test_list_tag_summary_q_filter(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    for name in ("python", "django", "ml"):
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": name})
+    resp = client.get("/api/v2/tags", headers=headers, params={"q": "py"})
+    names = {r["name"] for r in resp.json()["results"]}
+    assert names == {"python"}
+
+
+def test_list_tag_summary_excludes_discarded_highlights(client, db, make_highlight):
+    """A tag attached only to a discarded highlight should not be counted."""
+    headers = _auth_headers(db)
+    h = make_highlight(text="x", is_discarded=True)
+    client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "ghost"})
+    resp = client.get("/api/v2/tags", headers=headers)
+    names = {r["name"] for r in resp.json()["results"]}
+    assert "ghost" not in names
+
+
+def test_list_tag_summary_requires_auth(client):
+    assert client.get("/api/v2/tags").status_code == 401
+
+
 # ── GET /api/v2/authors ──────────────────────────────────────────────────────
 
 

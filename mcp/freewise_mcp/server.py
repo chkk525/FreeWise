@@ -133,6 +133,21 @@ def freewise_book_highlights(book_id: int, limit: int = 50) -> str:
 
 
 @mcp.tool()
+def freewise_tags(query: str | None = None, limit: int = 100) -> str:
+    """List all highlight-level tags with usage counts.
+
+    Sorted by highlight_count desc; the legacy "favorite"/"discard"
+    pseudo-tags are filtered out. Optional ``query`` substring-filters
+    the tag name. Useful for discovering what topics the user has tagged
+    before deciding what tag to filter search by.
+    """
+    return _call(
+        "tags failed",
+        lambda: _client().list_tag_summary(page=1, page_size=limit, q=query),
+    )
+
+
+@mcp.tool()
 def freewise_authors(query: str | None = None, limit: int = 50) -> str:
     """List distinct authors with book + highlight counts.
 

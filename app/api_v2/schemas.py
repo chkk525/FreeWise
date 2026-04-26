@@ -124,6 +124,11 @@ class AuthorListItem(BaseModel):
     highlight_count: int
 
 
+class TagSummaryItem(BaseModel):
+    name: str
+    highlight_count: int
+
+
 class StatsResponse(BaseModel):
     """Counts + streak summary for ``GET /api/v2/stats``."""
 

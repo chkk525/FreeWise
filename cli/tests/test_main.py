@@ -88,6 +88,17 @@ def test_random_picks_one(http_client, auth_token, capsys):
     assert ("alpha" in out) or ("beta" in out)
 
 
+def test_tags_lists_with_counts(http_client, auth_token, capsys):
+    """`freewise tags` lists distinct tags with usage counts."""
+    h = _add_highlight("x")
+    _run(["tag", "add", str(h), "python"], http_client, auth_token, capsys)
+    _run(["tag", "add", str(h), "ml"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tags"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "python" in out
+    assert "ml" in out
+
+
 def test_authors_lists_with_counts(http_client, auth_token, capsys):
     """`freewise authors` should list distinct authors with counts."""
     from app.models import Book

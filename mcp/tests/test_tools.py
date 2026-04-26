@@ -29,6 +29,7 @@ STATS = server.freewise_stats
 BOOKS = server.freewise_books
 BOOK_HIGHLIGHTS = server.freewise_book_highlights
 AUTHORS = server.freewise_authors
+TAGS_SUMMARY = server.freewise_tags
 SET_NOTE = server.freewise_set_note
 FAVORITE = server.freewise_favorite
 DISCARD = server.freewise_discard
@@ -129,6 +130,16 @@ def test_books_returns_list(patched_client):
     out = json.loads(BOOKS(limit=10))
     assert out["count"] == 1
     assert out["results"][0]["title"] == "T"
+
+
+def test_tags_summary_lists_with_counts(patched_client):
+    """`freewise_tags` returns tag summary."""
+    hid = _add("x")
+    TAG_ADD(hid, "python")
+    TAG_ADD(hid, "ml")
+    out = json.loads(TAGS_SUMMARY())
+    names = {r["name"] for r in out["results"]}
+    assert names == {"python", "ml"}
 
 
 def test_authors_lists_with_counts(patched_client):
@@ -256,7 +267,7 @@ def test_search_with_tag_filter(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 16 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 17 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
@@ -264,7 +275,7 @@ def test_tool_surface_complete(patched_client):
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_random",
         "freewise_stats", "freewise_books", "freewise_book_highlights",
-        "freewise_authors",
+        "freewise_authors", "freewise_tags",
         "freewise_set_note",
         "freewise_favorite", "freewise_discard", "freewise_master",
         "freewise_add",

@@ -51,6 +51,7 @@ from app.api_v2.schemas import (
     StatsResponse,
     TagAddPayload,
     TagListResponse,
+    TagSummaryItem,
 )
 from app.db import get_session
 from app.models import ApiToken, Book, Highlight, HighlightTag, Tag
@@ -715,6 +716,51 @@ def list_authors(
             name=name, book_count=int(book_count), highlight_count=int(hl_count),
         ).model_dump(mode="json")
         for name, book_count, hl_count in rows
+    ]
+    return PaginatedResponse(count=total, results=results)
+
+
+@router.get("/tags", response_model=PaginatedResponse)
+def list_tags(
+    q: Optional[str] = Query(default=None, max_length=128),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=500),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> PaginatedResponse:
+    """Distinct highlight-level tags with usage counts.
+
+    Excludes the legacy "favorite"/"discard" pseudo-tags and counts only
+    tags attached to non-discarded highlights belonging to the auth'd
+    user. Sorted by highlight_count desc so heavy-use tags surface first.
+    Optional ``q`` substring-filters on tag name (LIKE-escaped).
+    """
+    base = (
+        select(Tag.name, func.count(HighlightTag.tag_id).label("hl_count"))
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.user_id == token.user_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(func.lower(Tag.name).notin_(("favorite", "discard")))
+        .group_by(Tag.name)
+    )
+
+    if q:
+        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        base = base.where(Tag.name.like(f"%{needle}%", escape="\\"))
+
+    count_q = select(func.count()).select_from(base.subquery())
+    total = session.exec(count_q).one()
+
+    rows = session.exec(
+        base.order_by(func.count(HighlightTag.tag_id).desc(), Tag.name.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    results = [
+        TagSummaryItem(name=name, highlight_count=int(cnt)).model_dump(mode="json")
+        for name, cnt in rows
     ]
     return PaginatedResponse(count=total, results=results)
 
