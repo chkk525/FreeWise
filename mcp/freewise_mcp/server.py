@@ -216,6 +216,16 @@ def freewise_stats() -> str:
 
 
 @mcp.tool()
+def freewise_health() -> str:
+    """Lightweight liveness probe: status + active/embedded counts + Ollama reachability.
+
+    Useful for "is the FreeWise server up and is C2 backfilled" check
+    from a Claude Code conversation. No auth required by the underlying
+    /healthz endpoint."""
+    return _call("health failed", lambda: _client().healthz())
+
+
+@mcp.tool()
 def freewise_books(limit: int = 50) -> str:
     """List books that have at least one highlight, with counts."""
     return _call("books failed", lambda: _client().list_books(page=1, page_size=limit))

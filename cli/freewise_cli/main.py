@@ -342,6 +342,26 @@ def cmd_random(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_health(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.healthz()
+    if args.json:
+        _print_json(body)
+        return 0
+    status = body.get("status", "unknown")
+    hl = body.get("highlights") or {}
+    ol = body.get("ollama") or {}
+    print(f"status:        {status}")
+    if "embed_model" in body:
+        print(f"embed model:   {body['embed_model']}")
+    print(f"active:        {hl.get('active', '?')}")
+    print(f"embedded:      {hl.get('embedded', '?')} ({hl.get('embedded_pct', '?')}%)")
+    ok = "yes" if ol.get("reachable") else "no"
+    print(f"ollama:        {ok} @ {ol.get('url', '?')}")
+    # Non-zero exit if degraded so it can drive monitor scripts.
+    return 0 if status == "ok" else 1
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     s = client.stats()
@@ -700,6 +720,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # stats
     st = sub.add_parser("stats", help="Aggregate counts + review-due summary.")
     st.set_defaults(func=cmd_stats)
+
+    # health
+    hc = sub.add_parser("health", help="Liveness/readiness probe (status, counts, Ollama).")
+    hc.set_defaults(func=cmd_health)
 
     # books
     b = sub.add_parser("books", help="List books that have at least one highlight.")

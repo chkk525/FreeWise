@@ -67,6 +67,10 @@ class Client:
     def auth_check(self) -> None:
         self._request("GET", "/api/v2/auth/")
 
+    def healthz(self) -> dict:
+        """Hit the public /healthz probe. Doesn't need auth."""
+        return self._request("GET", "/healthz")
+
     def search(self, q: str, *, page: int = 1, page_size: int = 50,
                include_discarded: bool = False, tag: str | None = None) -> dict:
         params: dict[str, Any] = {

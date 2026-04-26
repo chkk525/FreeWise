@@ -33,6 +33,7 @@ AUTHOR_RENAME = server.freewise_author_rename
 RANDOM = server.freewise_random
 DUPLICATES = server.freewise_duplicates
 STATS = server.freewise_stats
+HEALTH = server.freewise_health
 BOOKS = server.freewise_books
 BOOK_HIGHLIGHTS = server.freewise_book_highlights
 AUTHORS = server.freewise_authors
@@ -121,6 +122,13 @@ def test_show_returns_full_detail(patched_client):
     assert out["text"] == "show me"
     assert out["note"] == "my note"
     assert out["is_favorited"] is True
+
+
+def test_health_returns_status_block(patched_client):
+    out = json.loads(HEALTH())
+    assert out["status"] == "ok"
+    assert "highlights" in out
+    assert "ollama" in out
 
 
 def test_stats_returns_counts(patched_client):
@@ -300,7 +308,7 @@ def test_author_rename_via_mcp(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 25 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 26 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
@@ -308,7 +316,8 @@ def test_tool_surface_complete(patched_client):
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_random", "freewise_related", "freewise_ask",
         "freewise_summarize_book", "freewise_duplicates",
-        "freewise_stats", "freewise_books", "freewise_book_highlights",
+        "freewise_stats", "freewise_health",
+        "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",
         "freewise_set_note", "freewise_append_note",
         "freewise_favorite", "freewise_discard", "freewise_master",

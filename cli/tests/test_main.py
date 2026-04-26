@@ -134,6 +134,16 @@ def test_book_highlights_lists_book_only(http_client, auth_token, capsys):
     assert "from-a2" not in out
 
 
+def test_health_output(http_client, auth_token, capsys):
+    """`freewise health` should pretty-print the /healthz response."""
+    rc, out, _ = _run(["health"], http_client, auth_token, capsys)
+    # status:ok in test env; reachable false (no Ollama in test).
+    assert rc == 0
+    assert "status:" in out
+    assert "active:" in out
+    assert "ollama:" in out
+
+
 def test_stats_output(http_client, auth_token, capsys):
     _add_highlight("a"); _add_highlight("b", is_favorited=True)
     rc, out, _ = _run(["stats"], http_client, auth_token, capsys)
