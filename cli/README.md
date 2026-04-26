@@ -30,34 +30,62 @@ Override per-command via `--url` / `--token`, or via env vars `FREEWISE_URL` / `
 
 ## Commands
 
-```text
-freewise stats                       # counts + review-due summary
-freewise search "stoicism"           # full-text across text + note
-freewise search "x" --json           # any command supports --json
-freewise recent --limit 20           # newest highlights first
-freewise show 1234                   # full detail of one highlight
-freewise books --limit 50            # books with highlight counts
+### Read
 
+```text
+freewise stats                       # counts + review-due + mastered + embedded
+freewise search "stoicism" [--tag T] [--limit N] [--include-discarded]
+freewise recent [--limit 10]
+freewise show 1234                   # full detail
+freewise random [--book-id 42]       # surprise me
+freewise related 1234 [--limit 10]   # semantic neighbors (needs Ollama)
+```
+
+### Discovery
+
+```text
+freewise books [--limit 50]
+freewise book-highlights 42 [--limit 50]
+freewise authors [query] [--limit 50]
+freewise tags [query] [--limit 100]
+```
+
+### Write
+
+```text
 freewise note 1234 "this matters because..."
-freewise favorite 1234               # toggle on
-freewise unfavorite 1234
-freewise discard 1234
-freewise restore 1234
+freewise favorite 1234 | unfavorite 1234
+freewise discard 1234 | restore 1234
+freewise master 1234 | unmaster 1234       # skip from review queue
+freewise tag add 1234 "deep learning"      # normalized to lowercase
+freewise tag remove 1234 "deep learning"
+freewise tag list 1234
 
 freewise add --text "captured quote" \
              --book "Book Title" --author "Author"
-
-freewise tag add 1234 "deep learning"      # add tag (normalized to lowercase)
-freewise tag remove 1234 "deep learning"
-freewise tag list 1234
-freewise search "x" --tag "deep learning"  # search filtered by tag
-
-freewise export csv -o backup.csv             # Readwise-compatible CSV
-freewise export markdown -o vault.zip         # one .md per book (Obsidian/Logseq vault)
-freewise export atomic -o atomic.zip          # one .md per highlight (Zettelkasten atoms)
-freewise export atomic --book-id 42 -o b42.zip  # atomic notes for a single book
-freewise export csv | head                    # any export streams to stdout if -o omitted
 ```
+
+### Export
+
+```text
+freewise export csv -o backup.csv               # Readwise-compatible CSV
+freewise export markdown -o vault.zip           # per-book .md ZIP (Obsidian/Logseq)
+freewise export notion -o notion.zip            # Notion-flavored .md ZIP
+freewise export atomic -o atomic.zip            # one .md per highlight
+freewise export atomic --book-id 42 -o b.zip    # atomic notes for one book
+freewise export csv | head                      # stdout if -o omitted
+```
+
+### Embeddings (semantic similarity)
+
+```text
+freewise embed-backfill [--batch-size 64] [--max 0] [--model X]
+```
+
+Loops the server-side backfill endpoint until no rows remain. See
+`docs/SEMANTIC_SETUP.md` for Ollama setup.
+
+Every command supports `--json` for machine-readable output.
 
 ## Using from Claude Code
 

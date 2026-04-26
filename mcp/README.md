@@ -43,22 +43,40 @@ Add to `~/.claude.json` (or use `/mcp` in Claude Code to manage):
 
 Restart Claude Code. The 9 tools below appear under the `freewise` namespace.
 
-## Tools
+## Tools (18)
 
-| Tool                  | Purpose                                                   |
-|-----------------------|-----------------------------------------------------------|
-| `freewise_search`     | Full-text search across text + note                       |
-| `freewise_recent`     | Most recent highlights, newest first                      |
-| `freewise_show`       | Single highlight detail by id                             |
-| `freewise_stats`      | Counts + review-due summary                               |
-| `freewise_books`      | Books that have at least one highlight                    |
-| `freewise_set_note`   | Replace the note on a highlight                           |
-| `freewise_favorite`   | Set or clear the favorited flag                           |
-| `freewise_discard`    | Discard or restore a highlight                            |
-| `freewise_add`        | Capture a new highlight (book auto-created if missing)    |
-| `freewise_tag_list`   | List tags on a highlight                                  |
-| `freewise_tag_add`    | Attach a tag (idempotent; lowercased server-side)         |
-| `freewise_tag_remove` | Remove a tag (idempotent)                                 |
+### Read
+
+| Tool                       | Purpose                                                |
+|----------------------------|--------------------------------------------------------|
+| `freewise_search`          | Full-text search across text + note (`tag` filter opt) |
+| `freewise_recent`          | Most recent highlights, newest first                   |
+| `freewise_show`            | Single highlight detail by id                          |
+| `freewise_random`          | One random highlight (surprise me)                     |
+| `freewise_related`         | Top-K semantically similar highlights (needs Ollama)   |
+| `freewise_stats`           | Counts + review-due summary                            |
+
+### Discovery / pivots
+
+| Tool                       | Purpose                                                |
+|----------------------------|--------------------------------------------------------|
+| `freewise_books`           | Books that have at least one highlight                 |
+| `freewise_book_highlights` | All highlights for one book                            |
+| `freewise_authors`         | Distinct authors with book + highlight counts          |
+| `freewise_tags`            | Distinct tags with usage counts                        |
+| `freewise_tag_list`        | Tags currently on one highlight                        |
+
+### Write
+
+| Tool                       | Purpose                                                |
+|----------------------------|--------------------------------------------------------|
+| `freewise_set_note`        | Replace the note (empty string clears)                 |
+| `freewise_favorite`        | Set or clear the favorited flag                        |
+| `freewise_discard`         | Discard or restore a highlight                         |
+| `freewise_master`          | Mark/unmark a highlight as mastered (skip in review)   |
+| `freewise_add`             | Capture a new highlight (book auto-created if missing) |
+| `freewise_tag_add`         | Attach a tag (idempotent; lowercased server-side)      |
+| `freewise_tag_remove`      | Remove a tag (idempotent)                              |
 
 All tools return JSON strings. Errors are wrapped as `{"error": "..."}` so the calling agent can branch on the shape rather than catching exceptions.
 
