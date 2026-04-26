@@ -110,6 +110,13 @@ class Client:
             "GET", "/api/v2/books/", params={"page": page, "page_size": page_size},
         )
 
+    def list_authors(self, *, page: int = 1, page_size: int = 50,
+                     q: str | None = None) -> dict:
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if q:
+            params["q"] = q
+        return self._request("GET", "/api/v2/authors", params=params)
+
     def stats(self) -> dict:
         return self._request("GET", "/api/v2/stats")
 

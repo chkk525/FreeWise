@@ -132,6 +132,21 @@ def freewise_book_highlights(book_id: int, limit: int = 50) -> str:
     )
 
 
+@mcp.tool()
+def freewise_authors(query: str | None = None, limit: int = 50) -> str:
+    """List distinct authors with book + highlight counts.
+
+    Sorted by highlight_count desc so the heaviest-quoted authors come
+    first. Optional ``query`` substring-filters the author name. Useful
+    when Claude needs to discover which authors the user has read,
+    before drilling into a specific book or filtering search.
+    """
+    return _call(
+        "authors failed",
+        lambda: _client().list_authors(page=1, page_size=limit, q=query),
+    )
+
+
 # ── Write tools ───────────────────────────────────────────────────────────
 
 

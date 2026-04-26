@@ -88,6 +88,22 @@ def test_random_picks_one(http_client, auth_token, capsys):
     assert ("alpha" in out) or ("beta" in out)
 
 
+def test_authors_lists_with_counts(http_client, auth_token, capsys):
+    """`freewise authors` should list distinct authors with counts."""
+    from app.models import Book
+    with Session(_test_engine) as s:
+        a = Book(title="A1", author="Alice")
+        b = Book(title="B1", author="Bob")
+        s.add(a); s.add(b); s.commit(); s.refresh(a); s.refresh(b)
+        s.add(Highlight(book_id=a.id, user_id=1, text="x"))
+        s.add(Highlight(book_id=b.id, user_id=1, text="y"))
+        s.commit()
+    rc, out, _ = _run(["authors"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "Alice" in out
+    assert "Bob" in out
+
+
 def test_book_highlights_lists_book_only(http_client, auth_token, capsys):
     """`freewise book-highlights <id>` should return only that book's highlights."""
     from app.models import Book

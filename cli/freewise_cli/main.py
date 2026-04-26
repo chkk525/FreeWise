@@ -226,6 +226,20 @@ def cmd_books(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_authors(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.list_authors(
+        page=1, page_size=args.limit, q=getattr(args, "query", None),
+    )
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"{len(body['results'])} of {body['count']} authors (sorted by highlight count)")
+    for a in body["results"]:
+        print(f"  {a['highlight_count']:>5} hl · {a['book_count']:>3} book{'s' if a['book_count'] != 1 else ''}  {a['name']}")
+    return 0
+
+
 def cmd_note(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     h = client.patch_highlight(args.highlight_id, note=args.note)
@@ -449,6 +463,12 @@ def _build_parser() -> argparse.ArgumentParser:
     bh.add_argument("book_id", type=int)
     bh.add_argument("--limit", type=int, default=50)
     bh.set_defaults(func=cmd_book_highlights)
+
+    # authors
+    au = sub.add_parser("authors", help="List authors with book + highlight counts.")
+    au.add_argument("query", nargs="?", help="Optional substring filter on author name.")
+    au.add_argument("--limit", type=int, default=50)
+    au.set_defaults(func=cmd_authors)
 
     # note <id> "..."
     n = sub.add_parser("note", help="Replace the note on a highlight (use empty string to clear).")

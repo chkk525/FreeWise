@@ -368,6 +368,68 @@ def test_search_results_include_tags(client, db, make_highlight):
     assert r.json()["results"][0]["tags"] == ["topic"]
 
 
+# ── GET /api/v2/authors ──────────────────────────────────────────────────────
+
+
+def test_authors_lists_distinct_with_counts(client, db, make_book, make_highlight):
+    headers = _auth_headers(db)
+    a1 = make_book(title="A1", author="Alice")
+    a2 = make_book(title="A2", author="Alice")
+    b = make_book(title="B1", author="Bob")
+    make_highlight(text="x", book=a1)
+    make_highlight(text="y", book=a1)
+    make_highlight(text="z", book=a2)
+    make_highlight(text="w", book=b)
+    resp = client.get("/api/v2/authors", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    by_name = {r["name"]: r for r in body["results"]}
+    assert by_name["Alice"]["book_count"] == 2
+    assert by_name["Alice"]["highlight_count"] == 3
+    assert by_name["Bob"]["book_count"] == 1
+    assert by_name["Bob"]["highlight_count"] == 1
+    # Sorted by highlight_count desc.
+    assert body["results"][0]["name"] == "Alice"
+
+
+def test_authors_q_filter(client, db, make_book, make_highlight):
+    headers = _auth_headers(db)
+    a = make_book(title="A", author="Alice")
+    b = make_book(title="B", author="Bob")
+    make_highlight(text="x", book=a)
+    make_highlight(text="y", book=b)
+    resp = client.get("/api/v2/authors", headers=headers, params={"q": "ali"})
+    assert resp.status_code == 200
+    names = {r["name"] for r in resp.json()["results"]}
+    assert names == {"Alice"}
+
+
+def test_authors_excludes_discarded(client, db, make_book, make_highlight):
+    headers = _auth_headers(db)
+    a = make_book(title="A", author="Alice")
+    make_highlight(text="x", book=a)
+    make_highlight(text="y", book=a, is_discarded=True)
+    resp = client.get("/api/v2/authors", headers=headers)
+    body = resp.json()
+    alice = next(r for r in body["results"] if r["name"] == "Alice")
+    assert alice["highlight_count"] == 1
+
+
+def test_authors_skips_null_author(client, db, make_book, make_highlight):
+    headers = _auth_headers(db)
+    a = make_book(title="A", author="Alice")
+    nb = make_book(title="N", author=None)
+    make_highlight(text="x", book=a)
+    make_highlight(text="y", book=nb)
+    resp = client.get("/api/v2/authors", headers=headers)
+    names = {r["name"] for r in resp.json()["results"]}
+    assert names == {"Alice"}
+
+
+def test_authors_requires_auth(client):
+    assert client.get("/api/v2/authors").status_code == 401
+
+
 # ── GET /api/v2/stats ────────────────────────────────────────────────────────
 
 

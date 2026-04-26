@@ -39,6 +39,7 @@ from sqlmodel import Session, func, select
 
 from app.api_v2.auth import get_api_token
 from app.api_v2.schemas import (
+    AuthorListItem,
     BookListItem,
     HighlightCreatePayload,
     HighlightCreateResponse,
@@ -666,6 +667,56 @@ def remove_highlight_tag(
             session.commit()
 
     return TagListResponse(tags=_tags_for_highlight(session, h.id))
+
+
+@router.get("/authors", response_model=PaginatedResponse)
+def list_authors(
+    q: Optional[str] = Query(default=None, max_length=128),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> PaginatedResponse:
+    """Distinct authors with book + highlight counts.
+
+    Sorted by highlight_count descending so the heaviest-quoted authors
+    surface first. Optional ``q`` does a case-insensitive substring match
+    on the author name (LIKE-escaped). Excludes books with NULL author.
+    """
+    base = (
+        select(
+            Book.author,
+            func.count(func.distinct(Book.id)).label("book_count"),
+            func.count(Highlight.id).label("highlight_count"),
+        )
+        .join(Highlight, Highlight.book_id == Book.id)
+        .where(Book.author.is_not(None))
+        .where(Highlight.user_id == token.user_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(Book.author)
+    )
+
+    if q:
+        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        base = base.where(Book.author.like(f"%{needle}%", escape="\\"))
+
+    # Count distinct authors via a subquery over the grouped result.
+    count_q = select(func.count()).select_from(base.subquery())
+    total = session.exec(count_q).one()
+
+    rows = session.exec(
+        base.order_by(func.count(Highlight.id).desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    results = [
+        AuthorListItem(
+            name=name, book_count=int(book_count), highlight_count=int(hl_count),
+        ).model_dump(mode="json")
+        for name, book_count, hl_count in rows
+    ]
+    return PaginatedResponse(count=total, results=results)
 
 
 @router.get("/stats", response_model=StatsResponse)

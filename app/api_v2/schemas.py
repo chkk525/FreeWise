@@ -118,6 +118,12 @@ class HighlightUpdatePayload(BaseModel):
     is_mastered: Optional[bool] = None
 
 
+class AuthorListItem(BaseModel):
+    name: str
+    book_count: int
+    highlight_count: int
+
+
 class StatsResponse(BaseModel):
     """Counts + streak summary for ``GET /api/v2/stats``."""
 
