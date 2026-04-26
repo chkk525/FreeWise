@@ -606,6 +606,85 @@ def test_search_results_include_tags(client, db, make_highlight):
     assert r.json()["results"][0]["tags"] == ["topic"]
 
 
+# ── GET /api/v2/highlights/{id}/suggest-tags ────────────────────────────────
+
+
+def test_suggest_tags_uses_neighbor_tags(client, db, make_highlight):
+    """Tags from semantic neighbors should bubble up as suggestions."""
+    headers = _auth_headers(db)
+    src = make_highlight(text="source about ml")
+    near = make_highlight(text="another ml note")
+    far = make_highlight(text="unrelated cooking")
+    _seed_embedding(db, src.id, [1.0, 0.0])
+    _seed_embedding(db, near.id, [0.95, 0.05])
+    _seed_embedding(db, far.id, [-1.0, 0.0])
+    # Tag the neighbor with what we expect to surface.
+    client.post(f"/highlights/{near.id}/tags/add", data={"new_tag": "ml"})
+    client.post(f"/highlights/{near.id}/tags/add", data={"new_tag": "ai"})
+    # And the far row gets a different tag that should rank lower.
+    client.post(f"/highlights/{far.id}/tags/add", data={"new_tag": "cooking"})
+
+    resp = client.get(
+        f"/api/v2/highlights/{src.id}/suggest-tags", headers=headers,
+        params={"model": "test-model"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    names = [r["name"] for r in body["results"]]
+    # 'ml' and 'ai' should rank above 'cooking' (closer neighbor).
+    assert "ml" in names
+    assert "ai" in names
+    if "cooking" in names:
+        ml_idx = names.index("ml")
+        cooking_idx = names.index("cooking")
+        assert ml_idx < cooking_idx
+
+
+def test_suggest_tags_skips_existing_tags(client, db, make_highlight):
+    """Tags the source already has must not appear in suggestions."""
+    headers = _auth_headers(db)
+    src = make_highlight(text="x")
+    near = make_highlight(text="y")
+    _seed_embedding(db, src.id, [1.0, 0.0])
+    _seed_embedding(db, near.id, [1.0, 0.0])
+    client.post(f"/highlights/{src.id}/tags/add", data={"new_tag": "already"})
+    client.post(f"/highlights/{near.id}/tags/add", data={"new_tag": "already"})
+    client.post(f"/highlights/{near.id}/tags/add", data={"new_tag": "fresh"})
+    resp = client.get(
+        f"/api/v2/highlights/{src.id}/suggest-tags", headers=headers,
+        params={"model": "test-model"},
+    )
+    names = [r["name"] for r in resp.json()["results"]]
+    assert "fresh" in names
+    assert "already" not in names
+
+
+def test_suggest_tags_404_for_other_user(client, db, make_highlight):
+    h = make_highlight(text="theirs")
+    h.user_id = 2
+    db.add(h); db.commit()
+    headers = _auth_headers(db)
+    resp = client.get(
+        f"/api/v2/highlights/{h.id}/suggest-tags", headers=headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_suggest_tags_empty_when_source_unembedded(client, db, make_highlight):
+    headers = _auth_headers(db)
+    src = make_highlight(text="x")  # no embedding seeded
+    resp = client.get(
+        f"/api/v2/highlights/{src.id}/suggest-tags", headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 0
+
+
+def test_suggest_tags_requires_auth(client, db, make_highlight):
+    h = make_highlight(text="x")
+    assert client.get(f"/api/v2/highlights/{h.id}/suggest-tags").status_code == 401
+
+
 # ── GET /api/v2/highlights/{id}/related (semantic similarity) ────────────────
 
 

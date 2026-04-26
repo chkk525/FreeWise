@@ -871,6 +871,101 @@ def embeddings_backfill(
     return report.as_dict()
 
 
+@router.get("/highlights/{highlight_id}/suggest-tags", response_model=PaginatedResponse)
+def suggest_tags(
+    highlight_id: int,
+    neighbors: int = Query(default=20, ge=5, le=100,
+                           description="How many semantic neighbors to harvest tags from."),
+    limit: int = Query(default=5, ge=1, le=20),
+    model: Optional[str] = Query(default=None, max_length=128),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> PaginatedResponse:
+    """Suggest tags for a highlight by inspecting its semantic neighbors.
+
+    Pipeline:
+      1. Look up the source highlight's embedding for ``model``.
+      2. top-K cosine-similar non-discarded highlights of the same user.
+      3. Collect each neighbor's tags (excluding the legacy
+         favorite/discard pseudo-tags).
+      4. Rank by frequency, weighted by similarity score.
+      5. Skip tags the source highlight already has (no point suggesting
+         them).
+
+    Returns ``[{name, score, neighbor_count}, ...]`` sorted by score
+    desc. ``count: 0`` when the source has no embedding yet — UI
+    callers should treat that as "not yet indexed" rather than "no
+    suggestions".
+    """
+    target_h = session.get(Highlight, highlight_id)
+    if target_h is None or target_h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+
+    model_name = model or _env_model()
+    target_emb = session.exec(
+        select(Embedding)
+        .where(Embedding.highlight_id == highlight_id)
+        .where(Embedding.model_name == model_name)
+    ).first()
+    if target_emb is None:
+        return PaginatedResponse(count=0, results=[])
+
+    # Existing tags on the source — we want to exclude these from suggestions.
+    existing = set(_tags_for_highlight(session, highlight_id))
+
+    # Pull candidate vectors (same shape as related endpoint).
+    cand_rows = session.exec(
+        select(Embedding.highlight_id, Embedding.vector)
+        .join(Highlight, Highlight.id == Embedding.highlight_id)
+        .where(Embedding.model_name == model_name)
+        .where(Embedding.dim == target_emb.dim)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(Highlight.id != highlight_id)
+        .where(Highlight.user_id == token.user_id)
+    ).all()
+    if not cand_rows:
+        return PaginatedResponse(count=0, results=[])
+
+    candidates = [(hid, blob) for hid, blob in cand_rows]
+    top = top_k_similar(target_emb.vector, candidates, dim=target_emb.dim, k=neighbors)
+
+    # Pull tags for the K neighbors in one query.
+    neighbor_ids = [hid for hid, _ in top]
+    if not neighbor_ids:
+        return PaginatedResponse(count=0, results=[])
+    sim_by_id = {hid: score for hid, score in top}
+
+    pairs = session.exec(
+        select(HighlightTag.highlight_id, Tag.name)
+        .join(Tag, HighlightTag.tag_id == Tag.id)
+        .where(HighlightTag.highlight_id.in_(neighbor_ids))
+    ).all()
+
+    # Score = sum of similarity scores per tag-name across neighbors.
+    # Filter reserved pseudo-tags + tags the source already has.
+    scores: dict[str, float] = {}
+    counts: dict[str, int] = {}
+    for hl_id, name in pairs:
+        if not name:
+            continue
+        nlow = name.lower()
+        if nlow in ("favorite", "discard") or name in existing:
+            continue
+        s = sim_by_id.get(hl_id, 0.0)
+        scores[name] = scores.get(name, 0.0) + max(0.0, s)
+        counts[name] = counts.get(name, 0) + 1
+
+    if not scores:
+        return PaginatedResponse(count=0, results=[])
+
+    ranked = sorted(scores.items(), key=lambda kv: -kv[1])[:limit]
+    results = [
+        {"name": name, "score": round(score, 4), "neighbor_count": counts[name]}
+        for name, score in ranked
+    ]
+    return PaginatedResponse(count=len(results), results=results)
+
+
 @router.get("/highlights/{highlight_id}/related", response_model=PaginatedResponse)
 def related_highlights(
     highlight_id: int,

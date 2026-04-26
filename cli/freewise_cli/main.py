@@ -283,6 +283,28 @@ def cmd_embed_backfill(args: argparse.Namespace) -> int:
     return 1 if total_failed else 0
 
 
+def cmd_suggest_tags(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.suggest_tags(
+        args.highlight_id, neighbors=args.neighbors, limit=args.limit,
+    )
+    if args.json:
+        _print_json(body)
+        return 0
+    if body["count"] == 0:
+        print(
+            f"#{args.highlight_id}: no tag suggestions. "
+            "Either no embedding for this highlight (run `freewise embed-backfill`) "
+            "or its semantic neighbors have no tags yet."
+        )
+        return 0
+    print(f"Top {body['count']} tag suggestion{'s' if body['count'] != 1 else ''} for #{args.highlight_id}:")
+    print()
+    for r in body["results"]:
+        print(f"  [{r['score']:.3f} · seen {r['neighbor_count']}×]  {r['name']}")
+    return 0
+
+
 def cmd_related(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body = client.related_highlights(args.highlight_id, limit=args.limit)
@@ -786,6 +808,16 @@ def _build_parser() -> argparse.ArgumentParser:
     rl.add_argument("highlight_id", type=int)
     rl.add_argument("--limit", type=int, default=10)
     rl.set_defaults(func=cmd_related)
+
+    # suggest-tags
+    sg = sub.add_parser("suggest-tags",
+                        help="Suggest tags for a highlight based on its semantic neighbors (needs embeddings).")
+    sg.add_argument("highlight_id", type=int)
+    sg.add_argument("--neighbors", type=int, default=20,
+                    help="How many semantic neighbors to harvest tags from (default 20).")
+    sg.add_argument("--limit", type=int, default=5,
+                    help="Max suggestions returned (default 5).")
+    sg.set_defaults(func=cmd_suggest_tags)
 
     # ask (RAG)
     ak = sub.add_parser("ask", help="Ask a question about your library (needs Ollama embed + generate).")

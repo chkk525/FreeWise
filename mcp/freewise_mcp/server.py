@@ -167,6 +167,24 @@ def freewise_ask(question: str, top_k: int = 8) -> str:
 
 
 @mcp.tool()
+def freewise_suggest_tags(highlight_id: int, neighbors: int = 20, limit: int = 5) -> str:
+    """Suggest tags for a highlight by inspecting its semantic neighbors.
+
+    Pulls the top-K most-similar highlights, harvests their tags, ranks
+    by cosine-weighted frequency, and returns the top suggestions —
+    skipping reserved names and tags the source already has. Requires
+    embeddings to be backfilled.
+
+    Useful for: "I just captured this thought, what existing tags from
+    my library would fit it?"
+    """
+    return _call(
+        "suggest_tags failed",
+        lambda: _client().suggest_tags(highlight_id, neighbors=neighbors, limit=limit),
+    )
+
+
+@mcp.tool()
 def freewise_related(highlight_id: int, limit: int = 10) -> str:
     """Top-K semantically similar highlights to ``highlight_id``.
 

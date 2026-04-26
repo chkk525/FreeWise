@@ -150,6 +150,15 @@ class Client:
             body["model"] = model
         return self._request("POST", "/api/v2/embeddings/backfill", json=body)
 
+    def suggest_tags(self, highlight_id: int, *, neighbors: int = 20,
+                     limit: int = 5, model: str | None = None) -> dict:
+        params: dict[str, Any] = {"neighbors": neighbors, "limit": limit}
+        if model:
+            params["model"] = model
+        return self._request(
+            "GET", f"/api/v2/highlights/{highlight_id}/suggest-tags", params=params,
+        )
+
     def related_highlights(self, highlight_id: int, *, limit: int = 10,
                            model: str | None = None) -> dict:
         params: dict[str, Any] = {"limit": limit}
