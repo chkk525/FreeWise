@@ -88,6 +88,12 @@ class Client:
         else:
             raise FreewiseError(0, f"unsupported file extension: {ext!r}")
 
+        max_bytes = 50 * 1024 * 1024
+        size = os.path.getsize(path)
+        if size > max_bytes:
+            raise FreewiseError(
+                0, f"file too large: {size} bytes (max {max_bytes})"
+            )
         with open(path, "rb") as fh:
             content = fh.read()
         files = {"file": (os.path.basename(path), content,

@@ -163,6 +163,7 @@ async def ui_library(
             )
             .join(Book, Book.id == Highlight.book_id)
             .where(Book.author == author_filter)
+            .where(Highlight.user_id == 1)
         ).first()
         total_h = int(stats_row[0] or 0)
         if total_h > 0:
