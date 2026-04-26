@@ -231,6 +231,64 @@ app.include_router(api_tokens.router)
 app.include_router(api_v2_router.router)
 
 
+@app.get("/healthz")
+async def healthz():
+    """Lightweight liveness + readiness probe.
+
+    No auth — intended for an external monitor or `curl` smoke check.
+    Returns counts and a non-fatal Ollama reachability flag so a single
+    GET tells you:
+      - is the app alive (200 = yes)
+      - is the DB reachable (counts present = yes)
+      - is the embedding model populated (embedded_pct > 0)
+      - is Ollama reachable (ollama.reachable = true/false)
+
+    Never returns 5xx for transient Ollama issues — the daemon being
+    down is normal and shouldn't page anyone.
+    """
+    from sqlmodel import Session, select, func
+    from app.db import get_engine
+    from app.models import Highlight, Embedding
+    from app.services.embeddings import _env_url, _env_model
+
+    engine = get_engine()
+    out: dict = {"status": "ok"}
+    try:
+        with Session(engine) as s:
+            total_active = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_discarded == False)  # noqa: E712
+            ).one() or 0)
+            embed_model = _env_model()
+            embedded = int(s.exec(
+                select(func.count(func.distinct(Embedding.highlight_id)))
+                .where(Embedding.model_name == embed_model)
+            ).one() or 0)
+        out["highlights"] = {
+            "active": total_active,
+            "embedded": embedded,
+            "embedded_pct": round((embedded / total_active * 100) if total_active else 0.0, 1),
+        }
+        out["embed_model"] = embed_model
+    except Exception as e:  # noqa: BLE001
+        out["status"] = "degraded"
+        out["db_error"] = str(e)
+
+    # Best-effort Ollama check — short timeout so the probe stays cheap.
+    ollama_url = _env_url()
+    out["ollama"] = {"url": ollama_url, "reachable": False}
+    try:
+        import httpx
+        r = httpx.get(f"{ollama_url}/api/tags", timeout=2.0)
+        out["ollama"]["reachable"] = r.status_code < 500
+        out["ollama"]["status_code"] = r.status_code
+    except Exception:  # noqa: BLE001
+        # Ollama down is normal; don't surface a stack trace.
+        pass
+
+    return out
+
+
 @app.get("/sw.js")
 async def service_worker():
     """Serve the PWA service worker from root scope.
