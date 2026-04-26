@@ -141,6 +141,23 @@ def ensure_schema_migrations(engine=None) -> None:
                 )
             )
 
+        # ── Highlight.is_mastered (A5 mastery flag) ──────────────────────
+        # Mastered highlights are excluded from the review queue (the user
+        # has internalized them). Distinct from is_discarded — a mastered
+        # highlight still appears in library/search/exports.
+        hl_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(highlight)")).all()}
+        if hl_cols and "is_mastered" not in hl_cols:
+            _log.info("migration: adding highlight.is_mastered column")
+            conn.execute(
+                text("ALTER TABLE highlight ADD COLUMN is_mastered BOOLEAN NOT NULL DEFAULT 0")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_highlight_is_mastered "
+                    "ON highlight (is_mastered)"
+                )
+            )
+
 
 def get_session():
     """FastAPI dependency that yields a database session."""

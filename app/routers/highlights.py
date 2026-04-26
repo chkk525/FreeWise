@@ -233,6 +233,9 @@ def get_review_highlights(
         select(Highlight)
         .options(selectinload(Highlight.book))
         .where(Highlight.is_discarded == False)
+        # Exclude mastered highlights — the user has internalized them and
+        # explicitly opted out of seeing them in review.
+        .where(Highlight.is_mastered == False)
         .where(Highlight.highlight_weight > 0.0)
         .order_by(func.random())
         .limit(sample_pool_size)
@@ -1050,6 +1053,42 @@ async def remove_highlight_tag_html(
             session.commit()
 
     return _render_highlight_after_tag_change(request, highlight, session, context)
+
+
+# ── Mastery toggle ──────────────────────────────────────────────────────────
+
+
+@router.post("/{id}/master", response_class=HTMLResponse)
+async def toggle_master_html(
+    request: Request,
+    id: int,
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Toggle is_mastered. Mastered highlights are excluded from review.
+
+    Distinct from discard: mastered rows still appear in library / search /
+    exports — they're just marked "I know this, stop quizzing me."
+    Mastering a discarded highlight is a no-op (400) since it makes no sense.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    if highlight.is_discarded and not highlight.is_mastered:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot master a discarded highlight. Restore it first.",
+        )
+    highlight.is_mastered = not highlight.is_mastered
+    session.add(highlight)
+    session.commit()
+    session.refresh(highlight)
+
+    if context == "book":
+        return render_book_highlights_sections(request, highlight.book_id, session)
+    return templates.TemplateResponse(
+        request, "_highlight_row.html", {"highlight": highlight},
+    )
 
 
 # ── Bulk operations ─────────────────────────────────────────────────────────

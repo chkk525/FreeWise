@@ -80,6 +80,10 @@ class Highlight(SQLModel, table=True):
     location: Optional[int] = Field(default=None, index=True)  # Page number or order in book
     is_favorited: bool = Field(default=False, index=True)
     is_discarded: bool = Field(default=False, index=True)
+    # is_mastered = "I have internalized this; stop showing it in review."
+    # Distinct from is_discarded ("never want to see this again"):
+    # mastered rows still appear in library / search / exports.
+    is_mastered: bool = Field(default=False, index=True)
     next_review: Optional[datetime] = Field(default=None, index=True)
     last_reviewed_at: Optional[datetime] = Field(default=None, index=True)
     review_count: int = Field(default=0)

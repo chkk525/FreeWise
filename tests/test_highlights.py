@@ -258,6 +258,53 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestMastery:
+    """POST /highlights/{id}/master — toggle is_mastered flag."""
+
+    def test_toggle_master_on(self, client, make_highlight, db):
+        h = make_highlight(text="x")
+        assert h.is_mastered is False
+        resp = client.post(f"/highlights/{h.id}/master", data={})
+        assert resp.status_code == 200
+        db.refresh(h)
+        assert h.is_mastered is True
+
+    def test_toggle_master_off(self, client, make_highlight, db):
+        h = make_highlight(text="x")
+        client.post(f"/highlights/{h.id}/master", data={})
+        client.post(f"/highlights/{h.id}/master", data={})
+        db.refresh(h)
+        assert h.is_mastered is False
+
+    def test_cannot_master_discarded(self, client, make_highlight):
+        h = make_highlight(text="x", is_discarded=True)
+        resp = client.post(f"/highlights/{h.id}/master", data={})
+        assert resp.status_code == 400
+
+    def test_unmaster_works_even_when_discarded(self, client, make_highlight, db):
+        """Edge case: a row mastered before being discarded must still be
+        un-masterable so the user can fix bad state."""
+        h = make_highlight(text="x", is_discarded=True)
+        # Forcibly seed is_mastered=True
+        h.is_mastered = True
+        db.add(h); db.commit()
+        resp = client.post(f"/highlights/{h.id}/master", data={})
+        assert resp.status_code == 200
+        db.refresh(h)
+        assert h.is_mastered is False
+
+    def test_review_queue_excludes_mastered(self, client, make_highlight):
+        """Mastered highlights must not appear in the review queue."""
+        make_highlight(text="show me")
+        make_highlight(text="hide-me-mastered", is_mastered=True)
+        resp = client.get("/highlights/ui/review")
+        assert resp.status_code == 200
+        # Mastered text must not appear in the rendered review card.
+        # (We may or may not see show-me depending on sampling, but the
+        # explicit assertion is that the mastered row is filtered out.)
+        assert "hide-me-mastered" not in resp.text
+
+
 class TestBulkOperations:
     """POST /highlights/bulk — favorite/discard/tag many at once."""
 
