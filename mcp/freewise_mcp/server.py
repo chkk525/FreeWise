@@ -43,6 +43,22 @@ def _err(msg: str) -> str:
     return json.dumps({"error": msg}, ensure_ascii=False)
 
 
+def _call(label: str, fn):
+    """Run an API-bound callable, catch any exception, return structured JSON.
+
+    Without this guard, a transport failure (httpx.ConnectError, JSON decode
+    error, missing config, etc.) would bubble up as an MCP protocol error
+    and break the agent's session. With it, the agent always sees either
+    success JSON or ``{"error": "..."}`` and can branch normally.
+    """
+    try:
+        return _ok(fn())
+    except FreewiseError as e:
+        return _err(f"{label}: {e}")
+    except Exception as e:  # noqa: BLE001 — last-resort guard for transport/config failures
+        return _err(f"{label}: {type(e).__name__}: {e}")
+
+
 mcp = FastMCP("freewise-mcp")
 
 
@@ -56,51 +72,33 @@ def freewise_search(query: str, limit: int = 20, include_discarded: bool = False
     Returns up to `limit` matches as JSON. Discarded highlights are excluded
     by default. The query supports literal `%` and `_` — they're escaped server-side.
     """
-    try:
-        body = _client().search(query, page=1, page_size=limit, include_discarded=include_discarded)
-    except FreewiseError as e:
-        return _err(f"search failed: {e}")
-    return _ok(body)
+    return _call("search failed", lambda: _client().search(
+        query, page=1, page_size=limit, include_discarded=include_discarded,
+    ))
 
 
 @mcp.tool()
 def freewise_recent(limit: int = 10) -> str:
     """List the most recently added highlights, newest first."""
-    try:
-        body = _client().list_highlights(page=1, page_size=limit)
-    except FreewiseError as e:
-        return _err(f"recent failed: {e}")
-    return _ok(body)
+    return _call("recent failed", lambda: _client().list_highlights(page=1, page_size=limit))
 
 
 @mcp.tool()
 def freewise_show(highlight_id: int) -> str:
     """Fetch one highlight in full by numeric id (text + book + note + flags)."""
-    try:
-        body = _client().get_highlight(highlight_id)
-    except FreewiseError as e:
-        return _err(f"show failed: {e}")
-    return _ok(body)
+    return _call("show failed", lambda: _client().get_highlight(highlight_id))
 
 
 @mcp.tool()
 def freewise_stats() -> str:
     """Aggregate counts: total/active/discarded/favorited highlights, books, review-due."""
-    try:
-        body = _client().stats()
-    except FreewiseError as e:
-        return _err(f"stats failed: {e}")
-    return _ok(body)
+    return _call("stats failed", lambda: _client().stats())
 
 
 @mcp.tool()
 def freewise_books(limit: int = 50) -> str:
     """List books that have at least one highlight, with counts."""
-    try:
-        body = _client().list_books(page=1, page_size=limit)
-    except FreewiseError as e:
-        return _err(f"books failed: {e}")
-    return _ok(body)
+    return _call("books failed", lambda: _client().list_books(page=1, page_size=limit))
 
 
 # ── Write tools ───────────────────────────────────────────────────────────
@@ -109,31 +107,19 @@ def freewise_books(limit: int = 50) -> str:
 @mcp.tool()
 def freewise_set_note(highlight_id: int, note: str) -> str:
     """Replace the note on a highlight. Pass an empty string to clear."""
-    try:
-        body = _client().patch_highlight(highlight_id, note=note)
-    except FreewiseError as e:
-        return _err(f"set_note failed: {e}")
-    return _ok(body)
+    return _call("set_note failed", lambda: _client().patch_highlight(highlight_id, note=note))
 
 
 @mcp.tool()
 def freewise_favorite(highlight_id: int, on: bool = True) -> str:
     """Set or clear the favorite flag. `on=False` to unfavorite."""
-    try:
-        body = _client().patch_highlight(highlight_id, is_favorited=on)
-    except FreewiseError as e:
-        return _err(f"favorite failed: {e}")
-    return _ok(body)
+    return _call("favorite failed", lambda: _client().patch_highlight(highlight_id, is_favorited=on))
 
 
 @mcp.tool()
 def freewise_discard(highlight_id: int, on: bool = True) -> str:
     """Discard or restore a highlight. Discarding auto-clears the favorite flag."""
-    try:
-        body = _client().patch_highlight(highlight_id, is_discarded=on)
-    except FreewiseError as e:
-        return _err(f"discard failed: {e}")
-    return _ok(body)
+    return _call("discard failed", lambda: _client().patch_highlight(highlight_id, is_discarded=on))
 
 
 @mcp.tool()
@@ -145,13 +131,9 @@ def freewise_add(
     location: int | None = None,
 ) -> str:
     """Manually capture a new highlight. `book` is created if it doesn't exist yet."""
-    try:
-        body = _client().create_highlight(
-            text=text, title=book, author=author, note=note, location=location,
-        )
-    except FreewiseError as e:
-        return _err(f"add failed: {e}")
-    return _ok(body)
+    return _call("add failed", lambda: _client().create_highlight(
+        text=text, title=book, author=author, note=note, location=location,
+    ))
 
 
 def main() -> None:

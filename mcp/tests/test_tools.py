@@ -55,7 +55,7 @@ def test_search_returns_json_with_matches(patched_client):
 
 
 def test_search_returns_error_object_on_failure(patched_client, monkeypatch):
-    """If the underlying client raises, the tool wraps the error in JSON."""
+    """If the underlying client raises FreewiseError, the tool wraps it in JSON."""
     from freewise_cli.client import FreewiseError, Client
 
     class BoomClient(Client):
@@ -65,6 +65,22 @@ def test_search_returns_error_object_on_failure(patched_client, monkeypatch):
     out = json.loads(SEARCH("x"))
     assert "error" in out
     assert "boom" in out["error"]
+
+
+def test_tool_wraps_arbitrary_exceptions_as_json(patched_client, monkeypatch):
+    """Non-FreewiseError exceptions (transport/config) must also return structured
+    JSON instead of breaking the MCP session. Lock this in — without the broad
+    fallback in _call(), the agent sees a hard MCP protocol error."""
+    from freewise_cli.client import Client
+
+    class NetworkErrorClient(Client):
+        def stats(self): raise ConnectionError("server unreachable")
+
+    monkeypatch.setattr(server, "_client", lambda: NetworkErrorClient(url="x", token="t"))
+    out = json.loads(STATS())
+    assert "error" in out
+    assert "ConnectionError" in out["error"]
+    assert "server unreachable" in out["error"]
 
 
 def test_recent_returns_newest_first(patched_client):

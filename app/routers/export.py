@@ -241,7 +241,10 @@ async def export_markdown_zip(session: Session = Depends(get_session)):
                 book = book_lookup.get(book_id)
                 if book is None:
                     book = Book(title="Unbound highlights", author=None)
-                title_safe = _safe_filename(book.title)
+                # Guard against a Book row with NULL title — _safe_filename
+                # calls re.sub which would TypeError on None and crash the
+                # generator mid-stream (silent truncation to client).
+                title_safe = _safe_filename(book.title or "")
                 key = title_safe.lower()
                 if key in seen:
                     seen[key] += 1
