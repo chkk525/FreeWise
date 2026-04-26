@@ -890,6 +890,41 @@ def related_highlights(
     return PaginatedResponse(count=len(results), results=results)
 
 
+class _AppendNotePayload(__import__("pydantic").BaseModel):
+    text: str = Field(..., min_length=1, max_length=8191)
+
+
+@router.post("/highlights/{highlight_id}/note/append", response_model=HighlightDetail)
+def append_highlight_note(
+    highlight_id: int,
+    payload: _AppendNotePayload,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> HighlightDetail:
+    """Append ``text`` to the highlight's existing note.
+
+    Distinct from PATCH note=... which REPLACES. This endpoint preserves
+    the existing note and adds a blank-line separator + ``text`` underneath.
+    Useful when adding a follow-up thought during review without losing
+    the original note. 404 on missing or other-user highlight.
+    """
+    h = session.get(Highlight, highlight_id)
+    if h is None or h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+    extra = payload.text.strip()
+    if not extra:
+        raise HTTPException(status_code=400, detail="text cannot be empty.")
+    if h.note:
+        h.note = f"{h.note.rstrip()}\n\n{extra}"
+    else:
+        h.note = extra
+    session.add(h)
+    session.commit()
+    session.refresh(h)
+    book = session.get(Book, h.book_id) if h.book_id is not None else None
+    return _highlight_to_detail(h, book, tags=_tags_for_highlight(session, h.id))
+
+
 @router.get("/highlights/{highlight_id}/tags", response_model=TagListResponse)
 def list_highlight_tags(
     highlight_id: int,

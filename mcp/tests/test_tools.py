@@ -38,6 +38,7 @@ BOOK_HIGHLIGHTS = server.freewise_book_highlights
 AUTHORS = server.freewise_authors
 TAGS_SUMMARY = server.freewise_tags
 SET_NOTE = server.freewise_set_note
+APPEND_NOTE = server.freewise_append_note
 FAVORITE = server.freewise_favorite
 DISCARD = server.freewise_discard
 MASTER = server.freewise_master
@@ -198,6 +199,12 @@ def test_set_note_clears_with_empty_string(patched_client):
     assert out["note"] == ""
 
 
+def test_append_note_preserves_existing(patched_client):
+    hid = _add("x", note="original")
+    out = json.loads(APPEND_NOTE(hid, "follow-up"))
+    assert out["note"] == "original\n\nfollow-up"
+
+
 def test_favorite_on_then_off(patched_client):
     hid = _add("x")
     on = json.loads(FAVORITE(hid, on=True))
@@ -293,7 +300,7 @@ def test_author_rename_via_mcp(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 24 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 25 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
@@ -303,7 +310,7 @@ def test_tool_surface_complete(patched_client):
         "freewise_summarize_book", "freewise_duplicates",
         "freewise_stats", "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",
-        "freewise_set_note",
+        "freewise_set_note", "freewise_append_note",
         "freewise_favorite", "freewise_discard", "freewise_master",
         "freewise_add",
         "freewise_tag_list", "freewise_tag_add", "freewise_tag_remove",

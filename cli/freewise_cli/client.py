@@ -150,6 +150,12 @@ class Client:
             json={k: v for k, v in fields.items() if v is not None},
         )
 
+    def append_note(self, highlight_id: int, text: str) -> dict:
+        return self._request(
+            "POST", f"/api/v2/highlights/{highlight_id}/note/append",
+            json={"text": text},
+        )
+
     def list_books(self, *, page: int = 1, page_size: int = 50) -> dict:
         return self._request(
             "GET", "/api/v2/books/", params={"page": page, "page_size": page_size},

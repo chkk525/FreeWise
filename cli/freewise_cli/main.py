@@ -425,11 +425,16 @@ def cmd_authors(args: argparse.Namespace) -> int:
 
 def cmd_note(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
-    h = client.patch_highlight(args.highlight_id, note=args.note)
+    if getattr(args, "append", False):
+        h = client.append_note(args.highlight_id, args.note)
+        msg = "note appended"
+    else:
+        h = client.patch_highlight(args.highlight_id, note=args.note)
+        msg = "note updated"
     if args.json:
         _print_json(h)
         return 0
-    print(f"#{h['id']} note updated")
+    print(f"#{h['id']} {msg}")
     return 0
 
 
@@ -713,10 +718,12 @@ def _build_parser() -> argparse.ArgumentParser:
     au.add_argument("--limit", type=int, default=50)
     au.set_defaults(func=cmd_authors)
 
-    # note <id> "..."
-    n = sub.add_parser("note", help="Replace the note on a highlight (use empty string to clear).")
+    # note <id> "..." [--append]
+    n = sub.add_parser("note", help="Set or append the note on a highlight.")
     n.add_argument("highlight_id", type=int)
     n.add_argument("note")
+    n.add_argument("--append", action="store_true",
+                   help="Append to the existing note instead of replacing it.")
     n.set_defaults(func=cmd_note)
 
     # favorite / unfavorite / discard / restore

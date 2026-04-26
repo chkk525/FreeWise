@@ -275,6 +275,20 @@ def freewise_set_note(highlight_id: int, note: str) -> str:
 
 
 @mcp.tool()
+def freewise_append_note(highlight_id: int, text: str) -> str:
+    """Append ``text`` to the highlight's existing note (preserves prior content).
+
+    Distinct from ``freewise_set_note`` which replaces. Useful for adding
+    follow-up thoughts during review without losing the original note.
+    Inserts a blank-line separator between the old note and the new text.
+    """
+    return _call(
+        "append_note failed",
+        lambda: _client().append_note(highlight_id, text),
+    )
+
+
+@mcp.tool()
 def freewise_favorite(highlight_id: int, on: bool = True) -> str:
     """Set or clear the favorite flag. `on=False` to unfavorite."""
     return _call("favorite failed", lambda: _client().patch_highlight(highlight_id, is_favorited=on))

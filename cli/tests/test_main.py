@@ -144,6 +144,19 @@ def test_stats_output(http_client, auth_token, capsys):
 # ── note / favorite / unfavorite / discard / restore ──────────────────────
 
 
+def test_note_append_preserves_existing(http_client, auth_token, capsys):
+    """`freewise note <id> --append` should add text without losing prior."""
+    hid = _add_highlight("x", note="original")
+    rc, out, _ = _run(
+        ["note", str(hid), "follow-up", "--append"],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "appended" in out
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).note == "original\n\nfollow-up"
+
+
 def test_note_sets_text(http_client, auth_token, capsys):
     hid = _add_highlight("x")
     rc, out, _ = _run(["note", str(hid), "fresh"], http_client, auth_token, capsys)

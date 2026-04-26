@@ -300,6 +300,54 @@ def test_patch_discard_auto_unfavorites(client, db, make_highlight):
     assert body["is_favorited"] is False
 
 
+def test_append_note_to_existing(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x", note="original")
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/note/append", headers=headers,
+        json={"text": "follow-up"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["note"] == "original\n\nfollow-up"
+
+
+def test_append_note_when_empty_initializes(client, db, make_highlight):
+    """If note was empty, append should set it (no leading blank lines)."""
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/note/append", headers=headers,
+        json={"text": "first thought"},
+    )
+    assert r.status_code == 200
+    assert r.json()["note"] == "first thought"
+
+
+def test_append_note_404_for_other_user(client, db, make_highlight):
+    h = make_highlight(text="x")
+    h.user_id = 2
+    db.add(h); db.commit()
+    headers = _auth_headers(db)
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/note/append", headers=headers,
+        json={"text": "x"},
+    )
+    assert r.status_code == 404
+
+
+def test_append_note_rejects_empty(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/note/append", headers=headers,
+        json={"text": ""},
+    )
+    # Pydantic min_length=1 rejects with 422; defensive 400 inside the
+    # endpoint catches whitespace-only.
+    assert r.status_code in (400, 422)
+
+
 def test_patch_toggles_mastered(client, db, make_highlight):
     headers = _auth_headers(db)
     h = make_highlight(text="x")
