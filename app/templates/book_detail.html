@@ -88,12 +88,31 @@
             
             {% set active_highlights = highlights | selectattr('is_discarded', 'equalto', false) | list %}
             {% set discarded_highlights = highlights | selectattr('is_discarded', 'equalto', true) | list %}
-            
-            <div class="mb-6 text-sm text-gray-600 dark:text-gray-400">
-                <span class="font-semibold">{{ active_highlights|length }}</span> active highlight{{ 's' if active_highlights|length != 1 else '' }}
+            {% set favorited_highlights = active_highlights | selectattr('is_favorited', 'equalto', true) | list %}
+            {% set mastered_highlights = active_highlights | selectattr('is_mastered', 'equalto', true) | list %}
+
+            <div class="mb-6 text-sm text-gray-600 dark:text-gray-400 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+                <span title="Active (not discarded)">
+                    <i data-lucide="lightbulb" class="w-3.5 h-3.5 inline-block text-amber-500"></i>
+                    <span class="font-semibold">{{ active_highlights|length }}</span> active
+                </span>
+                {% if favorited_highlights %}
+                <span title="Favorited">
+                    <i data-lucide="star" class="w-3.5 h-3.5 inline-block text-yellow-500"></i>
+                    <span class="font-semibold">{{ favorited_highlights|length }}</span> favorited
+                </span>
+                {% endif %}
+                {% if mastered_highlights %}
+                <span title="Mastered (excluded from review)">
+                    <i data-lucide="graduation-cap" class="w-3.5 h-3.5 inline-block text-emerald-500"></i>
+                    <span class="font-semibold">{{ mastered_highlights|length }}</span> mastered
+                </span>
+                {% endif %}
                 {% if discarded_highlights %}
-                    <span class="mx-2">|</span>
+                <span title="Discarded">
+                    <i data-lucide="x" class="w-3.5 h-3.5 inline-block text-gray-400"></i>
                     <span class="font-semibold">{{ discarded_highlights|length }}</span> discarded
+                </span>
                 {% endif %}
             </div>
             

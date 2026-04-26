@@ -177,6 +177,39 @@ class TestBookDetail:
         resp = client.get("/library/ui/book/9999")
         assert resp.status_code == 404
 
+    def test_detail_renders_engagement_stats(self, client, make_book, make_highlight):
+        """Stats line should split into active / favorited / mastered / discarded."""
+        b = make_book(title="Stats Book")
+        make_highlight(text="a", book=b)                    # active
+        make_highlight(text="b", book=b, is_favorited=True) # active + favorited
+        make_highlight(text="c", book=b, is_mastered=True)  # active + mastered
+        make_highlight(text="d", book=b, is_discarded=True) # discarded
+        resp = client.get(f"/library/ui/book/{b.id}")
+        assert resp.status_code == 200
+        # 3 active, 1 favorited, 1 mastered, 1 discarded
+        # Match the visible chips by their adjacent labels.
+        assert ">3</span> active" in resp.text
+        assert ">1</span> favorited" in resp.text
+        assert ">1</span> mastered" in resp.text
+        assert ">1</span> discarded" in resp.text
+
+    def test_detail_omits_zero_chips(self, client, make_book, make_highlight):
+        """Chips with zero count should not render (active is the only always-shown chip).
+
+        Match the engagement-stats chip markup specifically — the row
+        partial uses 'favorited' in tooltips so a bare substring check
+        is too broad.
+        """
+        b = make_book(title="Plain")
+        make_highlight(text="a", book=b)
+        resp = client.get(f"/library/ui/book/{b.id}")
+        # active chip present
+        assert ">1</span> active" in resp.text
+        # but no favorited/mastered/discarded chips
+        assert "</span> favorited" not in resp.text
+        assert "</span> mastered" not in resp.text
+        assert "</span> discarded" not in resp.text
+
     def test_detail_renders_summarize_button(self, client, make_book, make_highlight):
         """Book detail action bar should expose the new Summarize button."""
         book = make_book(title="Test")
