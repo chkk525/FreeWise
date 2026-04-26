@@ -31,6 +31,7 @@ TAG_RENAME = server.freewise_tag_rename
 TAG_MERGE = server.freewise_tag_merge
 AUTHOR_RENAME = server.freewise_author_rename
 RANDOM = server.freewise_random
+DUPLICATES = server.freewise_duplicates
 STATS = server.freewise_stats
 BOOKS = server.freewise_books
 BOOK_HIGHLIGHTS = server.freewise_book_highlights
@@ -292,14 +293,14 @@ def test_author_rename_via_mcp(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 23 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 24 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_random", "freewise_related", "freewise_ask",
-        "freewise_summarize_book",
+        "freewise_summarize_book", "freewise_duplicates",
         "freewise_stats", "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",
         "freewise_set_note",

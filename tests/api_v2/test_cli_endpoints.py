@@ -101,6 +101,86 @@ def test_search_requires_auth(client, db, make_highlight):
 # ── GET /api/v2/highlights/{id} ──────────────────────────────────────────────
 
 
+# ── GET /api/v2/highlights/duplicates ────────────────────────────────────────
+
+
+def test_duplicates_finds_matching_prefix(client, db, make_highlight):
+    headers = _auth_headers(db)
+    # Two highlights share a long identical prefix.
+    text_a = "The quick brown fox jumps over the lazy dog and runs into the woods."
+    make_highlight(text=text_a)
+    make_highlight(text=text_a + " (re-imported variant)")
+    # And one totally different highlight.
+    make_highlight(text="Completely unrelated content here")
+
+    resp = client.get(
+        "/api/v2/highlights/duplicates", headers=headers,
+        params={"prefix_chars": 50},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    grp = body["results"][0]
+    assert grp["count"] == 2
+    assert len(grp["members"]) == 2
+    # Members ordered by id ascending so callers can keep the oldest.
+    ids = [m["id"] for m in grp["members"]]
+    assert ids == sorted(ids)
+
+
+def test_duplicates_excludes_discarded(client, db, make_highlight):
+    headers = _auth_headers(db)
+    text = "Same prefix here for both"
+    make_highlight(text=text)
+    make_highlight(text=text + " variant", is_discarded=True)
+    resp = client.get(
+        "/api/v2/highlights/duplicates", headers=headers,
+        params={"prefix_chars": 20, "min_group_size": 2},
+    )
+    # Only one non-discarded with this prefix → no group reported.
+    assert resp.json()["count"] == 0
+
+
+def test_duplicates_min_group_size_filter(client, db, make_highlight):
+    headers = _auth_headers(db)
+    # Two identical prefixes — group of 2 found with default min_group_size=2
+    # but should be suppressed when min_group_size=3.
+    text = "Repeating prefix that survives the 20-char minimum cutoff"
+    for _ in range(2):
+        make_highlight(text=text + " variant")
+    body = client.get(
+        "/api/v2/highlights/duplicates", headers=headers,
+        params={"prefix_chars": 30, "min_group_size": 3},
+    ).json()
+    assert body["count"] == 0
+    # Sanity: with min_group_size=2 the group does appear.
+    body2 = client.get(
+        "/api/v2/highlights/duplicates", headers=headers,
+        params={"prefix_chars": 30, "min_group_size": 2},
+    ).json()
+    assert body2["count"] == 1
+
+
+def test_duplicates_user_scoped(client, db, make_highlight):
+    """Highlights from another user must not appear in the auth'd user's groups."""
+    headers = _auth_headers(db)
+    text = "Cross user prefix here"
+    make_highlight(text=text + " a")
+    h_other = make_highlight(text=text + " b")
+    h_other.user_id = 2
+    db.add(h_other); db.commit()
+    body = client.get(
+        "/api/v2/highlights/duplicates", headers=headers,
+        params={"prefix_chars": 20, "min_group_size": 2},
+    ).json()
+    # Only one user-1 highlight with this prefix → no group.
+    assert body["count"] == 0
+
+
+def test_duplicates_requires_auth(client):
+    assert client.get("/api/v2/highlights/duplicates").status_code == 401
+
+
 def test_random_returns_one_highlight(client, db, make_highlight):
     headers = _auth_headers(db)
     make_highlight(text="alpha")

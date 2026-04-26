@@ -491,6 +491,81 @@ def search_highlights(
     return PaginatedResponse(count=count, results=results)
 
 
+@router.get("/highlights/duplicates", response_model=PaginatedResponse)
+def find_duplicates(
+    prefix_chars: int = Query(default=80, ge=20, le=500,
+                              description="Number of leading characters used to group."),
+    min_group_size: int = Query(default=2, ge=2, le=20),
+    limit: int = Query(default=50, ge=1, le=500,
+                       description="Max groups returned, sorted by group size desc."),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> PaginatedResponse:
+    """Find probable duplicate highlights by leading-character match.
+
+    Useful after re-importing the same Kindle book — the second import
+    creates highlights with identical text but different ids. This
+    endpoint groups by ``substr(text, 1, prefix_chars)`` and returns
+    every group with size >= min_group_size.
+
+    Each result is ``{prefix, count, members: [HighlightDetail, ...]}``.
+    Members are sorted by id ascending so the user can keep the oldest
+    and discard the rest. Discarded highlights are excluded from groups.
+    """
+    # GROUP BY the prefix, count members, find groups above the threshold.
+    # SQLite's substr is 1-indexed; second arg is length, not end-index.
+    prefix_col = func.substr(Highlight.text, 1, prefix_chars).label("prefix")
+    grp_stmt = (
+        select(prefix_col, func.count(Highlight.id).label("cnt"))
+        .where(Highlight.user_id == token.user_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(prefix_col)
+        .having(func.count(Highlight.id) >= min_group_size)
+        .order_by(func.count(Highlight.id).desc())
+        .limit(limit)
+    )
+    groups = session.exec(grp_stmt).all()
+    if not groups:
+        return PaginatedResponse(count=0, results=[])
+
+    # Hydrate the actual rows for each prefix in one IN-query batch.
+    prefixes = [p for p, _ in groups]
+    member_rows = session.exec(
+        select(Highlight, prefix_col)
+        .where(Highlight.user_id == token.user_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(prefix_col.in_(prefixes))
+        .order_by(Highlight.id.asc())
+    ).all()
+    members_by_prefix: dict[str, list[Highlight]] = {}
+    for h, p in member_rows:
+        members_by_prefix.setdefault(p, []).append(h)
+
+    # Bulk-load the books referenced by member highlights.
+    book_ids = {h.book_id for hl in members_by_prefix.values() for h in hl
+                if h.book_id is not None}
+    books_by_id: dict[int, Book] = {}
+    if book_ids:
+        for b in session.exec(select(Book).where(Book.id.in_(book_ids))).all():
+            books_by_id[b.id] = b
+
+    results: list[dict] = []
+    for prefix, cnt in groups:
+        members = members_by_prefix.get(prefix, [])
+        results.append({
+            "prefix": prefix,
+            "count": int(cnt),
+            "members": [
+                _highlight_to_detail(
+                    h, books_by_id.get(h.book_id) if h.book_id else None,
+                ).model_dump(mode="json")
+                for h in members
+            ],
+        })
+
+    return PaginatedResponse(count=len(results), results=results)
+
+
 @router.get("/highlights/random", response_model=HighlightDetail)
 def random_highlight(
     include_discarded: bool = Query(default=False),

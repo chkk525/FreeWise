@@ -121,6 +121,17 @@ class Client:
             "GET", f"/api/v2/highlights/{highlight_id}/related", params=params,
         )
 
+    def find_duplicates(self, *, prefix_chars: int = 80,
+                        min_group_size: int = 2, limit: int = 50) -> dict:
+        return self._request(
+            "GET", "/api/v2/highlights/duplicates",
+            params={
+                "prefix_chars": prefix_chars,
+                "min_group_size": min_group_size,
+                "limit": limit,
+            },
+        )
+
     def random_highlight(self, *, include_discarded: bool = False,
                          include_mastered: bool = True,
                          book_id: int | None = None) -> dict:

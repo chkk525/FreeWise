@@ -305,6 +305,33 @@ def cmd_related(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_duplicates(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.find_duplicates(
+        prefix_chars=args.prefix_chars,
+        min_group_size=args.min_group_size,
+        limit=args.limit,
+    )
+    if args.json:
+        _print_json(body)
+        return 0
+    if body["count"] == 0:
+        print("No duplicate groups found.")
+        return 0
+    print(f"{body['count']} duplicate group{'s' if body['count'] != 1 else ''} (sorted by group size desc)")
+    print()
+    for grp in body["results"]:
+        snippet = (grp["prefix"] or "").replace("\n", " ")
+        if len(snippet) > 60:
+            snippet = snippet[:57] + "…"
+        print(f"× {grp['count']}  {snippet}")
+        for m in grp["members"]:
+            book = m.get("title") or "(unbound)"
+            print(f"   #{m['id']:<6}  {book[:30]}")
+        print()
+    return 0
+
+
 def cmd_random(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     h = client.random_highlight(book_id=getattr(args, "book_id", None))
@@ -626,6 +653,16 @@ def _build_parser() -> argparse.ArgumentParser:
     rd = sub.add_parser("random", help="Pick one random highlight (surprise me).")
     rd.add_argument("--book-id", type=int, help="Limit to one book.")
     rd.set_defaults(func=cmd_random)
+
+    # duplicates
+    dp = sub.add_parser("duplicates", help="Find probable duplicate highlights (e.g. after re-import).")
+    dp.add_argument("--prefix-chars", type=int, default=80,
+                    help="How many leading chars are used to group (default 80).")
+    dp.add_argument("--min-group-size", type=int, default=2,
+                    help="Minimum members for a group to be reported (default 2).")
+    dp.add_argument("--limit", type=int, default=50,
+                    help="Max groups returned (default 50).")
+    dp.set_defaults(func=cmd_duplicates)
 
     # related
     rl = sub.add_parser("related", help="Top-K semantically related highlights (needs embeddings).")

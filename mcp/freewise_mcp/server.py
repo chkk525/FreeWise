@@ -181,6 +181,25 @@ def freewise_related(highlight_id: int, limit: int = 10) -> str:
 
 
 @mcp.tool()
+def freewise_duplicates(prefix_chars: int = 80, min_group_size: int = 2, limit: int = 50) -> str:
+    """Find probable duplicate highlights by leading-character match.
+
+    Useful after re-importing the same Kindle book — the second import
+    creates highlights with identical text but different ids. Returns
+    groups of highlights sharing the same first ``prefix_chars`` of text.
+
+    Each group has ``count`` and ``members`` (sorted by id ascending so
+    you can keep the oldest and discard the rest).
+    """
+    return _call(
+        "duplicates failed",
+        lambda: _client().find_duplicates(
+            prefix_chars=prefix_chars, min_group_size=min_group_size, limit=limit,
+        ),
+    )
+
+
+@mcp.tool()
 def freewise_random(book_id: int | None = None) -> str:
     """Return one random highlight from the user's library — "surprise me".
 
