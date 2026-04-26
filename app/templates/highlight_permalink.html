@@ -5,17 +5,24 @@
 {% block og_meta %}
 {# Rich link previews when this URL is shared on Slack / Twitter / iMessage.
    Description truncates highlight.text to 200 chars; book title is the og:title
-   so the platform avatar uses something more meaningful than "FreeWise". #}
+   so the platform avatar uses something more meaningful than "FreeWise".
+   og:image points at /quote.png — the rendered 1200×630 quote card so
+   the social embed shows a designed preview, not the page favicon. #}
 {%- set _og_title = highlight.book.title if highlight.book else 'FreeWise highlight' -%}
 {%- set _og_text = highlight.text|default('', true) -%}
 {%- set _og_desc = (_og_text[:200] + '…') if _og_text|length > 200 else _og_text -%}
+{%- set _og_image = '/highlights/ui/h/' ~ highlight.id ~ '/quote.png' -%}
 <meta property="og:type" content="article">
 <meta property="og:title" content="{{ _og_title }}">
 <meta property="og:description" content="{{ _og_desc }}">
 <meta property="og:site_name" content="FreeWise">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="{{ _og_image }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ _og_title }}">
 <meta name="twitter:description" content="{{ _og_desc }}">
+<meta name="twitter:image" content="{{ _og_image }}">
 {% endblock %}
 
 {% block heading %}Highlight #{{ highlight.id }}{% endblock %}

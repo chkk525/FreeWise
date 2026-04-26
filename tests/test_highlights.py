@@ -1163,7 +1163,7 @@ class TestPermalinkOgMeta:
         assert '<meta property="og:type" content="article">' in r.text
         assert '<meta property="og:title" content="Sapiens">' in r.text
         assert 'A short highlight to share.' in r.text
-        assert '<meta name="twitter:card" content="summary">' in r.text
+        assert '<meta name="twitter:card" content="summary_large_image">' in r.text
 
     def test_og_title_falls_back_when_no_book(self, client, db, make_highlight):
         # Force book_id=None after creation since the fixture auto-creates

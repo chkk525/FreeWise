@@ -917,6 +917,49 @@ async def ui_highlight_permalink(
     )
 
 
+@router.get("/ui/h/{id}/quote.png")
+async def ui_highlight_quote_image(
+    id: int,
+    session: Session = Depends(get_session),
+):
+    """Render the highlight as a 1200×630 PNG quote card.
+
+    Used as og:image / twitter:image on the permalink page so a shared
+    URL expands with a designed image, not just a text preview. No auth:
+    same posture as /healthz / /metrics — anyone reaching the URL can
+    already see the highlight via the permalink HTML.
+
+    Cache aggressively: a highlight's text rarely changes, so the
+    rendered card is stable for the day. The Cache-Control header lets
+    Twitter/Slack image-fetchers reuse a single render across many
+    impressions.
+    """
+    from fastapi.responses import Response
+    from app.services.quote_card import render_quote_png
+
+    h = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.id == id)
+    ).first()
+    if h is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    title = h.book.title if h.book else None
+    author = h.book.author if h.book else None
+    png = render_quote_png(h.text or "", book_title=title, book_author=author)
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            # Tell CDNs and social-card scrapers to cache the rendered
+            # image for 24h. Stale-while-revalidate keeps the previous
+            # render online while a new one is computed in the background.
+            "Cache-Control": "public, max-age=86400, stale-while-revalidate=86400",
+        },
+    )
+
+
 _QUICK_CAPTURE_BOOK_TITLE = "Quick Notes"
 
 
