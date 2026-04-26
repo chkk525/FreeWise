@@ -50,4 +50,54 @@ $("test").addEventListener("click", async () => {
   }
 });
 
+function fmtTime(iso) {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch (_) { return iso; }
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, function (c) {
+    return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c];
+  });
+}
+
+async function renderRecents() {
+  const list = $("recent-list");
+  if (!list) return;
+  const { lastSaves = [] } = await chrome.storage.local.get(["lastSaves"]);
+  if (!lastSaves.length) {
+    list.innerHTML = '<li class="empty">no saves yet</li>';
+    return;
+  }
+  list.innerHTML = lastSaves.map(function (s) {
+    const pill = s.ok
+      ? '<span class="pill ok">OK</span>'
+      : '<span class="pill err">ERR</span>';
+    const titleHtml = s.title
+      ? '<span class="title-line" title="' + escapeHtml(s.url || "") + '">'
+        + escapeHtml(s.title) + "</span>"
+      : '<span class="title-line" title="' + escapeHtml(s.url || "") + '">'
+        + escapeHtml(s.url || "(unknown source)") + "</span>";
+    const detail = s.ok
+      ? `created ${s.created || 1}, ${s.skipped || 0} dupes`
+      : (s.error || "unknown error");
+    return "<li>"
+      + pill + titleHtml
+      + '<div class="when">' + fmtTime(s.at) + ' — ' + escapeHtml(detail) + "</div>"
+      + "</li>";
+  }).join("");
+}
+
+$("clear-recents").addEventListener("click", async function () {
+  await chrome.storage.local.remove("lastSaves");
+  await renderRecents();
+});
+
 load();
+renderRecents();

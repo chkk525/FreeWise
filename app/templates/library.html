@@ -85,9 +85,11 @@
                 </td>
                 <td class="hidden sm:table-cell px-4 py-3 text-center w-40">
                     {% if book.last_highlight_date %}
-                        <span class="text-gray-500 dark:text-gray-400 text-sm">
+                        <time class="text-gray-500 dark:text-gray-400 text-sm"
+                              data-iso="{{ book.last_highlight_date.isoformat() }}Z"
+                              data-format="date">
                             {{ book.last_highlight_date.strftime('%Y-%m-%d') }}
-                        </span>
+                        </time>
                     {% else %}
                         <span class="text-gray-400 dark:text-gray-600 italic">—</span>
                     {% endif %}

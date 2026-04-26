@@ -48,6 +48,7 @@ async function postHighlight({ text, title, sourceUrl }) {
     ],
   };
 
+  let outcome;
   try {
     const r = await fetch(url, {
       method: "POST",
@@ -57,19 +58,48 @@ async function postHighlight({ text, title, sourceUrl }) {
       },
       body: JSON.stringify(body),
     });
-    if (r.status === 201 || r.status === 200) {
+    if (r.status >= 200 && r.status < 300) {
       const j = await r.json().catch(() => ({}));
+      outcome = {
+        ok: true,
+        at: new Date().toISOString(),
+        url: sourceUrl,
+        title,
+        created: j.created || 0,
+        skipped: j.skipped_duplicates || 0,
+      };
       notify(
         "FreeWise: saved",
-        `Created ${j.created || 1} highlight (${j.skipped_duplicates || 0} dupes).`,
+        `Created ${outcome.created || 1} highlight (${outcome.skipped} dupes).`,
       );
     } else {
       const t = await r.text().catch(() => "");
+      outcome = {
+        ok: false,
+        at: new Date().toISOString(),
+        url: sourceUrl,
+        title,
+        error: `HTTP ${r.status}: ${(t || r.statusText).slice(0, 200)}`,
+      };
       notify(`FreeWise: HTTP ${r.status}`, t.slice(0, 240) || r.statusText);
     }
   } catch (e) {
+    outcome = {
+      ok: false,
+      at: new Date().toISOString(),
+      url: sourceUrl,
+      title,
+      error: String(e),
+    };
     notify("FreeWise: network error", String(e));
   }
+  // Persist for the popup to surface as "Last save" history. Bounded to
+  // the last 10 entries so chrome.storage.local stays small.
+  try {
+    const { lastSaves = [] } = await chrome.storage.local.get(["lastSaves"]);
+    const next = [outcome, ...lastSaves].slice(0, 10);
+    await chrome.storage.local.set({ lastSaves: next });
+  } catch (_) { /* swallow — not worth crashing the save flow */ }
 }
 
 chrome.runtime.onInstalled.addListener(() => {

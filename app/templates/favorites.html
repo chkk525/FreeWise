@@ -33,7 +33,7 @@
             <h1 class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-3 title-font">Favorite Highlights</h1>
             <p class="text-lg text-gray-600 dark:text-gray-400 mb-2">Your personal collection of starred highlights</p>
             <p class="text-sm text-gray-500 dark:text-gray-400">
-                <span class="font-semibold">{{ highlights|length }}</span> favorite{{ 's' if highlights|length != 1 else '' }}
+                <span class="font-semibold">{{ total if total is defined else highlights|length }}</span> favorite{{ 's' if (total if total is defined else highlights|length) != 1 else '' }}
             </p>
         </div>
 
@@ -44,6 +44,7 @@
                         {% include "_highlight_row.html" %}
                     {% endfor %}
                 </div>
+                {% with pagination_label='favorites' %}{% include "_pagination_footer.html" %}{% endwith %}
             {% else %}
                 <div class="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
                     <i data-lucide="star" class="w-20 h-20 mx-auto mb-6 text-gray-300 dark:text-gray-600"></i>

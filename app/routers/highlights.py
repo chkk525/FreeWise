@@ -545,46 +545,105 @@ async def ui_highlight_weight_update(
     return HTMLResponse(content="")
 
 
+DEFAULT_HIGHLIGHTS_PAGE_SIZE = 50
+MAX_HIGHLIGHTS_PAGE_SIZE = 200
+
+
+def _paginated_highlights(
+    session: Session,
+    base_filter,
+    *,
+    page: int,
+    page_size: int,
+):
+    """Resolve pagination parameters and return (rows, total, total_pages,
+    showing_first, showing_last)."""
+    from sqlmodel import select as _select
+    page = max(1, page)
+    page_size = max(1, min(MAX_HIGHLIGHTS_PAGE_SIZE, page_size))
+    total = session.exec(
+        _select(func.count(Highlight.id)).where(base_filter)
+    ).one()
+    if isinstance(total, tuple):
+        total = total[0]
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    rows = session.exec(
+        _select(Highlight)
+        .where(base_filter)
+        .order_by(Highlight.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    showing_first = 0 if total == 0 else (page - 1) * page_size + 1
+    showing_last = min(page * page_size, total)
+    return rows, total, total_pages, page, page_size, showing_first, showing_last
+
+
 @router.get("/ui/favorites", response_class=HTMLResponse)
 async def ui_favorites(
     request: Request,
-    session: Session = Depends(get_session)
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
 ):
-    """Render HTML page with all favorite highlights."""
-    # Get settings for theme
-    settings = get_settings(session)
+    """Render HTML page with paginated favorite highlights.
 
-    # Query all favorited highlights, ordered by most recent first
-    statement = (
-        select(Highlight)
-        .where(Highlight.is_favorited == True)
-        .order_by(Highlight.created_at.desc())
+    Pre-pagination: a user with thousands of favorites would render every
+    one in a single response. Now caps the response at page_size rows
+    (default 50, max 200) with prev/next + numeric jump.
+    """
+    settings = get_settings(session)
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, Highlight.is_favorited == True,  # noqa: E712
+            page=page, page_size=page_size,
+        )
     )
-    highlights = session.exec(statement).all()
-    
-    return templates.TemplateResponse(request, "favorites.html", {"highlights": highlights,
-        "settings": settings})
+    return templates.TemplateResponse(
+        request, "favorites.html",
+        {
+            "highlights": rows,
+            "settings": settings,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
 
 
 @router.get("/ui/discarded", response_class=HTMLResponse)
 async def ui_discarded(
     request: Request,
-    session: Session = Depends(get_session)
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
 ):
-    """Render HTML page with all discarded highlights."""
-    # Get settings for theme
+    """Render HTML page with paginated discarded highlights."""
     settings = get_settings(session)
-
-    # Query all discarded highlights, ordered by most recent first
-    statement = (
-        select(Highlight)
-        .where(Highlight.is_discarded == True)
-        .order_by(Highlight.created_at.desc())
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, Highlight.is_discarded == True,  # noqa: E712
+            page=page, page_size=page_size,
+        )
     )
-    highlights = session.exec(statement).all()
-    
-    return templates.TemplateResponse(request, "discarded.html", {"highlights": highlights,
-        "settings": settings})
+    return templates.TemplateResponse(
+        request, "discarded.html",
+        {
+            "highlights": rows,
+            "settings": settings,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
 
 
 @router.get("/{id}/view", response_class=HTMLResponse)

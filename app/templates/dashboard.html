@@ -83,15 +83,15 @@
 {% endif %}
 
 <!-- Review Activity Heatmap -->
-{% if review_heatmap_data %}
-<p class="text-gray-600 dark:text-gray-400 mb-6">
-    Overview of your review activity.
-</p>
 <div class="mb-10 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
     <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
         <i data-lucide="target" class="w-6 h-6 text-emerald-600 dark:text-emerald-400"></i>
         Review Activity
     </h3>
+    {% if review_heatmap_data %}
+    <p class="text-gray-600 dark:text-gray-400 mb-4 text-sm">
+        Overview of your review activity over the last few months.
+    </p>
     <div id="review-heatmap-container" class="overflow-x-auto">
         <div id="review-heatmap" style="display: flex; gap: 4px;"></div>
     </div>
@@ -105,6 +105,20 @@
             <span>Reviewed</span>
         </div>
     </div>
+    {% else %}
+    <div class="text-center py-8">
+        <i data-lucide="calendar-x" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
+        <p class="text-gray-600 dark:text-gray-400 mb-3">
+            No review activity yet.
+            Complete a review session and your streak will start showing up here.
+        </p>
+        <a href="/highlights/ui/review"
+           class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <i data-lucide="play" class="w-4 h-4"></i>
+            <span>Start a review session</span>
+        </a>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Streak Cards -->
