@@ -258,6 +258,84 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestAskUI:
+    """GET /highlights/ui/ask + POST /highlights/ui/ask."""
+
+    def test_ask_page_renders_empty_form(self, client):
+        resp = client.get("/highlights/ui/ask")
+        assert resp.status_code == 200
+        assert "Ask Your Library" in resp.text
+        assert "<textarea" in resp.text
+        # The empty-state placeholder should show until the user asks.
+        assert "Type a question above" in resp.text
+
+    def test_ask_post_empty_question_returns_hint(self, client):
+        resp = client.post("/highlights/ui/ask", data={"question": "  "})
+        assert resp.status_code == 200
+        assert "Type a question first" in resp.text
+
+    def test_ask_post_renders_answer(self, client, db, make_highlight, monkeypatch):
+        """Mock both Ollama calls and verify answer + citations render."""
+        import httpx
+        from app.models import Embedding
+        from app.services import embeddings as emb_svc
+        from app.services.embeddings import pack_vector
+
+        h = make_highlight(text="cats sleep a lot")
+        db.add(Embedding(
+            highlight_id=h.id, model_name="nomic-embed-text", dim=2,
+            vector=pack_vector([1.0, 0.0]),
+        ))
+        db.commit()
+
+        def handler(request):
+            if request.url.path == "/api/embeddings":
+                return httpx.Response(200, json={"embedding": [1.0, 0.0]})
+            if request.url.path == "/api/generate":
+                return httpx.Response(200, json={"response": f"Cats do — see [#{h.id}]"})
+            return httpx.Response(404, text="?")
+
+        fake = emb_svc.OllamaClient(
+            base_url="http://x", model="nomic-embed-text",
+            http=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+        resp = client.post(
+            "/highlights/ui/ask", data={"question": "do cats sleep?"},
+        )
+        assert resp.status_code == 200
+        assert "Cats do" in resp.text
+        # citations block should mention the highlight id
+        assert f"#{h.id}" in resp.text or f"[#{h.id}]" in resp.text
+
+    def test_ask_post_503_path_renders_error(self, client, db, make_highlight, monkeypatch):
+        """Ollama unreachable → friendly inline error, not stack trace."""
+        import httpx
+        from app.models import Embedding
+        from app.services import embeddings as emb_svc
+        from app.services.embeddings import pack_vector
+
+        h = make_highlight(text="x")
+        db.add(Embedding(
+            highlight_id=h.id, model_name="nomic-embed-text", dim=1,
+            vector=pack_vector([1.0]),
+        ))
+        db.commit()
+
+        def handler(request):
+            raise httpx.ConnectError("refused")
+
+        fake = emb_svc.OllamaClient(
+            base_url="http://x", model="nomic-embed-text",
+            http=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+        resp = client.post("/highlights/ui/ask", data={"question": "anything"})
+        assert resp.status_code == 200
+        assert "Ollama unreachable" in resp.text
+        assert "SEMANTIC_SETUP" in resp.text
+
+
 class TestRelatedHighlightsHTMX:
     """GET /highlights/ui/h/{id}/related — HTMX partial."""
 

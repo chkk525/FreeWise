@@ -707,6 +707,60 @@ async def ui_discarded(
     )
 
 
+@router.get("/ui/ask", response_class=HTMLResponse)
+async def ui_ask_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Render the standalone Ask page with an empty input.
+
+    Submitting the form posts to /highlights/ui/ask which returns a
+    rendered answer + citations partial (HTMX swap into the answer
+    container)."""
+    settings = get_settings(session)
+    return templates.TemplateResponse(
+        request, "ask.html", {"settings": settings},
+    )
+
+
+@router.post("/ui/ask", response_class=HTMLResponse)
+async def ui_ask_submit(
+    request: Request,
+    question: str = Form(...),
+    top_k: int = Form(8),
+    session: Session = Depends(get_session),
+):
+    """Run the ask flow and return an answer partial. Errors are turned
+    into the same partial with an `error` field set so HTMX can swap in
+    a useful message rather than a stack trace."""
+    from app.services.embeddings import OllamaUnavailable, ask_library
+
+    q = (question or "").strip()
+    if not q:
+        return templates.TemplateResponse(
+            request, "_ask_answer.html",
+            {"error": "Type a question first.", "result": None, "question": ""},
+        )
+    try:
+        result = ask_library(session, question=q, top_k=max(1, min(20, top_k)))
+    except OllamaUnavailable as e:
+        return templates.TemplateResponse(
+            request, "_ask_answer.html",
+            {
+                "error": (
+                    f"Ollama unreachable: {e}. See docs/SEMANTIC_SETUP.md "
+                    "for setup."
+                ),
+                "result": None,
+                "question": q,
+            },
+        )
+    return templates.TemplateResponse(
+        request, "_ask_answer.html",
+        {"error": None, "result": result.as_dict(), "question": q},
+    )
+
+
 @router.get("/ui/h/{id}/related", response_class=HTMLResponse)
 async def ui_highlight_related(
     request: Request,
