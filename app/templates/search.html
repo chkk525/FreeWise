@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Search — FreeWise{% endblock %}
+
+{% block heading %}Search Highlights{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <form method="get" action="/highlights/ui/search" class="mb-6">
+        <label class="relative block">
+            <span class="sr-only">Search query</span>
+            <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+            <input type="search" name="q" value="{{ q }}" autofocus
+                   placeholder="Search the text and notes of every active highlight…"
+                   class="w-full pl-10 pr-3 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-base focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </label>
+    </form>
+
+    {% if q %}
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            {% if total == 0 %}
+                No matches for <span class="font-medium text-gray-900 dark:text-white">"{{ q }}"</span>.
+            {% else %}
+                <span class="font-medium text-gray-900 dark:text-white">{{ total }}</span>
+                match{{ 'es' if total != 1 else '' }} for
+                <span class="font-medium text-gray-900 dark:text-white">"{{ q }}"</span>.
+            {% endif %}
+        </p>
+        {% if highlights %}
+            <div class="space-y-4">
+                {% for highlight in highlights %}
+                    {% include "_highlight_row.html" %}
+                {% endfor %}
+            </div>
+            {% with pagination_label='matches' %}{% include "_pagination_footer.html" %}{% endwith %}
+        {% elif total == 0 %}
+            <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+                <i data-lucide="search-x" class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"></i>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">
+                    No active highlights contain that text. Discarded highlights are excluded — restore them on
+                    <a href="/highlights/ui/discarded" class="text-primary-600 dark:text-primary-400 hover:underline">/discarded</a>
+                    if you want to search there.
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-500">
+                    Search matches both the highlight text and the notes you added.
+                </p>
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+            <i data-lucide="search" class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"></i>
+            <p class="text-gray-600 dark:text-gray-400 mb-2">Type a query above and press Enter.</p>
+            <p class="text-xs text-gray-500 dark:text-gray-500">
+                Tip: press <kbd class="kbd">/</kbd> on any page to jump to the search box.
+            </p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

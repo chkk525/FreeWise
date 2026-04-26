@@ -581,6 +581,64 @@ def _paginated_highlights(
     return rows, total, total_pages, page, page_size, showing_first, showing_last
 
 
+@router.get("/ui/search", response_class=HTMLResponse)
+async def ui_search(
+    request: Request,
+    q: Optional[str] = None,
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
+):
+    """Full-text search across non-discarded highlights (text + note).
+
+    SQLite LIKE is fine at the current ~25k-row scale. If this hits a
+    perf wall later, swap to FTS5 — the query stays the same.
+    """
+    settings = get_settings(session)
+    q_clean = (q or "").strip()
+    if not q_clean:
+        return templates.TemplateResponse(
+            request, "search.html",
+            {
+                "settings": settings,
+                "q": "",
+                "highlights": [],
+                "page": 1, "page_size": page_size,
+                "total": 0, "total_pages": 1,
+                "showing_first": 0, "showing_last": 0,
+            },
+        )
+    # Escape LIKE wildcards in user input.
+    needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{needle}%"
+    base_filter = (
+        (Highlight.is_discarded == False)  # noqa: E712
+        & (
+            Highlight.text.like(pattern, escape="\\")
+            | Highlight.note.like(pattern, escape="\\")
+        )
+    )
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, base_filter, page=page, page_size=page_size,
+        )
+    )
+    return templates.TemplateResponse(
+        request, "search.html",
+        {
+            "settings": settings,
+            "q": q_clean,
+            "highlights": rows,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
+
+
 @router.get("/ui/favorites", response_class=HTMLResponse)
 async def ui_favorites(
     request: Request,

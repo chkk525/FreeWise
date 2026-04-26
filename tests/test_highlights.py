@@ -256,3 +256,52 @@ class TestDiscardedPage:
         assert resp.status_code == 200
         assert "Disc" in resp.text
         assert "Active" not in resp.text
+
+
+class TestSearchPage:
+    """GET /highlights/ui/search — full-text search across active highlights."""
+
+    def test_search_empty_query_renders_form(self, client):
+        resp = client.get("/highlights/ui/search")
+        assert resp.status_code == 200
+        assert "Search Highlights" in resp.text or "search" in resp.text.lower()
+
+    def test_search_matches_text(self, client, make_highlight):
+        make_highlight(text="The quick brown fox jumps")
+        make_highlight(text="Unrelated highlight body")
+        resp = client.get("/highlights/ui/search", params={"q": "brown fox"})
+        assert resp.status_code == 200
+        assert "quick brown fox" in resp.text
+        assert "Unrelated highlight" not in resp.text
+
+    def test_search_matches_note(self, client, make_highlight):
+        make_highlight(text="Plain text", note="A unique-marker in the note")
+        make_highlight(text="Another body", note="nothing here")
+        resp = client.get("/highlights/ui/search", params={"q": "unique-marker"})
+        assert resp.status_code == 200
+        assert "Plain text" in resp.text
+        assert "Another body" not in resp.text
+
+    def test_search_excludes_discarded(self, client, make_highlight):
+        make_highlight(text="needle in active")
+        make_highlight(text="needle in discarded", is_discarded=True)
+        resp = client.get("/highlights/ui/search", params={"q": "needle"})
+        assert resp.status_code == 200
+        assert "needle in active" in resp.text
+        assert "needle in discarded" not in resp.text
+
+    def test_search_no_matches_renders_empty_state(self, client, make_highlight):
+        make_highlight(text="hello world")
+        resp = client.get("/highlights/ui/search", params={"q": "zzz_no_match"})
+        assert resp.status_code == 200
+        assert "No matches" in resp.text or "No active highlights" in resp.text
+
+    def test_search_escapes_like_wildcards(self, client, make_highlight):
+        # Substring with literal % should not match arbitrary text.
+        make_highlight(text="literal percent: 50% off")
+        make_highlight(text="completely different text")
+        resp = client.get("/highlights/ui/search", params={"q": "%"})
+        assert resp.status_code == 200
+        # Only the highlight that literally contains "%" should match.
+        assert "50% off" in resp.text
+        assert "completely different" not in resp.text
