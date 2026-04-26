@@ -496,8 +496,13 @@
             if (!xhr) return;
             const ok = xhr.status >= 200 && xhr.status < 300;
             if (ok) {
-                const msg = elt && elt.dataset && elt.dataset.toastSuccess;
-                if (msg) window.showToast(msg, 'success');
+                let msg = elt && elt.dataset && elt.dataset.toastSuccess;
+                if (msg) {
+                    // Cap template-author-supplied length so a forgotten long
+                    // string can't blow up the toast layout.
+                    if (msg.length > 200) msg = msg.slice(0, 197) + '…';
+                    window.showToast(msg, 'success');
+                }
             } else if (xhr.status >= 400) {
                 // Server may return a plain-text error in body; trim long bodies.
                 let msg = (xhr.responseText || '').trim();
