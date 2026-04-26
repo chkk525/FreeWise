@@ -36,34 +36,6 @@
         </a>
     </div>
 
-    <!-- Keyboard shortcuts help (toggled with ?) -->
-    <div id="review-shortcuts-help" class="hidden fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full p-6">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Keyboard shortcuts</h2>
-                <button onclick="document.getElementById('review-shortcuts-help').classList.add('hidden')"
-                        aria-label="Close shortcuts help"
-                        class="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                <dt><kbd class="px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">j</kbd> / <kbd class="px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">Space</kbd></dt>
-                <dd class="text-gray-700 dark:text-gray-300">Done — next highlight</dd>
-                <dt><kbd class="px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">d</kbd></dt>
-                <dd class="text-gray-700 dark:text-gray-300">Discard current</dd>
-                <dt><kbd class="px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">f</kbd></dt>
-                <dd class="text-gray-700 dark:text-gray-300">Toggle favorite</dd>
-                <dt><kbd class="px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">e</kbd></dt>
-                <dd class="text-gray-700 dark:text-gray-300">Edit highlight</dd>
-                <dt><kbd class="px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">?</kbd></dt>
-                <dd class="text-gray-700 dark:text-gray-300">Toggle this help</dd>
-                <dt><kbd class="px-2 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900">Esc</kbd></dt>
-                <dd class="text-gray-700 dark:text-gray-300">Close help</dd>
-            </dl>
-        </div>
-    </div>
-
     <!-- Main Content -->
     <div class="flex-1 flex flex-col items-center justify-start px-4 pt-6 pb-8">
         <div id="review-container" class="w-full max-w-3xl">
@@ -117,41 +89,9 @@
 
         document.addEventListener('htmx:afterSwap', initLucideIcons);
         document.addEventListener('htmx:afterSettle', initLucideIcons);
-
-        // Keyboard shortcuts for the review page. Bound at document level
-        // so HTMX swaps don't lose them. Don't fire when the user is
-        // typing in an input / contenteditable.
-        document.addEventListener('keydown', function (e) {
-            const t = e.target;
-            const tag = (t && t.tagName) || '';
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
-                || (t && t.isContentEditable)) return;
-            if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-            const help = document.getElementById('review-shortcuts-help');
-            if (e.key === 'Escape' && help && !help.classList.contains('hidden')) {
-                help.classList.add('hidden');
-                e.preventDefault();
-                return;
-            }
-            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-                if (help) help.classList.toggle('hidden');
-                e.preventDefault();
-                return;
-            }
-
-            const click = function (id) {
-                const el = document.getElementById(id);
-                if (el) { el.click(); e.preventDefault(); }
-            };
-            switch (e.key) {
-                case 'j':
-                case ' ': click('review-done-btn'); break;
-                case 'd': click('review-discard-btn'); break;
-                case 'f': click('review-fav-btn'); break;
-                case 'e': click('review-edit-btn'); break;
-            }
-        });
+        // Keyboard shortcuts now live in base.html (Gmail-style global
+        // bindings). The review page's button ids match what that handler
+        // looks up — see app/templates/base.html script for the mapping.
     </script>
 </body>
 </html>

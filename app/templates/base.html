@@ -103,6 +103,58 @@
         {% endblock %}
     </div>
     
+    <!-- Global keyboard shortcuts help modal (Gmail-style) -->
+    <div id="kbd-help-modal" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+         onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Keyboard shortcuts</h2>
+                <button onclick="document.getElementById('kbd-help-modal').classList.add('hidden')"
+                        aria-label="Close" class="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Gmail-style: press <kbd class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-xs">g</kbd> then a letter to navigate.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                <div>
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Navigate</h3>
+                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">d</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Dashboard</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">l</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Library</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">r</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Review</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Favorites</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">x</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discarded</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Import</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Settings</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">t</kbd></dt><dd class="text-gray-700 dark:text-gray-300">API tokens</dd>
+                        <dt><kbd class="kbd">u</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Up to dashboard</dd>
+                    </dl>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Review (on /highlights/ui/review)</h3>
+                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">e</kbd> / <kbd class="kbd">Space</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Done — next</dd>
+                        <dt><kbd class="kbd">s</kbd> / <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Star (toggle favorite)</dd>
+                        <dt><kbd class="kbd">x</kbd> / <kbd class="kbd">d</kbd> / <kbd class="kbd">#</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discard</dd>
+                        <dt><kbd class="kbd">Enter</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Edit highlight</dd>
+                    </dl>
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Anywhere</h3>
+                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">?</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Toggle this help</dd>
+                        <dt><kbd class="kbd">Esc</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Close help / dismiss</dd>
+                    </dl>
+                </div>
+            </div>
+            <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                Shortcuts are ignored while typing in input fields.
+            </p>
+        </div>
+    </div>
+    <style>
+        .kbd { display:inline-block; padding:1px 6px; border:1px solid #d1d5db; background:#f9fafb; border-radius:4px; font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#374151; }
+        @media (prefers-color-scheme: dark) { .kbd { background:#111827; border-color:#4b5563; color:#e5e7eb; } }
+    </style>
+
     <!-- Scripts at bottom for proper loading order -->
     <script>
         // Initialize Lucide icons - must come after library is loaded
@@ -137,6 +189,120 @@
                 if (!el.title) el.title = iso;
             });
         }
+
+        /**
+         * Gmail-style global keyboard shortcuts.
+         *
+         * Single keys: j/k navigate, s star, x discard, etc. Two-key sequences
+         * use a "g" prefix (g d → Dashboard, g l → Library, ...) with a 1.5s
+         * timeout — matches Gmail behaviour. Listening on the document so
+         * HTMX swaps inside #review-container don't disconnect the binding.
+         *
+         * Page-specific actions (the four review buttons) target elements by
+         * id; a shortcut whose target id is missing is silently ignored, so
+         * "x" on the dashboard doesn't fire.
+         */
+        const _NAV_TARGETS = {
+            d: '/dashboard/ui',
+            l: '/library/ui',
+            r: '/highlights/ui/review',
+            f: '/highlights/ui/favorites',
+            x: '/highlights/ui/discarded',
+            i: '/import/ui',
+            s: '/settings/ui',
+            t: '/import/api-token',
+        };
+        let _gPrefixActive = false;
+        let _gTimer = null;
+
+        function _kbd_isTextInput(t) {
+            if (!t) return false;
+            const tag = t.tagName || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+            if (t.isContentEditable) return true;
+            return false;
+        }
+
+        function _kbd_clickIfPresent(id) {
+            const el = document.getElementById(id);
+            if (el) { el.click(); return true; }
+            return false;
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (_kbd_isTextInput(e.target)) return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            const help = document.getElementById('kbd-help-modal');
+
+            // Esc closes any open modal-style overlay we control.
+            if (e.key === 'Escape') {
+                if (help && !help.classList.contains('hidden')) {
+                    help.classList.add('hidden');
+                    e.preventDefault();
+                }
+                _gPrefixActive = false;
+                return;
+            }
+
+            // ? opens / toggles the help.
+            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+                if (help) help.classList.toggle('hidden');
+                e.preventDefault();
+                return;
+            }
+
+            // u → up to dashboard.
+            if (e.key === 'u' && !_gPrefixActive) {
+                window.location.href = '/dashboard/ui';
+                e.preventDefault();
+                return;
+            }
+
+            // Two-key g+letter navigation.
+            if (_gPrefixActive) {
+                const dest = _NAV_TARGETS[e.key.toLowerCase()];
+                _gPrefixActive = false;
+                if (_gTimer) { clearTimeout(_gTimer); _gTimer = null; }
+                if (dest) {
+                    window.location.href = dest;
+                    e.preventDefault();
+                }
+                return;
+            }
+            if (e.key === 'g') {
+                _gPrefixActive = true;
+                _gTimer = setTimeout(function () { _gPrefixActive = false; }, 1500);
+                e.preventDefault();
+                return;
+            }
+
+            // Page-specific action keys — these click an action button if
+            // it's on the current page; missing = no-op.
+            switch (e.key) {
+                case 'j':
+                case 'e':
+                case ' ':
+                    if (_kbd_clickIfPresent('review-done-btn')) e.preventDefault();
+                    break;
+                case 'k':
+                    // Best-effort "previous": currently no-op since the
+                    // review queue is forward-only. Reserved for future.
+                    break;
+                case 's':
+                case 'f':
+                    if (_kbd_clickIfPresent('review-fav-btn')) e.preventDefault();
+                    break;
+                case 'x':
+                case 'd':
+                case '#':
+                    if (_kbd_clickIfPresent('review-discard-btn')) e.preventDefault();
+                    break;
+                case 'Enter':
+                    if (_kbd_clickIfPresent('review-edit-btn')) e.preventDefault();
+                    break;
+            }
+        });
 
         function initAll() {
             initLucideIcons();
