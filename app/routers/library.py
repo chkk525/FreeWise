@@ -15,6 +15,8 @@ from app.models import Book, Highlight, Settings
 
 router = APIRouter(prefix="/library", tags=["library"])
 templates = Jinja2Templates(directory="app/templates")
+from app.template_filters import register as _register_filters  # noqa: E402
+_register_filters(templates)
 
 COVER_UPLOAD_DIR = os.path.join("app", "static", "uploads", "covers")
 ALLOWED_COVER_TYPES = {"image/jpeg", "image/png", "image/webp"}

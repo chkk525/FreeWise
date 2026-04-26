@@ -15,6 +15,8 @@ from app.utils.tags import parse_tags
 
 router = APIRouter(prefix="/import", tags=["import"])
 templates = Jinja2Templates(directory="app/templates")
+from app.template_filters import register as _register_filters  # noqa: E402
+_register_filters(templates)
 
 
 def parse_readwise_datetime(dt_str: str) -> Optional[datetime]:

@@ -17,6 +17,8 @@ THEME_CYCLE = ("light", "dark", "auto")
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 templates = Jinja2Templates(directory="app/templates")
+from app.template_filters import register as _register_filters  # noqa: E402
+_register_filters(templates)
 
 
 # ============ HTML/HTMX Endpoints ============

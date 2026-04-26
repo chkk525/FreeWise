@@ -41,8 +41,8 @@
 
         <!-- Note (if exists) -->
         {% if highlight.note %}
-        <div class="mt-4 text-base italic text-gray-600 dark:text-gray-400 pl-4 border-l-4 border-gray-300 dark:border-gray-600">
-            {{ highlight.note }}
+        <div class="mt-4 text-base italic text-gray-600 dark:text-gray-400 pl-4 border-l-4 border-gray-300 dark:border-gray-600 whitespace-pre-wrap break-words">
+            {{ highlight.note | autolink }}
         </div>
         {% endif %}
 

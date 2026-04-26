@@ -14,6 +14,8 @@ from app.services.kindle_import_status import get_status as get_kindle_status
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 templates = Jinja2Templates(directory="app/templates")
+from app.template_filters import register as _register_filters  # noqa: E402
+_register_filters(templates)
 
 
 

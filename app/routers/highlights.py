@@ -17,6 +17,8 @@ from app.models import Embedding, Highlight, HighlightTag, ReviewSession, Tag
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
 templates = Jinja2Templates(directory="app/templates")
+from app.template_filters import register as _register_filters  # noqa: E402
+_register_filters(templates)
 
 # In-memory session storage for review queues
 # Format: {session_id: {"highlight_ids": [int], "current_index": int, "timestamp": datetime}}
