@@ -144,6 +144,29 @@ class Client:
             params["q"] = q
         return self._request("GET", "/api/v2/authors", params=params)
 
+    def rename_tag(self, old: str, new: str) -> dict:
+        from urllib.parse import quote
+        return self._request(
+            "POST", f"/api/v2/tags/{quote(old, safe='')}/rename",
+            json={"new_name": new},
+        )
+
+    def merge_tag(self, src: str, into: str) -> dict:
+        from urllib.parse import quote
+        return self._request(
+            "POST", f"/api/v2/tags/{quote(src, safe='')}/merge",
+            json={"into": into},
+        )
+
+    def rename_author(self, old: str, new: str) -> dict:
+        # Use ?name= query so authors with slashes / special chars
+        # round-trip safely (httpx URL-encodes the param value).
+        return self._request(
+            "POST", "/api/v2/authors/rename",
+            params={"name": old},
+            json={"new_name": new},
+        )
+
     def list_tag_summary(self, *, page: int = 1, page_size: int = 100,
                          q: str | None = None) -> dict:
         params: dict[str, Any] = {"page": page, "page_size": page_size}

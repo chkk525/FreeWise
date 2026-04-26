@@ -313,6 +313,36 @@ def cmd_books(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tag_rename(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.rename_tag(args.old, args.new)
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"renamed → {body['name']} ({body['highlight_count']} highlight{'s' if body['highlight_count'] != 1 else ''})")
+    return 0
+
+
+def cmd_tag_merge(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.merge_tag(args.src, args.into)
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"merged → {body['name']} ({body['highlight_count']} highlight{'s' if body['highlight_count'] != 1 else ''})")
+    return 0
+
+
+def cmd_author_rename(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.rename_author(args.old, args.new)
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"renamed → {body['name']} ({body['book_count']} book{'s' if body['book_count'] != 1 else ''}, {body['highlight_count']} highlight{'s' if body['highlight_count'] != 1 else ''})")
+    return 0
+
+
 def cmd_tags(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body = client.list_tag_summary(
@@ -526,7 +556,7 @@ def _build_parser() -> argparse.ArgumentParser:
     tgs.add_argument("--limit", type=int, default=100)
     tgs.set_defaults(func=cmd_tags)
 
-    # tag list/add/remove
+    # tag list/add/remove/rename/merge
     tg = sub.add_parser("tag", help="Manage highlight tags.")
     tg_sub = tg.add_subparsers(dest="tag_cmd", required=True, metavar="<subcmd>")
     tgl = tg_sub.add_parser("list", help="List tags on a highlight.")
@@ -540,6 +570,22 @@ def _build_parser() -> argparse.ArgumentParser:
     tgr.add_argument("highlight_id", type=int)
     tgr.add_argument("tag")
     tgr.set_defaults(func=cmd_tag_remove)
+    tgrn = tg_sub.add_parser("rename", help="Rename a tag globally.")
+    tgrn.add_argument("old")
+    tgrn.add_argument("new")
+    tgrn.set_defaults(func=cmd_tag_rename)
+    tgmg = tg_sub.add_parser("merge", help="Merge a tag into another (links combine, source deleted).")
+    tgmg.add_argument("src")
+    tgmg.add_argument("into")
+    tgmg.set_defaults(func=cmd_tag_merge)
+
+    # author rename
+    aurn = sub.add_parser("author", help="Manage authors.")
+    aurn_sub = aurn.add_subparsers(dest="author_cmd", required=True, metavar="<subcmd>")
+    aurnr = aurn_sub.add_parser("rename", help="Rename an author across every book.")
+    aurnr.add_argument("old", help="Existing author name (exact match).")
+    aurnr.add_argument("new", help="New author name.")
+    aurnr.set_defaults(func=cmd_author_rename)
 
     # recent
     r = sub.add_parser("recent", help="Most recent highlights.")

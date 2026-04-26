@@ -609,6 +609,135 @@ def test_backfill_endpoint_returns_report(client, db, make_highlight, monkeypatc
 # ── GET /api/v2/tags ─────────────────────────────────────────────────────────
 
 
+# ── Tag rename / merge ──────────────────────────────────────────────────────
+
+
+def test_tag_rename_renames_globally(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "python"})
+    resp = client.post("/api/v2/tags/python/rename", headers=headers,
+                       json={"new_name": "Python 3"})
+    assert resp.status_code == 200
+    body = resp.json()
+    # Names normalize lowercase + collapsed whitespace.
+    assert body["name"] == "python 3"
+    # Verify the tag-list endpoint reflects the rename.
+    listed = client.get(f"/api/v2/highlights/{h.id}/tags", headers=headers).json()
+    assert listed["tags"] == ["python 3"]
+
+
+def test_tag_rename_404_when_missing(client, db):
+    headers = _auth_headers(db)
+    resp = client.post("/api/v2/tags/never-existed/rename", headers=headers,
+                       json={"new_name": "x"})
+    assert resp.status_code == 404
+
+
+def test_tag_rename_409_on_collision(client, db, make_highlight):
+    """Renaming to an already-existing tag must 409 — caller should /merge."""
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "a"})
+    client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "b"})
+    resp = client.post("/api/v2/tags/a/rename", headers=headers,
+                       json={"new_name": "b"})
+    assert resp.status_code == 409
+
+
+def test_tag_rename_rejects_reserved(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "x"})
+    for name in ("favorite", "discard", "Favorite"):
+        r = client.post("/api/v2/tags/x/rename", headers=headers,
+                        json={"new_name": name})
+        assert r.status_code == 400
+
+
+def test_tag_merge_combines_links(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h1 = make_highlight(text="A")
+    h2 = make_highlight(text="B")
+    h3 = make_highlight(text="C")
+    # h1 has only "ml"; h2 has both; h3 has only "machine learning"
+    client.post(f"/highlights/{h1.id}/tags/add", data={"new_tag": "ml"})
+    client.post(f"/highlights/{h2.id}/tags/add", data={"new_tag": "ml"})
+    client.post(f"/highlights/{h2.id}/tags/add", data={"new_tag": "machine learning"})
+    client.post(f"/highlights/{h3.id}/tags/add", data={"new_tag": "machine learning"})
+    resp = client.post("/api/v2/tags/ml/merge", headers=headers,
+                       json={"into": "machine learning"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "machine learning"
+    # All 3 highlights should now carry the destination tag.
+    for h in (h1, h2, h3):
+        listed = client.get(f"/api/v2/highlights/{h.id}/tags", headers=headers).json()
+        assert "machine learning" in listed["tags"]
+        assert "ml" not in listed["tags"]
+    # Source tag must be gone.
+    summary = client.get("/api/v2/tags", headers=headers).json()
+    assert "ml" not in {r["name"] for r in summary["results"]}
+
+
+def test_tag_merge_404_when_missing(client, db):
+    headers = _auth_headers(db)
+    resp = client.post("/api/v2/tags/nope/merge", headers=headers,
+                       json={"into": "alsonope"})
+    assert resp.status_code == 404
+
+
+def test_tag_merge_400_self(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "x"})
+    resp = client.post("/api/v2/tags/x/merge", headers=headers,
+                       json={"into": "x"})
+    assert resp.status_code == 400
+
+
+# ── Author rename ───────────────────────────────────────────────────────────
+
+
+def test_author_rename_updates_all_books(client, db, make_book, make_highlight):
+    headers = _auth_headers(db)
+    b1 = make_book(title="A", author="Old Name")
+    b2 = make_book(title="B", author="Old Name")
+    make_highlight(text="x", book=b1)
+    make_highlight(text="y", book=b2)
+    resp = client.post(
+        "/api/v2/authors/rename", headers=headers,
+        params={"name": "Old Name"}, json={"new_name": "New Name"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "New Name"
+    assert body["book_count"] == 2
+    db.refresh(b1); db.refresh(b2)
+    assert b1.author == "New Name"
+    assert b2.author == "New Name"
+
+
+def test_author_rename_404_when_no_match(client, db):
+    headers = _auth_headers(db)
+    resp = client.post(
+        "/api/v2/authors/rename", headers=headers,
+        params={"name": "Nobody"}, json={"new_name": "X"},
+    )
+    assert resp.status_code == 404
+
+
+def test_author_rename_400_empty_names(client, db, make_book):
+    headers = _auth_headers(db)
+    make_book(title="A", author="Real")
+    for name, new_name in (("Real", "  "), ("  ", "x")):
+        r = client.post(
+            "/api/v2/authors/rename", headers=headers,
+            params={"name": name}, json={"new_name": new_name},
+        )
+        assert r.status_code in (400, 404, 422)
+
+
 def test_list_tag_summary_with_counts(client, db, make_highlight):
     headers = _auth_headers(db)
     h1 = make_highlight(text="x")

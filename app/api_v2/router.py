@@ -35,6 +35,7 @@ from datetime import datetime, UTC
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import Field
 from sqlmodel import Session, func, select
 
 from app.api_v2.auth import get_api_token
@@ -885,6 +886,171 @@ def list_authors(
         for name, book_count, hl_count in rows
     ]
     return PaginatedResponse(count=total, results=results)
+
+
+class _TagRenamePayload(__import__("pydantic").BaseModel):
+    new_name: str = Field(..., min_length=1, max_length=64)
+
+
+@router.post("/tags/{name}/rename", response_model=TagSummaryItem)
+def rename_tag(
+    name: str,
+    payload: _TagRenamePayload,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> TagSummaryItem:
+    """Rename a tag globally. The new name is normalized (lowercase +
+    collapsed whitespace) and may not collide with another existing tag
+    or with the reserved names favorite/discard.
+
+    Returns the (possibly new) tag's summary row. 404 if the tag doesn't
+    exist; 409 if renaming would collide with an existing tag (use the
+    /merge endpoint instead).
+    """
+    src_name = _normalize_tag(name)
+    dst_name = _normalize_tag(payload.new_name)
+    if not dst_name:
+        raise HTTPException(status_code=400, detail="`new_name` cannot be empty.")
+    if dst_name in ("favorite", "discard"):
+        raise HTTPException(status_code=400, detail="`new_name` is reserved.")
+    if src_name == dst_name:
+        # No-op rename — return the current summary.
+        pass
+
+    src = session.exec(select(Tag).where(Tag.name == src_name)).first()
+    if src is None:
+        raise HTTPException(status_code=404, detail="Tag not found.")
+
+    if src_name != dst_name:
+        existing_dst = session.exec(select(Tag).where(Tag.name == dst_name)).first()
+        if existing_dst is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Tag '{dst_name}' already exists — "
+                    f"use POST /tags/{src_name}/merge to combine them."
+                ),
+            )
+        src.name = dst_name
+        session.add(src)
+        session.commit()
+
+    cnt = session.exec(
+        select(func.count(HighlightTag.tag_id))
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(HighlightTag.tag_id == src.id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one() or 0
+    return TagSummaryItem(name=dst_name, highlight_count=int(cnt))
+
+
+class _TagMergePayload(__import__("pydantic").BaseModel):
+    into: str = Field(..., min_length=1, max_length=64)
+
+
+@router.post("/tags/{name}/merge", response_model=TagSummaryItem)
+def merge_tag(
+    name: str,
+    payload: _TagMergePayload,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> TagSummaryItem:
+    """Merge tag ``name`` into ``into``. All HighlightTag links are moved
+    to the destination tag (skipping rows that already had ``into``);
+    the source Tag row is then deleted.
+
+    404 if either tag doesn't exist; 400 if names match or destination
+    is reserved.
+    """
+    src_name = _normalize_tag(name)
+    dst_name = _normalize_tag(payload.into)
+    if not src_name or not dst_name:
+        raise HTTPException(status_code=400, detail="Both names required.")
+    if src_name == dst_name:
+        raise HTTPException(status_code=400, detail="Cannot merge a tag into itself.")
+    if dst_name in ("favorite", "discard"):
+        raise HTTPException(status_code=400, detail="`into` is reserved.")
+
+    src = session.exec(select(Tag).where(Tag.name == src_name)).first()
+    dst = session.exec(select(Tag).where(Tag.name == dst_name)).first()
+    if src is None or dst is None:
+        raise HTTPException(status_code=404, detail="Source or destination tag not found.")
+
+    # Move every highlight that has the src tag to also have the dst tag,
+    # unless it already does. Then delete src links + the src Tag row.
+    src_links = session.exec(
+        select(HighlightTag).where(HighlightTag.tag_id == src.id)
+    ).all()
+    dst_links_existing = {
+        l.highlight_id for l in session.exec(
+            select(HighlightTag).where(HighlightTag.tag_id == dst.id)
+        ).all()
+    }
+    for link in src_links:
+        if link.highlight_id not in dst_links_existing:
+            session.add(HighlightTag(highlight_id=link.highlight_id, tag_id=dst.id))
+        session.delete(link)
+    session.delete(src)
+    session.commit()
+
+    cnt = session.exec(
+        select(func.count(HighlightTag.tag_id))
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(HighlightTag.tag_id == dst.id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one() or 0
+    return TagSummaryItem(name=dst_name, highlight_count=int(cnt))
+
+
+class _AuthorRenamePayload(__import__("pydantic").BaseModel):
+    new_name: str = Field(..., min_length=1, max_length=512)
+
+
+@router.post("/authors/rename", response_model=AuthorListItem)
+def rename_author(
+    payload: _AuthorRenamePayload,
+    name: str = Query(..., max_length=512),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> AuthorListItem:
+    """Rename an author across every book. Use ``?name=Old Name`` so
+    URL-encoded names with slashes / special chars round-trip safely
+    (path params would force escaping).
+
+    Returns the new author's summary row. 404 if no books matched.
+    """
+    src = (name or "").strip()
+    dst = (payload.new_name or "").strip()
+    if not src or not dst:
+        raise HTTPException(status_code=400, detail="Both names required.")
+    if src == dst:
+        # No-op rename.
+        pass
+
+    rows = session.exec(select(Book).where(Book.author == src)).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"No books with author={src!r}.")
+
+    changed = 0
+    if src != dst:
+        for b in rows:
+            b.author = dst
+            session.add(b)
+            changed += 1
+        session.commit()
+
+    # Recompute summary for the new author.
+    book_count = session.exec(
+        select(func.count(func.distinct(Book.id)))
+        .where(Book.author == dst)
+    ).one() or 0
+    hl_count = session.exec(
+        select(func.count(Highlight.id))
+        .join(Book, Book.id == Highlight.book_id)
+        .where(Book.author == dst)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one() or 0
+    return AuthorListItem(name=dst, book_count=int(book_count), highlight_count=int(hl_count))
 
 
 @router.get("/tags", response_model=PaginatedResponse)

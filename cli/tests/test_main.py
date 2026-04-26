@@ -188,6 +188,38 @@ def test_discard_and_restore(http_client, auth_token, capsys):
 # ── tag ──────────────────────────────────────────────────────────────────
 
 
+def test_tag_rename(http_client, auth_token, capsys):
+    """`freewise tag rename old new` should rename a tag globally."""
+    h = _add_highlight("x")
+    _run(["tag", "add", str(h), "ml"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tag", "rename", "ml", "Machine Learning"],
+                      http_client, auth_token, capsys)
+    assert rc == 0
+    assert "machine learning" in out
+
+
+def test_tag_merge(http_client, auth_token, capsys):
+    """`freewise tag merge a b` combines a's links into b and removes a."""
+    h = _add_highlight("x")
+    _run(["tag", "add", str(h), "a"], http_client, auth_token, capsys)
+    _run(["tag", "add", str(h), "b"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tag", "merge", "a", "b"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "merged" in out
+
+
+def test_author_rename_cli(http_client, auth_token, capsys):
+    """`freewise author rename old new` updates every book's author column."""
+    from app.models import Book
+    with Session(_test_engine) as s:
+        b = Book(title="X", author="Old Author")
+        s.add(b); s.commit()
+    rc, out, _ = _run(["author", "rename", "Old Author", "New Author"],
+                      http_client, auth_token, capsys)
+    assert rc == 0
+    assert "New Author" in out
+
+
 def test_tag_add_then_list(http_client, auth_token, capsys):
     hid = _add_highlight("x")
     rc, out, _ = _run(["tag", "add", str(hid), "Python"], http_client, auth_token, capsys)
