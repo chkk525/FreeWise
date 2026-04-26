@@ -326,9 +326,111 @@
             }
         });
 
+        // Progressive-enhancement dropzone for any <input type="file" data-dropzone>.
+        // Wraps the input in an outer drop target, surfaces the chosen file name,
+        // and falls back to the native control when JS is off.
+        function wireDropzones() {
+            const inputs = document.querySelectorAll('input[type="file"][data-dropzone]:not([data-dz-wired])');
+            inputs.forEach(function (input) {
+                input.dataset.dzWired = '1';
+                const wrapper = document.createElement('div');
+                wrapper.className = 'dz-wrapper relative';
+                input.parentNode.insertBefore(wrapper, input);
+                wrapper.appendChild(input);
+
+                // Visual zone overlay (label is the click target so the input
+                // remains keyboard-focusable behind it).
+                const zone = document.createElement('label');
+                zone.className = 'dz-zone block w-full px-4 py-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200 text-center cursor-pointer hover:border-primary-500 dark:hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors';
+                zone.htmlFor = input.id || (input.id = 'dz-' + Math.random().toString(36).slice(2, 9));
+                zone.innerHTML = ''
+                    + '<div class="flex flex-col items-center gap-2 pointer-events-none">'
+                    + '  <i data-lucide="upload-cloud" class="w-8 h-8 text-gray-400 dark:text-gray-500"></i>'
+                    + '  <p class="dz-msg text-sm"><span class="font-medium text-primary-600 dark:text-primary-400">Click to choose a file</span> or drag &amp; drop here</p>'
+                    + '  <p class="dz-hint text-xs text-gray-500 dark:text-gray-400">' + (input.accept ? 'Accepts: ' + input.accept : 'Any file type') + '</p>'
+                    + '</div>';
+                wrapper.appendChild(zone);
+
+                // Hide the native input visually but keep it accessible.
+                input.classList.add('sr-only');
+
+                function setName(name) {
+                    const msg = zone.querySelector('.dz-msg');
+                    if (!msg) return;
+                    if (name) {
+                        msg.innerHTML = 'Selected: <span class="font-medium text-primary-600 dark:text-primary-400">' + name.replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + '</span>';
+                    }
+                }
+                input.addEventListener('change', function () {
+                    if (input.files && input.files.length > 0) setName(input.files[0].name);
+                });
+
+                ['dragenter', 'dragover'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                ['dragleave', 'drop'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                zone.addEventListener('drop', function (e) {
+                    e.preventDefault();
+                    if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+                    // DataTransfer assignment is supported in all evergreen browsers.
+                    try {
+                        input.files = e.dataTransfer.files;
+                    } catch (_) {
+                        // Fall back to opening the native picker if assignment is blocked.
+                        input.click();
+                        return;
+                    }
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            });
+
+            // Pass-through variant: input is hidden, but the surrounding visual
+            // zone (closest ancestor with class `border-dashed`) becomes a drop
+            // target. Used by templates that already have a styled drop area
+            // with a "Select File" button label.
+            const passthroughs = document.querySelectorAll('input[type="file"][data-dropzone-passthrough]:not([data-dz-pt-wired])');
+            passthroughs.forEach(function (input) {
+                input.dataset.dzPtWired = '1';
+                let zone = input.closest('.border-dashed') || input.parentElement;
+                if (!zone) return;
+                ['dragenter', 'dragover'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                ['dragleave', 'drop'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                zone.addEventListener('drop', function (e) {
+                    e.preventDefault();
+                    if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+                    try {
+                        input.files = e.dataTransfer.files;
+                    } catch (_) {
+                        input.click();
+                        return;
+                    }
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            });
+        }
+
         function initAll() {
             initLucideIcons();
             formatIsoTimestamps();
+            wireDropzones();
         }
 
         // Initialize on page load
