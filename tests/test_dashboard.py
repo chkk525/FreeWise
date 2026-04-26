@@ -67,6 +67,45 @@ class TestDashboardLibraryHealth:
         assert "/highlights/ui/duplicates/semantic" not in resp.text
 
 
+class TestDashboardOnThisDay:
+    """Dashboard surfaces highlights from today's MM-DD across past years."""
+
+    def test_hidden_when_no_history_on_this_day(self, client, make_highlight):
+        from datetime import datetime
+        # Highlight from a different day-of-year so it can't match today.
+        d = datetime.now().date()
+        other_month = 1 if d.month != 1 else 12
+        make_highlight(text="off-date", created_at=datetime(2024, other_month, 15))
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "On this day" not in resp.text
+
+    def test_renders_history_for_today_mmdd(self, client, make_highlight):
+        from datetime import datetime
+        today = datetime.now().date()
+        make_highlight(
+            text="anniversary highlight from a past year",
+            created_at=datetime(2023, today.month, today.day, 10, 0),
+        )
+        make_highlight(
+            text="another year another highlight",
+            created_at=datetime(2024, today.month, today.day, 14, 0),
+        )
+        # A non-matching one to prove the filter works.
+        make_highlight(
+            text="not today", created_at=datetime(2024, 7, 4),
+        )
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "On this day" in resp.text
+        assert "anniversary highlight" in resp.text
+        assert "another year another highlight" in resp.text
+        assert "not today" not in resp.text
+        # Year labels should appear (newest first).
+        assert ">2024<" in resp.text
+        assert ">2023<" in resp.text
+
+
 class TestDashboardTagCloud:
     """Dashboard renders a tag cloud of highlight-level tags."""
 

@@ -3,6 +3,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from datetime import datetime, date
 
@@ -144,6 +145,19 @@ async def ui_dashboard(
         "semantic_ready": embedding_coverage["percent"] >= SEMANTIC_COVERAGE_THRESHOLD * 100,
     }
 
+    # On-this-day — highlights captured on today's MM-DD across all years.
+    # Pure SQLite strftime; no Python-side filter so the LIMIT works in DB.
+    today_mmdd = f"{date.today().month:02d}-{date.today().day:02d}"
+    on_this_day = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(func.strftime("%m-%d", Highlight.created_at) == today_mmdd)
+        .order_by(Highlight.created_at.desc())
+        .limit(5)
+    ).all()
+
     # Tag cloud — counts of highlight-level tags, sorted desc, capped to keep
     # the dashboard widget readable. Single GROUP BY query — no N+1.
     from app.models import HighlightTag, Tag
@@ -187,6 +201,8 @@ async def ui_dashboard(
         "tag_cloud": tag_cloud,
         "embedding_coverage": embedding_coverage,
         "library_health": library_health,
+        "on_this_day": on_this_day,
+        "today_mmdd": today_mmdd,
         "kindle_status": kindle_status})
 
 
