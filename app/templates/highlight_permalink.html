@@ -11,6 +11,17 @@
        UI behind enable_bulk_select; we leave it off for a single-row page. #}
     {% include "_highlight_row.html" %}
 
+    {# Related highlights — lazy-loaded via HTMX so the page renders fast
+       even when the cosine matmul takes a few hundred ms. #}
+    <div class="mt-6"
+         hx-get="/highlights/ui/h/{{ highlight.id }}/related"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
+            <p class="text-sm text-gray-500 dark:text-gray-400">Loading related highlights…</p>
+        </div>
+    </div>
+
     <div class="mt-6 flex flex-wrap items-center justify-center gap-3 text-sm">
         {% if highlight.book %}
         <a href="/library/ui/book/{{ highlight.book.id }}"

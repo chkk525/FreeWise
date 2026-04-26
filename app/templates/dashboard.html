@@ -82,6 +82,30 @@
 </div>
 {% endif %}
 
+{# ── Embedding coverage (C2) ──────────────────────────────────────── #}
+{% if embedding_coverage and embedding_coverage.total_active > 0 %}
+<div class="mb-6">
+    <div class="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-4 flex items-center gap-3">
+        <i data-lucide="git-branch" class="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0"></i>
+        <div class="flex-1 text-sm">
+            <p class="font-medium text-gray-900 dark:text-white">
+                Semantic similarity: <span class="font-mono">{{ embedding_coverage.percent }}%</span> embedded
+                <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">({{ embedding_coverage.embedded }} / {{ embedding_coverage.total_active }} active highlights, model <code>{{ embedding_coverage.model }}</code>)</span>
+            </p>
+            {% if embedding_coverage.percent < 100 %}
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                Run <code class="font-mono bg-white dark:bg-gray-900 px-1 py-0.5 rounded">freewise embed-backfill</code> to embed the rest. Until then, "Related highlights" on permalink pages will be incomplete.
+            </p>
+            {% endif %}
+        </div>
+        <div class="w-32 h-2 bg-purple-100 dark:bg-purple-900/40 rounded-full overflow-hidden shrink-0">
+            <div class="h-full bg-purple-600 dark:bg-purple-400 transition-all"
+                 style="width: {{ embedding_coverage.percent }}%"></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {# ── Tag cloud ─────────────────────────────────────────────────────── #}
 {% if tag_cloud and tag_cloud|length > 0 %}
 {% set _SIZE_CLS = {1: 'text-sm', 2: 'text-base', 3: 'text-lg', 4: 'text-xl', 5: 'text-2xl'} %}

@@ -87,6 +87,14 @@ class Client:
     def get_highlight(self, highlight_id: int) -> dict:
         return self._request("GET", f"/api/v2/highlights/{highlight_id}")
 
+    def backfill_embeddings(self, *, batch_size: int = 64,
+                            model: str | None = None) -> dict:
+        """Run one batch of the embedding backfill on the server side."""
+        body: dict[str, Any] = {"batch_size": batch_size}
+        if model:
+            body["model"] = model
+        return self._request("POST", "/api/v2/embeddings/backfill", json=body)
+
     def related_highlights(self, highlight_id: int, *, limit: int = 10,
                            model: str | None = None) -> dict:
         params: dict[str, Any] = {"limit": limit}

@@ -205,10 +205,8 @@ def cmd_embed_backfill(args: argparse.Namespace) -> int:
     total_failed = 0
     iterations = 0
     while True:
-        body = client._request(
-            "POST",
-            "/api/v2/embeddings/backfill",
-            json={"batch_size": args.batch_size, "model": args.model},
+        body = client.backfill_embeddings(
+            batch_size=args.batch_size, model=args.model,
         )
         iterations += 1
         total_embedded += body["embedded"]

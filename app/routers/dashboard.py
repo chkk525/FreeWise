@@ -108,6 +108,25 @@ async def ui_dashboard(
 
     kindle_status = get_kindle_status(session)
 
+    # Embedding coverage (C2) — what fraction of active highlights have a
+    # vector for the current model. Single COUNT(DISTINCT) query.
+    from app.models import Embedding
+    from app.services.embeddings import _env_model
+    embed_model = _env_model()
+    embedded_count = session.exec(
+        select(func.count(func.distinct(Embedding.highlight_id)))
+        .where(Embedding.model_name == embed_model)
+    ).one() or 0
+    embedding_coverage = {
+        "model": embed_model,
+        "embedded": int(embedded_count),
+        "total_active": int(active_highlights),
+        "percent": round(
+            (int(embedded_count) / int(active_highlights) * 100) if active_highlights > 0 else 0.0,
+            1,
+        ),
+    }
+
     # Tag cloud — counts of highlight-level tags, sorted desc, capped to keep
     # the dashboard widget readable. Single GROUP BY query — no N+1.
     from app.models import HighlightTag, Tag
@@ -149,6 +168,7 @@ async def ui_dashboard(
         "current_streak": current_streak,
         "longest_streak": longest_streak,
         "tag_cloud": tag_cloud,
+        "embedding_coverage": embedding_coverage,
         "kindle_status": kindle_status})
 
 

@@ -4,6 +4,35 @@ Tests for the dashboard endpoint: stats, heatmaps, and streaks.
 from datetime import date, timedelta
 
 
+class TestDashboardEmbeddingCoverage:
+    """Dashboard renders an embedding-coverage indicator (C2)."""
+
+    def test_hidden_when_no_active_highlights(self, client):
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        # No coverage badge when there's nothing to embed.
+        assert "Semantic similarity:" not in resp.text
+
+    def test_shows_zero_percent_with_active_no_embeddings(self, client, make_highlight):
+        make_highlight(text="x")
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "Semantic similarity:" in resp.text
+        assert "0%" in resp.text  # 0 / 1 embedded
+
+    def test_shows_partial_coverage(self, client, db, make_highlight):
+        from app.models import Embedding
+        from app.services.embeddings import pack_vector
+        h1 = make_highlight(text="a")
+        h2 = make_highlight(text="b")
+        db.add(Embedding(highlight_id=h1.id, model_name="nomic-embed-text",
+                         dim=1, vector=pack_vector([1.0])))
+        db.commit()
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "50.0%" in resp.text  # 1 / 2
+
+
 class TestDashboardTagCloud:
     """Dashboard renders a tag cloud of highlight-level tags."""
 

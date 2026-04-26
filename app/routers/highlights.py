@@ -707,6 +707,75 @@ async def ui_discarded(
     )
 
 
+@router.get("/ui/h/{id}/related", response_class=HTMLResponse)
+async def ui_highlight_related(
+    request: Request,
+    id: int,
+    limit: int = 8,
+    session: Session = Depends(get_session),
+):
+    """HTMX partial: top-K semantically related highlights for one source.
+
+    Renders a compact list under the permalink page. Returns an empty-
+    state explanation when the source has no embedding yet (no Ollama
+    backfill run, or this row hasn't been embedded).
+    """
+    from app.models import Embedding
+    from app.services.embeddings import _env_model, top_k_similar
+
+    h = session.get(Highlight, id)
+    if h is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    model_name = _env_model()
+    target_emb = session.exec(
+        select(Embedding)
+        .where(Embedding.highlight_id == id)
+        .where(Embedding.model_name == model_name)
+    ).first()
+
+    related: List[Dict] = []
+    if target_emb is not None:
+        cand_rows = session.exec(
+            select(Embedding.highlight_id, Embedding.vector)
+            .join(Highlight, Highlight.id == Embedding.highlight_id)
+            .where(Embedding.model_name == model_name)
+            .where(Embedding.dim == target_emb.dim)
+            .where(Highlight.is_discarded == False)  # noqa: E712
+            .where(Highlight.id != id)
+        ).all()
+        candidates = [(hid, blob) for hid, blob in cand_rows]
+        top = top_k_similar(target_emb.vector, candidates, dim=target_emb.dim, k=limit)
+        if top:
+            ids = [hid for hid, _ in top]
+            hl_rows = session.exec(
+                select(Highlight)
+                .options(selectinload(Highlight.book))
+                .where(Highlight.id.in_(ids))
+            ).all()
+            by_id = {row.id: row for row in hl_rows}
+            for hid, score in top:
+                hl = by_id.get(hid)
+                if hl is None:
+                    continue
+                related.append({
+                    "id": hl.id,
+                    "text": hl.text,
+                    "book_title": hl.book.title if hl.book else None,
+                    "book_id": hl.book_id,
+                    "similarity": round(score, 3),
+                })
+
+    return templates.TemplateResponse(
+        request, "_related_highlights.html",
+        {
+            "highlight_id": id,
+            "related": related,
+            "has_embedding": target_emb is not None,
+        },
+    )
+
+
 @router.get("/ui/h/{id}", response_class=HTMLResponse)
 async def ui_highlight_permalink(
     request: Request,

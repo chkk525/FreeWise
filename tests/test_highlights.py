@@ -258,6 +258,36 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestRelatedHighlightsHTMX:
+    """GET /highlights/ui/h/{id}/related — HTMX partial."""
+
+    def test_no_embedding_yet_renders_hint(self, client, make_highlight):
+        h = make_highlight(text="x")
+        resp = client.get(f"/highlights/ui/h/{h.id}/related")
+        assert resp.status_code == 200
+        assert "embed-backfill" in resp.text  # hint copy
+
+    def test_renders_related_when_embeddings_exist(self, client, db, make_highlight):
+        from app.models import Embedding
+        from app.services.embeddings import pack_vector
+        target = make_highlight(text="target")
+        near = make_highlight(text="near match")
+        far = make_highlight(text="far match")
+        db.add(Embedding(highlight_id=target.id, model_name="nomic-embed-text",
+                         dim=2, vector=pack_vector([1.0, 0.0])))
+        db.add(Embedding(highlight_id=near.id, model_name="nomic-embed-text",
+                         dim=2, vector=pack_vector([0.95, 0.05])))
+        db.add(Embedding(highlight_id=far.id, model_name="nomic-embed-text",
+                         dim=2, vector=pack_vector([-1.0, 0.0])))
+        db.commit()
+        resp = client.get(f"/highlights/ui/h/{target.id}/related")
+        assert resp.status_code == 200
+        # Both candidates should appear; near should be ranked first.
+        near_pos = resp.text.find("near match")
+        far_pos = resp.text.find("far match")
+        assert 0 <= near_pos < far_pos
+
+
 class TestPermalinkPage:
     """GET /highlights/ui/h/{id} — shareable single-highlight page."""
 
