@@ -87,6 +87,16 @@ class Client:
     def get_highlight(self, highlight_id: int) -> dict:
         return self._request("GET", f"/api/v2/highlights/{highlight_id}")
 
+    def ask(self, question: str, *, top_k: int = 8,
+            embed_model: str | None = None,
+            generate_model: str | None = None) -> dict:
+        body: dict[str, Any] = {"question": question, "top_k": top_k}
+        if embed_model:
+            body["embed_model"] = embed_model
+        if generate_model:
+            body["generate_model"] = generate_model
+        return self._request("POST", "/api/v2/ask", json=body)
+
     def backfill_embeddings(self, *, batch_size: int = 64,
                             model: str | None = None) -> dict:
         """Run one batch of the embedding backfill on the server side."""

@@ -25,6 +25,7 @@ SEARCH = server.freewise_search
 RECENT = server.freewise_recent
 SHOW = server.freewise_show
 RELATED = server.freewise_related
+ASK = server.freewise_ask
 RANDOM = server.freewise_random
 STATS = server.freewise_stats
 BOOKS = server.freewise_books
@@ -268,13 +269,13 @@ def test_search_with_tag_filter(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 18 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 19 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
-        "freewise_random", "freewise_related",
+        "freewise_random", "freewise_related", "freewise_ask",
         "freewise_stats", "freewise_books", "freewise_book_highlights",
         "freewise_authors", "freewise_tags",
         "freewise_set_note",

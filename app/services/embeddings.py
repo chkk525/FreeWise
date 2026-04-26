@@ -37,6 +37,16 @@ def _env_model() -> str:
     return os.environ.get("FREEWISE_OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
 
+def _env_generate_model() -> str:
+    """Default chat/generate model for the RAG ask endpoint.
+
+    Distinct from the embedding model — embedding models are tiny and
+    fast; generate models are larger and slower. ``llama3.2`` strikes a
+    reasonable balance on commodity laptops.
+    """
+    return os.environ.get("FREEWISE_OLLAMA_GENERATE_MODEL", "llama3.2")
+
+
 # ── Errors ─────────────────────────────────────────────────────────────────
 
 
@@ -178,6 +188,60 @@ class OllamaClient:
 
     def _client(self) -> httpx.Client:
         return self.http or httpx.Client(timeout=self.timeout)
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        system: str | None = None,
+        temperature: float = 0.2,
+    ) -> str:
+        """One-shot text generation. Returns the model's plain-text reply.
+
+        Defaults to ``FREEWISE_OLLAMA_GENERATE_MODEL`` (``llama3.2``).
+        Low temperature by default — answer-from-citations should not
+        wander from the source highlights.
+
+        Raises :class:`OllamaUnavailable` on transport / decode errors.
+        """
+        gen_model = model or _env_generate_model()
+        client = self._client()
+        own = self.http is None
+        try:
+            payload: dict[str, object] = {
+                "model": gen_model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": temperature},
+            }
+            if system:
+                payload["system"] = system
+            try:
+                r = client.post(f"{self._url()}/api/generate", json=payload)
+            except httpx.HTTPError as e:
+                raise OllamaUnavailable(
+                    f"could not reach Ollama at {self._url()}: {e}"
+                ) from e
+            if r.status_code >= 400:
+                raise OllamaUnavailable(
+                    f"Ollama returned HTTP {r.status_code}: {r.text[:200]}"
+                )
+            try:
+                body = r.json()
+            except ValueError as e:
+                raise OllamaUnavailable(
+                    f"Ollama returned non-JSON: {r.text[:200]}"
+                ) from e
+            response = body.get("response")
+            if not isinstance(response, str):
+                raise OllamaUnavailable(
+                    f"Ollama response missing 'response' string: {body}"
+                )
+            return response
+        finally:
+            if own:
+                client.close()
 
     def embed_one(self, text: str) -> list[float]:
         """Embed a single text. Convenience wrapper around ``embed_batch``."""
@@ -348,4 +412,153 @@ def backfill_embeddings(
     return BackfillReport(
         embedded=embedded, skipped=skipped, failed=failed,
         remaining=remaining, model=model_name, dim=dim,
+    )
+
+
+# ── RAG: retrieve-then-generate ────────────────────────────────────────────
+
+
+@dataclass
+class AskResult:
+    answer: str               # generated text
+    citations: list[dict]     # [{id, text, book_title, similarity}, ...]
+    embed_model: str
+    generate_model: str
+    truncated: bool           # True if the citation block was too long and clipped
+
+    def as_dict(self) -> dict:
+        return {
+            "answer": self.answer,
+            "citations": self.citations,
+            "embed_model": self.embed_model,
+            "generate_model": self.generate_model,
+            "truncated": self.truncated,
+        }
+
+
+# Soft cap on citation block size (chars) sent to the generate model.
+# llama3.2 has 128k context but most setups will not — keeping this
+# under ~6k chars covers ~12 highlights of typical length and works on
+# 4k-context models too.
+_MAX_CITATION_CHARS = 6000
+
+
+def _build_ask_prompt(question: str, citations: list[dict]) -> tuple[str, bool]:
+    """Build the user prompt for /api/v2/ask.
+
+    Returns (prompt, truncated). ``truncated`` is True when the citation
+    block had to be clipped to fit ``_MAX_CITATION_CHARS``.
+    """
+    header = "Use only the highlights below to answer. Cite each claim by its [#id]. If the highlights don't answer the question, say so."
+
+    # Pack as many citations as fit, in order (highest similarity first).
+    pieces: list[str] = []
+    used = 0
+    truncated = False
+    for c in citations:
+        line = f"[#{c['id']}] {c.get('book_title') or '(unbound)'}: {c['text']}"
+        if used + len(line) + 1 > _MAX_CITATION_CHARS:
+            truncated = True
+            break
+        pieces.append(line)
+        used += len(line) + 1
+
+    cited_block = "\n".join(pieces) if pieces else "(no highlights matched)"
+    return (
+        f"{header}\n\n## Question\n{question}\n\n## Highlights\n{cited_block}\n\n## Answer",
+        truncated,
+    )
+
+
+def ask_library(
+    session,  # sqlmodel Session
+    *,
+    question: str,
+    top_k: int = 8,
+    embed_model: str | None = None,
+    generate_model: str | None = None,
+    client: OllamaClient | None = None,
+) -> AskResult:
+    """Retrieve the K most-similar highlights to ``question``, then ask
+    Ollama to compose a citation-grounded answer.
+
+    Raises :class:`OllamaUnavailable` if either the embed or generate call
+    fails — the caller should surface that as a graceful "Ollama not
+    reachable" message rather than 500.
+    """
+    from sqlmodel import select
+
+    from app.models import Embedding, Highlight, Book
+
+    embed_name = embed_model or _env_model()
+    gen_name = generate_model or _env_generate_model()
+    client = client or OllamaClient()
+
+    # 1. Embed the question.
+    q_vec = client.embed_one(question)
+    if not q_vec:
+        return AskResult(
+            answer="(question is empty)", citations=[],
+            embed_model=embed_name, generate_model=gen_name, truncated=False,
+        )
+    q_blob = pack_vector(q_vec)
+    q_dim = len(q_vec)
+
+    # 2. Pull all candidate vectors for the same model + dim.
+    cand_rows = session.exec(
+        select(Embedding.highlight_id, Embedding.vector)
+        .join(Highlight, Highlight.id == Embedding.highlight_id)
+        .where(Embedding.model_name == embed_name)
+        .where(Embedding.dim == q_dim)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).all()
+    if not cand_rows:
+        return AskResult(
+            answer="No embeddings exist yet — run `freewise embed-backfill` first.",
+            citations=[], embed_model=embed_name, generate_model=gen_name,
+            truncated=False,
+        )
+
+    candidates = [(hid, blob) for hid, blob in cand_rows]
+    top = top_k_similar(q_blob, candidates, dim=q_dim, k=top_k)
+
+    # 3. Hydrate top-K back into highlight rows + book titles.
+    ids = [hid for hid, _ in top]
+    hl_rows = session.exec(
+        select(Highlight).where(Highlight.id.in_(ids))
+    ).all()
+    by_id = {h.id: h for h in hl_rows}
+    book_ids = {h.book_id for h in hl_rows if h.book_id is not None}
+    books_by_id: dict[int, Book] = {}
+    if book_ids:
+        for b in session.exec(select(Book).where(Book.id.in_(book_ids))).all():
+            books_by_id[b.id] = b
+
+    citations: list[dict] = []
+    for hid, score in top:
+        h = by_id.get(hid)
+        if h is None:
+            continue
+        b = books_by_id.get(h.book_id) if h.book_id else None
+        citations.append({
+            "id": h.id,
+            "text": h.text,
+            "book_title": b.title if b else None,
+            "book_id": h.book_id,
+            "similarity": round(score, 4),
+        })
+
+    if not citations:
+        return AskResult(
+            answer="No relevant highlights found.", citations=[],
+            embed_model=embed_name, generate_model=gen_name, truncated=False,
+        )
+
+    # 4. Compose prompt and ask Ollama to generate.
+    prompt, truncated = _build_ask_prompt(question, citations)
+    answer = client.generate(prompt, model=gen_name, temperature=0.2).strip()
+
+    return AskResult(
+        answer=answer, citations=citations,
+        embed_model=embed_name, generate_model=gen_name, truncated=truncated,
     )

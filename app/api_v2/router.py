@@ -56,7 +56,13 @@ from app.api_v2.schemas import (
 from app.db import get_session
 from app.models import ApiToken, Book, Embedding, Highlight, HighlightTag, Tag
 from app.routers.importer import get_or_create_book
-from app.services.embeddings import _env_model, backfill_embeddings, top_k_similar
+from app.services.embeddings import (
+    _env_model,
+    OllamaUnavailable,
+    ask_library,
+    backfill_embeddings,
+    top_k_similar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -575,6 +581,47 @@ def update_highlight(
 
 
 # ── Highlight-level tags ────────────────────────────────────────────────────
+
+
+class _AskRequest(__import__("pydantic").BaseModel):
+    """POST body for /api/v2/ask."""
+
+    question: str
+    top_k: int = 8
+    embed_model: Optional[str] = None
+    generate_model: Optional[str] = None
+
+
+@router.post("/ask")
+def ask(
+    payload: _AskRequest,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> dict:
+    """RAG: retrieve top-K similar highlights to ``question``, then ask
+    Ollama to compose a citation-grounded answer.
+
+    Body: ``{"question": str, "top_k": int=8, "embed_model": str?, "generate_model": str?}``
+    Response: ``{"answer", "citations": [...], "embed_model", "generate_model", "truncated"}``
+
+    Returns 503 if Ollama isn't reachable — distinct from a generic 500
+    so the CLI/MCP can show the user a setup hint instead of a stack trace.
+    """
+    if not payload.question or not payload.question.strip():
+        raise HTTPException(status_code=400, detail="`question` is required.")
+    try:
+        result = ask_library(
+            session, question=payload.question.strip(),
+            top_k=payload.top_k,
+            embed_model=payload.embed_model,
+            generate_model=payload.generate_model,
+        )
+    except OllamaUnavailable as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Ollama unavailable: {e}. See docs/SEMANTIC_SETUP.md.",
+        ) from e
+    return result.as_dict()
 
 
 class _BackfillRequest(__import__("pydantic").BaseModel):

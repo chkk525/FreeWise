@@ -97,6 +97,29 @@ def freewise_show(highlight_id: int) -> str:
 
 
 @mcp.tool()
+def freewise_ask(question: str, top_k: int = 8) -> str:
+    """RAG: ask a natural-language question over your highlight library.
+
+    The server embeds the question, retrieves the top-K most similar
+    highlights, then asks an Ollama generate model to compose a
+    citation-grounded answer (each claim cited as ``[#id]``).
+
+    Returns a JSON object with ``answer`` (markdown text), ``citations``
+    (the highlights used, with similarity scores), ``embed_model``,
+    ``generate_model``, and ``truncated`` (true if the citation block
+    was clipped to fit the prompt budget).
+
+    Requires Ollama to be reachable AND embeddings to have been
+    backfilled — see docs/SEMANTIC_SETUP.md. Returns ``{"error": ...}``
+    if either is missing.
+    """
+    return _call(
+        "ask failed",
+        lambda: _client().ask(question, top_k=top_k),
+    )
+
+
+@mcp.tool()
 def freewise_related(highlight_id: int, limit: int = 10) -> str:
     """Top-K semantically similar highlights to ``highlight_id``.
 

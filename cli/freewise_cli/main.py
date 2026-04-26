@@ -193,6 +193,33 @@ def cmd_book_highlights(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ask(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.ask(
+        args.question, top_k=args.top_k,
+        generate_model=args.generate_model, embed_model=args.embed_model,
+    )
+    if args.json:
+        _print_json(body)
+        return 0
+    print(body.get("answer", "(no answer)"))
+    cites = body.get("citations") or []
+    if cites:
+        print()
+        print(f"--- {len(cites)} citation{'s' if len(cites) != 1 else ''} ---")
+        for c in cites:
+            sim = c.get("similarity", 0.0)
+            book = c.get("book_title") or "(unbound)"
+            snippet = (c.get("text") or "").replace("\n", " ").strip()
+            if len(snippet) > 100:
+                snippet = snippet[:97] + "…"
+            print(f"  [#{c['id']:<6} {sim:.3f}]  {book[:30]:<30}  {snippet}")
+    if body.get("truncated"):
+        print()
+        print("(citations truncated to fit prompt — try lowering --top-k)")
+    return 0
+
+
 def cmd_embed_backfill(args: argparse.Namespace) -> int:
     """Drive the embedding backfill loop until no rows remain or --max is hit.
 
@@ -534,6 +561,14 @@ def _build_parser() -> argparse.ArgumentParser:
     rl.add_argument("highlight_id", type=int)
     rl.add_argument("--limit", type=int, default=10)
     rl.set_defaults(func=cmd_related)
+
+    # ask (RAG)
+    ak = sub.add_parser("ask", help="Ask a question about your library (needs Ollama embed + generate).")
+    ak.add_argument("question")
+    ak.add_argument("--top-k", type=int, default=8, help="How many highlights to cite (default 8).")
+    ak.add_argument("--embed-model", help="Override FREEWISE_OLLAMA_EMBED_MODEL.")
+    ak.add_argument("--generate-model", help="Override FREEWISE_OLLAMA_GENERATE_MODEL.")
+    ak.set_defaults(func=cmd_ask)
 
     # embed-backfill
     eb = sub.add_parser("embed-backfill", help="Generate embeddings for highlights that don't have them yet.")

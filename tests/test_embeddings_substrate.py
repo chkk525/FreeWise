@@ -295,6 +295,108 @@ def test_backfill_excludes_discarded(db, make_highlight):
     assert report.remaining == 0  # discarded doesn't count
 
 
+def _ollama_with_embed_and_generate(
+    embed_map: dict[str, list[float]],
+    generate_response: str = "fake answer",
+):
+    """A combined fake covering both /api/embeddings and /api/generate."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/embeddings":
+            body = json.loads(request.content)
+            prompt = body["prompt"]
+            if prompt in embed_map:
+                return httpx.Response(200, json={"embedding": embed_map[prompt]})
+            return httpx.Response(404, text="not configured for this prompt")
+        if request.url.path == "/api/generate":
+            return httpx.Response(200, json={"response": generate_response})
+        return httpx.Response(404, text="unknown path")
+
+    from app.services.embeddings import OllamaClient
+    return OllamaClient(
+        base_url="http://fake", model="m",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+
+def test_generate_happy_path():
+    from app.services.embeddings import OllamaClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/generate"
+        body = json.loads(request.content)
+        assert body["model"] == "test-gen"
+        assert body["prompt"] == "hi"
+        assert body["stream"] is False
+        return httpx.Response(200, json={"response": "hello back"})
+
+    client = OllamaClient(
+        base_url="http://fake", model="x",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    assert client.generate("hi", model="test-gen") == "hello back"
+
+
+def test_generate_raises_on_garbage():
+    from app.services.embeddings import OllamaClient, OllamaUnavailable
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="not json")
+
+    client = OllamaClient(
+        base_url="http://fake", model="x",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    with pytest.raises(OllamaUnavailable):
+        client.generate("hi")
+
+
+def test_ask_library_returns_answer_and_citations(db, make_highlight):
+    """Full RAG path: embed question → retrieve → fake generate."""
+    from app.models import Embedding
+    from app.services.embeddings import ask_library
+
+    h_close = make_highlight(text="cats sleep most of the day")
+    h_far = make_highlight(text="quantum entanglement is non-local")
+
+    # Pre-seed embeddings so retrieval has something to work with.
+    db.add(Embedding(
+        highlight_id=h_close.id, model_name="m", dim=2,
+        vector=pack_vector([1.0, 0.0]),
+    ))
+    db.add(Embedding(
+        highlight_id=h_far.id, model_name="m", dim=2,
+        vector=pack_vector([-1.0, 0.0]),
+    ))
+    db.commit()
+
+    client = _ollama_with_embed_and_generate(
+        embed_map={"do cats sleep?": [1.0, 0.0]},
+        generate_response="Cats sleep a lot — see [#%d]." % h_close.id,
+    )
+    result = ask_library(
+        db, question="do cats sleep?", top_k=2,
+        embed_model="m", client=client,
+    )
+    assert h_close.text in [c["text"] for c in result.citations]
+    # Closest citation should be ranked first.
+    assert result.citations[0]["id"] == h_close.id
+    assert "Cats sleep" in result.answer
+    assert result.embed_model == "m"
+
+
+def test_ask_library_no_embeddings_returns_hint(db, make_highlight):
+    """When the table is empty for this model, return the setup hint."""
+    from app.services.embeddings import ask_library
+
+    make_highlight(text="x")
+    client = _ollama_with_embed_and_generate(embed_map={"q": [1.0]})
+    result = ask_library(
+        db, question="q", top_k=4, embed_model="m", client=client,
+    )
+    assert "embed-backfill" in result.answer
+    assert result.citations == []
+
+
 def test_backfill_failed_count_on_ollama_error(db, make_highlight):
     """When Ollama errors out for a row, that row is counted as failed but
     the loop keeps going for the others."""

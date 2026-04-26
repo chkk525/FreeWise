@@ -463,6 +463,113 @@ def test_related_requires_auth(client):
     assert client.get("/api/v2/highlights/1/related").status_code == 401
 
 
+# ── POST /api/v2/ask (RAG over highlights) ──────────────────────────────────
+
+
+def test_ask_returns_answer_with_citations(client, db, make_highlight, monkeypatch):
+    """End-to-end ask path with both Ollama embed + generate mocked."""
+    import httpx, json as _json
+    from app.services import embeddings as emb_svc
+    from app.models import Embedding
+    from app.services.embeddings import pack_vector
+
+    headers = _auth_headers(db)
+    h = make_highlight(text="cats sleep a lot")
+    db.add(Embedding(
+        highlight_id=h.id, model_name="nomic-embed-text", dim=2,
+        vector=pack_vector([1.0, 0.0]),
+    ))
+    db.commit()
+
+    def handler(request):
+        if request.url.path == "/api/embeddings":
+            return httpx.Response(200, json={"embedding": [1.0, 0.0]})
+        if request.url.path == "/api/generate":
+            return httpx.Response(200, json={"response": f"Cats sleep, [#{h.id}]"})
+        return httpx.Response(404, text="?")
+
+    fake = emb_svc.OllamaClient(
+        base_url="http://x", model="nomic-embed-text",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+
+    resp = client.post(
+        "/api/v2/ask", headers=headers,
+        json={"question": "do cats sleep?"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "Cats sleep" in body["answer"]
+    assert len(body["citations"]) == 1
+    assert body["citations"][0]["id"] == h.id
+    assert body["embed_model"] == "nomic-embed-text"
+
+
+def test_ask_400_on_empty_question(client, db):
+    headers = _auth_headers(db)
+    for q in ("", "   "):
+        r = client.post("/api/v2/ask", headers=headers, json={"question": q})
+        assert r.status_code == 400
+
+
+def test_ask_503_when_ollama_unreachable(client, db, make_highlight, monkeypatch):
+    """If the embed call raises OllamaUnavailable the route should return 503,
+    not 500 — so the CLI/MCP can show a setup hint instead of a stack trace."""
+    import httpx
+    from app.services import embeddings as emb_svc
+    from app.models import Embedding
+    from app.services.embeddings import pack_vector
+
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    db.add(Embedding(
+        highlight_id=h.id, model_name="nomic-embed-text", dim=1,
+        vector=pack_vector([1.0]),
+    ))
+    db.commit()
+
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    fake = emb_svc.OllamaClient(
+        base_url="http://x", model="nomic-embed-text",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+
+    resp = client.post(
+        "/api/v2/ask", headers=headers, json={"question": "anything"},
+    )
+    assert resp.status_code == 503
+    assert "Ollama" in resp.json()["detail"]
+
+
+def test_ask_returns_hint_when_no_embeddings(client, db, monkeypatch):
+    """If embeddings table is empty for the current model, return the
+    helpful hint (200, not error)."""
+    import httpx
+    from app.services import embeddings as emb_svc
+
+    headers = _auth_headers(db)
+
+    def handler(request):
+        return httpx.Response(200, json={"embedding": [1.0]})
+
+    fake = emb_svc.OllamaClient(
+        base_url="http://x", model="nomic-embed-text",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+    resp = client.post("/api/v2/ask", headers=headers, json={"question": "q"})
+    assert resp.status_code == 200
+    assert "embed-backfill" in resp.json()["answer"]
+
+
+def test_ask_requires_auth(client):
+    assert client.post("/api/v2/ask", json={"question": "q"}).status_code == 401
+
+
 # ── POST /api/v2/embeddings/backfill (CLI driver endpoint) ───────────────────
 
 
