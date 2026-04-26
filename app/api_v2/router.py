@@ -432,12 +432,28 @@ def search_highlights(
     percent sign rather than every row. Optional ``tag`` filters to highlights
     that carry that exact tag (case-insensitive).
     """
-    needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    pattern = f"%{needle}%"
-    base = select(Highlight).where(Highlight.user_id == token.user_id).where(
-        Highlight.text.like(pattern, escape="\\")
-        | Highlight.note.like(pattern, escape="\\")
-    )
+    from app.db import FTS5_AVAILABLE
+    q_stripped = q.strip()
+    base = select(Highlight).where(Highlight.user_id == token.user_id)
+    # FTS5 trigram needs >= 3 chars; below that we fall back to LIKE so
+    # short Japanese-particle searches still resolve.
+    if FTS5_AVAILABLE and len(q_stripped) >= 3:
+        from sqlalchemy import text as sa_text
+        match_query = '"' + q_stripped.replace('"', '""') + '"'
+        base = base.where(
+            Highlight.id.in_(
+                sa_text(
+                    "SELECT rowid FROM highlight_fts WHERE highlight_fts MATCH :match"
+                ).bindparams(match=match_query)
+            )
+        )
+    else:
+        needle = q_stripped.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        base = base.where(
+            Highlight.text.like(pattern, escape="\\")
+            | Highlight.note.like(pattern, escape="\\")
+        )
     if not include_discarded:
         base = base.where(Highlight.is_discarded == False)  # noqa: E712
 

@@ -636,13 +636,31 @@ async def ui_search(
     conditions = [Highlight.is_discarded == False]  # noqa: E712
 
     if q_clean:
-        # Escape LIKE wildcards in user input.
-        needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{needle}%"
-        conditions.append(
-            Highlight.text.like(pattern, escape="\\")
-            | Highlight.note.like(pattern, escape="\\")
-        )
+        from app.db import FTS5_AVAILABLE
+        # Trigram FTS5 needs at least one full 3-char trigram; for shorter
+        # queries we fall back to LIKE so single-character / 2-char
+        # Japanese particle searches still work. The MATCH path is wrapped
+        # in double quotes + doubled internal quotes so the user's input
+        # is treated as a literal phrase, not an FTS5 expression.
+        if FTS5_AVAILABLE and len(q_clean) >= 3:
+            from sqlalchemy import text as sa_text
+            escaped = q_clean.replace('"', '""')
+            match_query = f'"{escaped}"'
+            conditions.append(
+                Highlight.id.in_(
+                    sa_text(
+                        "SELECT rowid FROM highlight_fts "
+                        "WHERE highlight_fts MATCH :match"
+                    ).bindparams(match=match_query)
+                )
+            )
+        else:
+            needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{needle}%"
+            conditions.append(
+                Highlight.text.like(pattern, escape="\\")
+                | Highlight.note.like(pattern, escape="\\")
+            )
 
     if tag_clean:
         conditions.append(

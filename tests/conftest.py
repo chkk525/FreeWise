@@ -50,6 +50,12 @@ def _reset_db():
     SQLModel.metadata.drop_all(_test_engine)
     SQLModel.metadata.create_all(_test_engine)
 
+    # Apply forward-only migrations (FTS5 virtual table + triggers, etc.).
+    # The lifespan hook normally does this on app startup; with TestClient
+    # we have to call it ourselves so search/* tests have a working index.
+    from app.db import ensure_schema_migrations
+    ensure_schema_migrations(_test_engine)
+
     # Seed minimal required data
     with Session(_test_engine) as s:
         s.add(User(id=1, email="test@test.com", password_hash="x"))

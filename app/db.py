@@ -12,6 +12,11 @@ _engine = create_engine(
 
 _log = logging.getLogger(__name__)
 
+# Set by ensure_schema_migrations() once it has confirmed FTS5 + trigram
+# tokenizer are compiled into the linked SQLite. Read by the search
+# routes to decide between FTS5 MATCH and LIKE substring fallback.
+FTS5_AVAILABLE: bool = False
+
 
 def get_engine():
     """Return the module-level SQLAlchemy engine singleton."""
@@ -193,6 +198,64 @@ def ensure_schema_migrations(engine=None) -> None:
                     "ON highlight (is_mastered)"
                 )
             )
+
+        # ── FTS5 substring index (U91) ───────────────────────────────────
+        # Trigram tokenizer works for any language including Japanese /
+        # Chinese (no MeCab/ICU dependency). Queries < 3 chars must fall
+        # back to LIKE because trigram needs at least one full trigram.
+        # On environments without FTS5+trigram (rare; older SQLite builds)
+        # we leave FTS5_AVAILABLE False and the search route stays on LIKE.
+        global FTS5_AVAILABLE
+        try:
+            conn.execute(text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS highlight_fts USING fts5("
+                "  text, note, tokenize='trigram'"
+                ")"
+            ))
+            # Triggers keep highlight_fts in lockstep with highlight.
+            # We own the storage (no external content table) so the
+            # trigger logic stays simple: full delete-then-insert on UPDATE.
+            conn.execute(text("DROP TRIGGER IF EXISTS highlight_fts_ai"))
+            conn.execute(text(
+                "CREATE TRIGGER highlight_fts_ai AFTER INSERT ON highlight BEGIN "
+                "  INSERT INTO highlight_fts(rowid, text, note) "
+                "  VALUES (new.id, COALESCE(new.text, ''), COALESCE(new.note, '')); "
+                "END"
+            ))
+            conn.execute(text("DROP TRIGGER IF EXISTS highlight_fts_au"))
+            conn.execute(text(
+                "CREATE TRIGGER highlight_fts_au AFTER UPDATE ON highlight BEGIN "
+                "  DELETE FROM highlight_fts WHERE rowid = old.id; "
+                "  INSERT INTO highlight_fts(rowid, text, note) "
+                "  VALUES (new.id, COALESCE(new.text, ''), COALESCE(new.note, '')); "
+                "END"
+            ))
+            conn.execute(text("DROP TRIGGER IF EXISTS highlight_fts_ad"))
+            conn.execute(text(
+                "CREATE TRIGGER highlight_fts_ad AFTER DELETE ON highlight BEGIN "
+                "  DELETE FROM highlight_fts WHERE rowid = old.id; "
+                "END"
+            ))
+            # One-time backfill if the index is out of sync. The check is
+            # cheap (two COUNTs) and only the deltas get re-indexed.
+            fts_count = conn.execute(text("SELECT COUNT(*) FROM highlight_fts")).scalar() or 0
+            hl_count = conn.execute(text("SELECT COUNT(*) FROM highlight")).scalar() or 0
+            if fts_count != hl_count:
+                _log.info(
+                    "migration: rebuilding FTS5 index (fts=%d, highlight=%d)",
+                    fts_count, hl_count,
+                )
+                conn.execute(text("DELETE FROM highlight_fts"))
+                conn.execute(text(
+                    "INSERT INTO highlight_fts(rowid, text, note) "
+                    "SELECT id, COALESCE(text, ''), COALESCE(note, '') FROM highlight"
+                ))
+            FTS5_AVAILABLE = True
+        except Exception as e:  # noqa: BLE001
+            _log.warning(
+                "FTS5 unavailable, search will use LIKE fallback: %s", e,
+            )
+            FTS5_AVAILABLE = False
 
 
 def get_session():
