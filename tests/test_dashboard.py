@@ -33,6 +33,40 @@ class TestDashboardEmbeddingCoverage:
         assert "50.0%" in resp.text  # 1 / 2
 
 
+class TestDashboardLibraryHealth:
+    """Dashboard surfaces duplicate-group counts as a library-health card."""
+
+    def test_hidden_when_no_duplicates(self, client, make_highlight):
+        make_highlight(text="solitary highlight that has no twins")
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "Library health:" not in resp.text
+
+    def test_shows_dup_groups_when_present(self, client, make_highlight):
+        # Three identical-prefix highlights → 1 group, 2 redundant rows.
+        text = "Dashboard duplicate detection survives the 80-char prefix grouping check"
+        for _ in range(3):
+            make_highlight(text=text)
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "Library health:" in resp.text
+        # Group count + redundant count both rendered
+        assert "1</span>\n                duplicate group" in resp.text or ">1<" in resp.text
+        assert "2 redundant" in resp.text
+        # Exact-duplicates link present
+        assert 'href="/highlights/ui/duplicates"' in resp.text
+
+    def test_semantic_link_hidden_when_coverage_low(self, client, make_highlight):
+        text = "another duplicate prefix that should trigger the health card cleanly"
+        for _ in range(2):
+            make_highlight(text=text)
+        resp = client.get("/dashboard/ui")
+        assert resp.status_code == 200
+        assert "Library health:" in resp.text
+        # No embeddings → no semantic link
+        assert "/highlights/ui/duplicates/semantic" not in resp.text
+
+
 class TestDashboardTagCloud:
     """Dashboard renders a tag cloud of highlight-level tags."""
 

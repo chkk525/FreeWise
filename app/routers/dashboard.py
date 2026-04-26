@@ -127,6 +127,22 @@ async def ui_dashboard(
         ),
     }
 
+    # Library health — number of exact-prefix duplicate groups and total
+    # redundant rows that the user could discard. Same prefix length as
+    # the default on /highlights/ui/duplicates so the count matches.
+    dup_group_sizes = session.exec(
+        select(func.count(Highlight.id))
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(func.substr(Highlight.text, 1, 80))
+        .having(func.count(Highlight.id) >= 2)
+    ).all()
+    library_health = {
+        "dup_groups": len(dup_group_sizes),
+        "dup_redundant": sum(int(c) - 1 for c in dup_group_sizes),
+        "semantic_ready": embedding_coverage["percent"] >= 10.0,
+    }
+
     # Tag cloud — counts of highlight-level tags, sorted desc, capped to keep
     # the dashboard widget readable. Single GROUP BY query — no N+1.
     from app.models import HighlightTag, Tag
@@ -169,6 +185,7 @@ async def ui_dashboard(
         "longest_streak": longest_streak,
         "tag_cloud": tag_cloud,
         "embedding_coverage": embedding_coverage,
+        "library_health": library_health,
         "kindle_status": kindle_status})
 
 
