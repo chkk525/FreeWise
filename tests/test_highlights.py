@@ -258,6 +258,72 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestHighlightTagUI:
+    """POST /highlights/{id}/tags/add and /tags/remove — HTMX endpoints."""
+
+    def test_add_tag_attaches_and_returns_row(self, client, make_highlight):
+        h = make_highlight(text="tag me")
+        resp = client.post(
+            f"/highlights/{h.id}/tags/add",
+            data={"new_tag": "Python"},
+        )
+        assert resp.status_code == 200
+        # Tag chip appears in the rendered row, normalized to lowercase.
+        assert ">python<" in resp.text or "python" in resp.text
+
+    def test_add_tag_idempotent(self, client, make_highlight):
+        h = make_highlight(text="x")
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "ml"})
+        resp = client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "ml"})
+        assert resp.status_code == 200
+        # Should still only have one chip.
+        assert resp.text.count('id="highlight-') == 1
+
+    def test_add_reserved_tag_silently_ignored(self, client, make_highlight, db):
+        """'favorite' and 'discard' are reserved — must not be created as tags."""
+        from app.models import Tag
+        h = make_highlight(text="x")
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "favorite"})
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "Discard"})
+        # No Tag rows created with those names.
+        existing = db.exec(select(Tag).where(Tag.name.in_(["favorite", "discard"]))).all()
+        assert existing == []
+
+    def test_remove_tag(self, client, make_highlight):
+        h = make_highlight(text="x")
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "a"})
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "b"})
+        resp = client.post(
+            f"/highlights/{h.id}/tags/remove", data={"tag": "a"},
+        )
+        assert resp.status_code == 200
+        # 'a' chip gone, 'b' still present
+        assert ">a<" not in resp.text
+        assert ">b<" in resp.text
+
+    def test_remove_tag_idempotent(self, client, make_highlight):
+        h = make_highlight(text="x")
+        resp = client.post(
+            f"/highlights/{h.id}/tags/remove", data={"tag": "never-existed"},
+        )
+        assert resp.status_code == 200
+
+    def test_404_for_missing_highlight(self, client):
+        resp = client.post(
+            "/highlights/999999/tags/add", data={"new_tag": "x"},
+        )
+        assert resp.status_code == 404
+
+    def test_search_results_render_tags(self, client, make_highlight):
+        """Tags should appear on highlight rows in the search results page."""
+        h = make_highlight(text="needle here")
+        client.post(f"/highlights/{h.id}/tags/add", data={"new_tag": "topic"})
+        resp = client.get("/highlights/ui/search", params={"q": "needle"})
+        assert resp.status_code == 200
+        # The chip + tag name appears
+        assert ">topic<" in resp.text
+
+
 class TestSearchPage:
     """GET /highlights/ui/search — full-text search across active highlights."""
 

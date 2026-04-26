@@ -17,7 +17,42 @@
         {{ highlight.note }}
     </div>
     {% endif %}
-    
+
+    {# ── Highlight tag chips + inline add (book context) ───────────────── #}
+    {% if not highlight.is_discarded %}
+    {% set _hl_tags = highlight.tags | rejectattr('name', 'in', ['favorite', 'discard']) | sort(attribute='name') | list %}
+    <div class="mt-3 flex flex-wrap items-center gap-1.5">
+        {% for tag in _hl_tags %}
+        <form hx-post="/highlights/{{ highlight.id }}/tags/remove"
+              hx-vals='{"context": "book"}'
+              hx-target="#highlights-sections-wrapper"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-full text-xs text-blue-800 dark:text-blue-200">
+            <i data-lucide="tag" class="w-3 h-3"></i>
+            <span>{{ tag.name }}</span>
+            <input type="hidden" name="tag" value="{{ tag.name }}">
+            <button type="submit"
+                    class="ml-0.5 text-blue-500 hover:text-red-600 dark:text-blue-300 dark:hover:text-red-400"
+                    title="Remove tag"
+                    data-toast-success="Tag removed">
+                <i data-lucide="x" class="w-3 h-3"></i>
+            </button>
+        </form>
+        {% endfor %}
+        <form hx-post="/highlights/{{ highlight.id }}/tags/add"
+              hx-vals='{"context": "book"}'
+              hx-target="#highlights-sections-wrapper"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-1 px-2 py-0.5 bg-white dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 rounded-full text-xs text-gray-600 dark:text-gray-400 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+              data-toast-success="Tag added">
+            <i data-lucide="plus" class="w-3 h-3"></i>
+            <input type="text" name="new_tag" placeholder="Add tag"
+                   maxlength="64" autocomplete="off"
+                   class="bg-transparent focus:outline-none w-20 placeholder-gray-400 dark:placeholder-gray-500">
+        </form>
+    </div>
+    {% endif %}
+
     <!-- Actions Bar -->
     <div class="flex items-center justify-between mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex-wrap gap-3">
         <!-- Action Buttons -->

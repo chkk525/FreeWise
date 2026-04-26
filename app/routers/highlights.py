@@ -12,7 +12,7 @@ from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from app.db import get_session, get_settings
-from app.models import Highlight, ReviewSession
+from app.models import Highlight, HighlightTag, ReviewSession, Tag
 
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
@@ -941,7 +941,113 @@ async def discard_highlight_html(
     
     # Otherwise return just the single highlight
     template_name = "_book_highlight.html" if context == "book" else "_highlight_row.html"
-    
+
     # Return updated highlight with badge
     return templates.TemplateResponse(request, template_name, {"highlight": highlight})
+
+
+# ── Highlight tag UI endpoints ──────────────────────────────────────────────
+
+
+def _highlight_tag_names(session: Session, highlight_id: int) -> List[str]:
+    """Return alphabetized tag names for a highlight, filtering legacy
+    pseudo-tags ("favorite"/"discard") that the importer once used as flags."""
+    rows = session.exec(
+        select(Tag.name)
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .where(HighlightTag.highlight_id == highlight_id)
+    ).all()
+    return sorted(n for n in rows if n and n.lower() not in ("favorite", "discard"))
+
+
+def _normalize_tag_name(name: str) -> str:
+    return " ".join(name.strip().split()).lower()
+
+
+def _render_highlight_after_tag_change(
+    request: Request,
+    highlight: Highlight,
+    session: Session,
+    context: Optional[str],
+):
+    """Re-render the highlight row partial after a tag mutation.
+
+    Mirrors the favorite/discard handlers: in 'book' context we re-render
+    the whole highlights wrapper so any cross-section moves take effect;
+    otherwise just swap the single row in place.
+    """
+    if context == "book":
+        return render_book_highlights_sections(request, highlight.book_id, session)
+    template_name = "_highlight_row.html"
+    return templates.TemplateResponse(
+        request, template_name,
+        {
+            "highlight": highlight,
+            "highlight_tags": _highlight_tag_names(session, highlight.id),
+        },
+    )
+
+
+@router.post("/{id}/tags/add", response_class=HTMLResponse)
+async def add_highlight_tag_html(
+    request: Request,
+    id: int,
+    new_tag: str = Form(...),
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Attach a tag to a highlight. Idempotent — re-adding is a no-op.
+
+    Reserved names ("favorite"/"discard") are silently ignored so a typo
+    can't poison the legacy pseudo-tag namespace.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    name = _normalize_tag_name(new_tag)
+    if name and name not in ("favorite", "discard"):
+        tag = session.exec(select(Tag).where(Tag.name == name)).first()
+        if tag is None:
+            tag = Tag(name=name)
+            session.add(tag); session.commit(); session.refresh(tag)
+
+        existing = session.exec(
+            select(HighlightTag)
+            .where(HighlightTag.highlight_id == highlight.id)
+            .where(HighlightTag.tag_id == tag.id)
+        ).first()
+        if existing is None:
+            session.add(HighlightTag(highlight_id=highlight.id, tag_id=tag.id))
+            session.commit()
+
+    return _render_highlight_after_tag_change(request, highlight, session, context)
+
+
+@router.post("/{id}/tags/remove", response_class=HTMLResponse)
+async def remove_highlight_tag_html(
+    request: Request,
+    id: int,
+    tag: str = Form(...),
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Remove a tag from a highlight. Idempotent."""
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    name = _normalize_tag_name(tag)
+    tag_row = session.exec(select(Tag).where(Tag.name == name)).first()
+    if tag_row is not None:
+        link = session.exec(
+            select(HighlightTag)
+            .where(HighlightTag.highlight_id == highlight.id)
+            .where(HighlightTag.tag_id == tag_row.id)
+        ).first()
+        if link is not None:
+            session.delete(link)
+            session.commit()
+
+    return _render_highlight_after_tag_change(request, highlight, session, context)
 

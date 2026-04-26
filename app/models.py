@@ -86,7 +86,16 @@ class Highlight(SQLModel, table=True):
     highlight_weight: float = Field(default=1.0, index=True)  # 0.0 (Never) to 2.0 (More)
     user_id: int = Field(foreign_key="user.id", index=True)
     book: Optional["Book"] = Relationship(back_populates="highlights")
-    
+    # Tags attached to *this highlight* via the HighlightTag junction.
+    # ``selectin`` lazy-loading batches the IN-query so listing pages don't
+    # trigger N+1 even without explicit eager-loading.
+    tags: list["Tag"] = Relationship(
+        sa_relationship_kwargs={
+            "secondary": "highlighttag",
+            "lazy": "selectin",
+        },
+    )
+
     def __repr__(self) -> str:
         preview = self.text[:50] + "..." if len(self.text) > 50 else self.text
         return f"Highlight(id={self.id}, text='{preview}')"
