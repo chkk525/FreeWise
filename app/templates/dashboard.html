@@ -390,6 +390,17 @@
         </form>
     </div>
 
+    {# On-demand scrape trigger (U99). Defer-loads the partial so the
+       dashboard returns instantly and only this card waits on the
+       state-file read + process probe. #}
+    <div class="mb-4"
+         hx-get="/dashboard/kindle/scrape-status"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="text-xs text-gray-400 dark:text-gray-500">Loading scrape status…</div>
+    </div>
+
+
     <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
         <div>
             <dt class="text-gray-500 dark:text-gray-400 font-medium">Last imported at</dt>

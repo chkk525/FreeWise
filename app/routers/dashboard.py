@@ -1,6 +1,6 @@
 from dataclasses import asdict
 from typing import Any, Dict
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
@@ -183,6 +183,62 @@ async def ui_dashboard(
 def kindle_status(session: Session = Depends(get_session)) -> Dict[str, Any]:
     """Return JSON snapshot of Kindle import state for dashboards / probes."""
     return asdict(get_kindle_status(session))
+
+
+@router.get("/kindle/scrape-status", response_class=HTMLResponse)
+async def kindle_scrape_status_partial(request: Request) -> HTMLResponse:
+    """HTMX partial — current scrape state + button. Polled by the
+    dashboard card while a scrape is running.
+
+    Renders one of three states:
+      - disabled (KINDLE_SCRAPE_CMD unset) → small note, no button
+      - idle    → "Scrape now" button
+      - running → spinner + log tail + cancel button
+    """
+    from app.services.kindle_scrape_trigger import get_status as get_scrape_status
+    status = get_scrape_status()
+    return templates.TemplateResponse(
+        request, "_kindle_scrape_status.html",
+        {"scrape": status},
+    )
+
+
+@router.post("/kindle/scrape-now", response_class=HTMLResponse)
+async def kindle_scrape_now(request: Request) -> HTMLResponse:
+    """Kick off the Kindle scrape in the background. Returns the same
+    partial as /kindle/scrape-status so HTMX can swap the card in place."""
+    from app.services.kindle_scrape_trigger import (
+        ScrapeAlreadyRunning,
+        ScrapeNotConfigured,
+        get_status as get_scrape_status,
+        trigger_scrape,
+    )
+    try:
+        status = trigger_scrape()
+    except ScrapeNotConfigured:
+        raise HTTPException(
+            status_code=503,
+            detail="Kindle scrape is not configured on this server (KINDLE_SCRAPE_CMD env var unset).",
+        )
+    except ScrapeAlreadyRunning:
+        # Race: someone else just started one. Show the latest state so
+        # the polling loop picks it up cleanly.
+        status = get_scrape_status()
+    return templates.TemplateResponse(
+        request, "_kindle_scrape_status.html",
+        {"scrape": status},
+    )
+
+
+@router.post("/kindle/scrape-cancel", response_class=HTMLResponse)
+async def kindle_scrape_cancel(request: Request) -> HTMLResponse:
+    """SIGTERM a running scrape. Idempotent — no-op if nothing's running."""
+    from app.services.kindle_scrape_trigger import cancel_scrape
+    status = cancel_scrape()
+    return templates.TemplateResponse(
+        request, "_kindle_scrape_status.html",
+        {"scrape": status},
+    )
 
 
 @router.get("/ui/health", response_class=HTMLResponse)

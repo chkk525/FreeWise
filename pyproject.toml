@@ -21,6 +21,10 @@ dev = [
     "fastapi>=0.136.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
+    # MCP SDK is a runtime dep of the freewise-mcp sibling package; keep
+    # it pinned at the workspace root so `uv sync` doesn't prune it when
+    # nothing else here references it directly.
+    "mcp>=1.6.0",
     # numpy is used by app/services/embeddings.py to compute cosine
     # similarity over thousands of vectors. Pure-Python is ~10s/query at
     # 25k highlights × 768 dims; numpy matmul drops that to <50ms.
