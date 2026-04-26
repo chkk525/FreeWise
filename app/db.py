@@ -141,6 +141,42 @@ def ensure_schema_migrations(engine=None) -> None:
                 )
             )
 
+        # ── Embedding table (C2 semantic similarity, round 1) ────────────
+        # SQLModel.metadata.create_all() handles fresh installs; this branch
+        # only matters for already-deployed DBs that predate the new model.
+        # We don't backfill anything — the table is empty until the
+        # forthcoming `freewise embed-backfill` populates it.
+        if "embedding" not in existing_tables:
+            _log.info("migration: creating embedding table")
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS embedding ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  highlight_id INTEGER NOT NULL REFERENCES highlight(id),"
+                "  model_name VARCHAR NOT NULL,"
+                "  dim INTEGER NOT NULL,"
+                "  vector BLOB NOT NULL,"
+                "  created_at TIMESTAMP NOT NULL"
+                ")"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_embedding_highlight_id "
+                "ON embedding (highlight_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_embedding_model_name "
+                "ON embedding (model_name)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_embedding_created_at "
+                "ON embedding (created_at)"
+            ))
+            # One vector per (highlight, model) combo — the backfill is
+            # an UPSERT so re-running it is idempotent.
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_embedding_hl_model "
+                "ON embedding (highlight_id, model_name)"
+            ))
+
         # ── Highlight.is_mastered (A5 mastery flag) ──────────────────────
         # Mastered highlights are excluded from the review queue (the user
         # has internalized them). Distinct from is_discarded — a mastered

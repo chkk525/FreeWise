@@ -30,7 +30,7 @@ _db._engine = _test_engine
 
 # Now import the app (model registration happens at import time)
 from app.main import app  # noqa: E402
-from app.models import User, Book, Highlight, Settings, Tag, HighlightTag, ReviewSession  # noqa: E402
+from app.models import User, Book, Highlight, Settings, Tag, HighlightTag, ReviewSession, Embedding  # noqa: E402,F401
 
 
 def _override_get_session():

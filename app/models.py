@@ -1,5 +1,6 @@
 from datetime import datetime, date, UTC
 from typing import Optional
+from sqlalchemy import UniqueConstraint
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -119,6 +120,41 @@ class HighlightTag(SQLModel, table=True):
     """Many-to-many relationship between highlights and tags."""
     highlight_id: int = Field(foreign_key="highlight.id", primary_key=True)
     tag_id: int = Field(foreign_key="tag.id", primary_key=True)
+
+
+class Embedding(SQLModel, table=True):
+    """Per-highlight semantic-search embedding (C2 round 1).
+
+    One row per (highlight_id, model_name) — different models can coexist
+    so the user can A/B test without dropping older vectors. The vector
+    is stored as a binary BLOB of float32s in row-major order; ``dim``
+    records the length so a corrupt row can be detected at read time.
+
+    All Ollama calls live in ``app.services.embeddings``; this model
+    knows nothing about how the vector was produced.
+    """
+    # Composite unique constraint declared at the model level so
+    # SQLModel.metadata.create_all() picks it up on fresh installs (test
+    # DBs included). The matching CREATE UNIQUE INDEX in db.py covers
+    # legacy DBs where the table existed without this constraint.
+    __table_args__ = (
+        UniqueConstraint(
+            "highlight_id", "model_name", name="uq_embedding_hl_model",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    highlight_id: int = Field(foreign_key="highlight.id", index=True)
+    model_name: str = Field(index=True)
+    dim: int
+    vector: bytes  # float32[dim] packed little-endian
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        index=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"Embedding(id={self.id}, highlight_id={self.highlight_id}, model={self.model_name!r}, dim={self.dim})"
 
 
 class Settings(SQLModel, table=True):
