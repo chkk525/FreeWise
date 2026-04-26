@@ -77,3 +77,38 @@ class PaginatedResponse(BaseModel):
     next: Optional[str] = None
     previous: Optional[str] = None
     results: List[dict] = Field(default_factory=list)
+
+
+class HighlightDetail(BaseModel):
+    """Single highlight, returned by ``GET /api/v2/highlights/{id}``."""
+
+    id: int
+    text: str
+    title: Optional[str] = None
+    author: Optional[str] = None
+    note: Optional[str] = None
+    location: Optional[int] = None
+    location_type: Optional[str] = None
+    highlighted_at: Optional[datetime] = None
+    book_id: Optional[int] = None
+    is_favorited: bool = False
+    is_discarded: bool = False
+
+
+class HighlightUpdatePayload(BaseModel):
+    """Partial update body for ``PATCH /api/v2/highlights/{id}``."""
+
+    note: Optional[str] = None
+    is_favorited: Optional[bool] = None
+    is_discarded: Optional[bool] = None
+
+
+class StatsResponse(BaseModel):
+    """Counts + streak summary for ``GET /api/v2/stats``."""
+
+    highlights_total: int
+    highlights_active: int
+    highlights_discarded: int
+    highlights_favorited: int
+    books_total: int
+    review_due_today: int

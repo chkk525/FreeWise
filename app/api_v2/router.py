@@ -42,9 +42,12 @@ from app.api_v2.schemas import (
     BookListItem,
     HighlightCreatePayload,
     HighlightCreateResponse,
+    HighlightDetail,
     HighlightInput,
     HighlightListItem,
+    HighlightUpdatePayload,
     PaginatedResponse,
+    StatsResponse,
 )
 from app.db import get_session
 from app.models import ApiToken, Book, Highlight
@@ -353,3 +356,155 @@ def list_books(
     )
 
     return PaginatedResponse(count=count, next=next_url, previous=prev_url, results=results)
+
+
+# ── CLI / programmatic-use extensions (not part of Readwise's public API) ────
+
+
+def _highlight_to_detail(h: Highlight, book: Optional[Book]) -> HighlightDetail:
+    return HighlightDetail(
+        id=h.id,
+        text=h.text,
+        title=book.title if book else None,
+        author=book.author if book else None,
+        note=h.note,
+        location=h.location,
+        location_type=h.location_type,
+        highlighted_at=h.created_at,
+        book_id=h.book_id,
+        is_favorited=h.is_favorited,
+        is_discarded=h.is_discarded,
+    )
+
+
+@router.get("/highlights/search", response_model=PaginatedResponse)
+def search_highlights(
+    q: str = Query(..., min_length=1, max_length=512),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=1000),
+    include_discarded: bool = Query(default=False),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> PaginatedResponse:
+    """Full-text LIKE search across this user's highlights (text + note).
+
+    Not a Readwise endpoint — FreeWise extension under the same prefix.
+    Wildcard chars in ``q`` are escaped so a ``%`` query matches a literal
+    percent sign rather than every row.
+    """
+    needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{needle}%"
+    base = select(Highlight).where(Highlight.user_id == token.user_id).where(
+        Highlight.text.like(pattern, escape="\\")
+        | Highlight.note.like(pattern, escape="\\")
+    )
+    if not include_discarded:
+        base = base.where(Highlight.is_discarded == False)  # noqa: E712
+
+    count = session.exec(
+        select(func.count()).select_from(base.subquery())
+    ).one()
+
+    rows = session.exec(
+        base.order_by(Highlight.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    book_ids = {h.book_id for h in rows if h.book_id is not None}
+    books_by_id: dict[int, Book] = {}
+    if book_ids:
+        books = session.exec(select(Book).where(Book.id.in_(book_ids))).all()
+        books_by_id = {b.id: b for b in books}
+
+    results = [
+        _highlight_to_detail(h, books_by_id.get(h.book_id) if h.book_id else None).model_dump(mode="json")
+        for h in rows
+    ]
+    return PaginatedResponse(count=count, results=results)
+
+
+@router.get("/highlights/{highlight_id}", response_model=HighlightDetail)
+def get_highlight(
+    highlight_id: int,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> HighlightDetail:
+    """Single highlight detail. 404 if missing or not owned by this user."""
+    h = session.get(Highlight, highlight_id)
+    if h is None or h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+    book = session.get(Book, h.book_id) if h.book_id is not None else None
+    return _highlight_to_detail(h, book)
+
+
+@router.patch("/highlights/{highlight_id}", response_model=HighlightDetail)
+def update_highlight(
+    highlight_id: int,
+    payload: HighlightUpdatePayload,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> HighlightDetail:
+    """Partial update. Only ``note``, ``is_favorited``, ``is_discarded`` are mutable here."""
+    h = session.get(Highlight, highlight_id)
+    if h is None or h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+    if payload.note is not None:
+        h.note = payload.note
+    if payload.is_favorited is not None:
+        # Match the UI rule: favoriting a discarded row is nonsense.
+        if payload.is_favorited and h.is_discarded:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot favorite a discarded highlight.",
+            )
+        h.is_favorited = payload.is_favorited
+    if payload.is_discarded is not None:
+        h.is_discarded = payload.is_discarded
+        # Discarding auto-unfavorites — mirrors discard endpoint behavior.
+        if h.is_discarded and h.is_favorited:
+            h.is_favorited = False
+    session.add(h)
+    session.commit()
+    session.refresh(h)
+    book = session.get(Book, h.book_id) if h.book_id is not None else None
+    return _highlight_to_detail(h, book)
+
+
+@router.get("/stats", response_model=StatsResponse)
+def get_stats(
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> StatsResponse:
+    """Aggregate counts for the authenticated user."""
+    base = select(func.count(Highlight.id)).where(Highlight.user_id == token.user_id)
+    total = session.exec(base).one()
+    active = session.exec(
+        base.where(Highlight.is_discarded == False)  # noqa: E712
+    ).one()
+    discarded = session.exec(
+        base.where(Highlight.is_discarded == True)  # noqa: E712
+    ).one()
+    favorited = session.exec(
+        base.where(Highlight.is_favorited == True)  # noqa: E712
+    ).one()
+    books_total = session.exec(
+        select(func.count(func.distinct(Highlight.book_id)))
+        .where(Highlight.user_id == token.user_id)
+        .where(Highlight.book_id.is_not(None))
+    ).one()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    review_due = session.exec(
+        base.where(Highlight.is_discarded == False)  # noqa: E712
+        .where(
+            (Highlight.next_review.is_(None)) | (Highlight.next_review <= now)
+        )
+    ).one()
+    return StatsResponse(
+        highlights_total=total,
+        highlights_active=active,
+        highlights_discarded=discarded,
+        highlights_favorited=favorited,
+        books_total=books_total,
+        review_due_today=review_due,
+    )
