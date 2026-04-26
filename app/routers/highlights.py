@@ -861,6 +861,78 @@ async def ui_highlight_permalink(
     )
 
 
+@router.get("/ui/duplicates", response_class=HTMLResponse)
+async def ui_duplicates(
+    request: Request,
+    prefix_chars: int = 80,
+    min_group_size: int = 2,
+    limit: int = 50,
+    session: Session = Depends(get_session),
+):
+    """Render duplicate-highlight groups with per-group cleanup buttons.
+
+    Same logic as /api/v2/highlights/duplicates but rendered as a page.
+    User-scoped to the single-user-mode default (1) to match the rest
+    of the HTML routes.
+    """
+    settings = get_settings(session)
+    prefix_chars = max(20, min(500, prefix_chars))
+    min_group_size = max(2, min(20, min_group_size))
+    limit = max(1, min(500, limit))
+
+    prefix_col = func.substr(Highlight.text, 1, prefix_chars).label("prefix")
+    grp_stmt = (
+        select(prefix_col, func.count(Highlight.id).label("cnt"))
+        .where(Highlight.user_id == 1)  # single-user mode
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(prefix_col)
+        .having(func.count(Highlight.id) >= min_group_size)
+        .order_by(func.count(Highlight.id).desc())
+        .limit(limit)
+    )
+    grouped = session.exec(grp_stmt).all()
+
+    groups: list[dict] = []
+    if grouped:
+        prefixes = [p for p, _ in grouped]
+        member_rows = session.exec(
+            select(Highlight)
+            .options(selectinload(Highlight.book))
+            .where(Highlight.user_id == 1)
+            .where(Highlight.is_discarded == False)  # noqa: E712
+            .where(prefix_col.in_(prefixes))
+            .order_by(Highlight.id.asc())
+        ).all()
+        members_by_prefix: dict[str, list[Highlight]] = {}
+        for h in member_rows:
+            key = (h.text or "")[:prefix_chars]
+            members_by_prefix.setdefault(key, []).append(h)
+        for prefix, cnt in grouped:
+            members = members_by_prefix.get(prefix, [])
+            # IDs to discard if the user clicks "Keep oldest, discard rest":
+            # everything except the first member (lowest id, oldest).
+            discard_ids = [m.id for m in members[1:]]
+            groups.append({
+                "prefix": prefix,
+                "count": int(cnt),
+                "members": members,
+                "discard_ids": ",".join(str(i) for i in discard_ids),
+            })
+
+    total_redundant = sum(len(g["members"]) - 1 for g in groups)
+    return templates.TemplateResponse(
+        request, "duplicates.html",
+        {
+            "settings": settings,
+            "groups": groups,
+            "prefix_chars": prefix_chars,
+            "min_group_size": min_group_size,
+            "limit": limit,
+            "total_redundant": total_redundant,
+        },
+    )
+
+
 @router.get("/ui/random", response_class=HTMLResponse)
 async def ui_random(
     request: Request,

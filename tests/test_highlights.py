@@ -393,6 +393,30 @@ class TestPermalinkPage:
         assert f"/highlights/ui/h/{h.id}" in resp.text
 
 
+class TestDuplicatesPage:
+    """GET /highlights/ui/duplicates — duplicate-group cleanup page."""
+
+    def test_renders_empty_state_when_no_dupes(self, client, make_highlight):
+        make_highlight(text="Unique highlight content here that is long enough")
+        resp = client.get("/highlights/ui/duplicates")
+        assert resp.status_code == 200
+        assert "No duplicate groups" in resp.text
+
+    def test_renders_groups(self, client, make_highlight):
+        text = "Repeating prefix that survives the 20-char minimum cutoff"
+        for _ in range(3):
+            make_highlight(text=text + " variant")
+        resp = client.get("/highlights/ui/duplicates", params={"prefix_chars": 30})
+        assert resp.status_code == 200
+        # Group banner
+        assert "3× group" in resp.text
+        # Cleanup button
+        assert "Keep oldest" in resp.text
+        # First member labeled keep, others drop
+        assert "keep" in resp.text
+        assert "drop" in resp.text
+
+
 class TestRandomHighlight:
     """GET /highlights/ui/random — random-highlight HTML partial."""
 
