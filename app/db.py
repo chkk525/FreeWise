@@ -106,6 +106,41 @@ def ensure_schema_migrations(engine=None) -> None:
                     "migration: hashed %d pre-existing apitoken row(s)", len(rows)
                 )
 
+        # ── Composite index for the review-pool hot query (perf H6) ──────
+        # The query
+        #   WHERE is_discarded = FALSE AND highlight_weight > 0
+        #   ORDER BY RANDOM() LIMIT 1000
+        # fires on every cold review page. SQLite uses at most one index
+        # per table scan; the existing single-column indexes (is_discarded,
+        # highlight_weight) can't both be used together. A composite index
+        # over both columns lets the planner skip the full scan.
+        existing_tables = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            ).all()
+        }
+        if "highlight" in existing_tables:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_highlight_review_pool "
+                    "ON highlight (is_discarded, highlight_weight)"
+                )
+            )
+
+        # ── ReviewSession.session_uuid lookup index (perf H7) ────────────
+        # SQLModel emits the index on fresh DBs via `unique=True`, but
+        # ALTER TABLE pre-existing schemas may not have picked it up. The
+        # /highlights/ui/review handler reads the row by uuid on every
+        # cookie-bearing request.
+        if "reviewsession" in existing_tables:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_reviewsession_session_uuid "
+                    "ON reviewsession (session_uuid)"
+                )
+            )
+
 
 def get_session():
     """FastAPI dependency that yields a database session."""
@@ -130,27 +165,43 @@ def get_settings(session: Session):
     return settings
 
 
+_STREAK_LOOKBACK_DAYS = 400  # Largest plausible streak; cheap insurance.
+
+
 def get_current_streak(session: Session) -> int:
     """Return the current consecutive-day review streak (0 if no active streak).
 
     A streak is alive if a completed session exists for today or yesterday.
     Multiple sessions on the same calendar day count as one streak day.
+
+    Performance (Phase 4): only the distinct ``session_date`` values from the
+    last ``_STREAK_LOOKBACK_DAYS`` are pulled. The previous implementation
+    loaded every completed ReviewSession (1 row/day = ~365/year) into Python
+    and called this from middleware on every HTML page hit. The new query is
+    one indexed range scan + DISTINCT.
     """
     from app.models import ReviewSession
     from datetime import date, timedelta
 
     today = date.today()
-    completed_stmt = select(ReviewSession).where(ReviewSession.is_completed == True)
-    completed_sessions = session.exec(completed_stmt).all()
+    earliest = today - timedelta(days=_STREAK_LOOKBACK_DAYS)
 
-    if not completed_sessions:
+    # SQL-side DISTINCT on session_date so no per-row hydration. The
+    # is_completed predicate uses the same combined index range scan as
+    # the existing single-column index.
+    stmt = (
+        select(ReviewSession.session_date)
+        .where(ReviewSession.is_completed == True)  # noqa: E712 (SQLAlchemy idiom)
+        .where(ReviewSession.session_date >= earliest)
+        .distinct()
+        .order_by(ReviewSession.session_date.desc())
+    )
+    sorted_dates = list(session.exec(stmt).all())
+
+    if not sorted_dates:
         return 0
 
-    # Deduplicate: multiple sessions on the same day count as one streak day
-    sorted_dates = sorted({rs.session_date for rs in completed_sessions}, reverse=True)
     yesterday = today - timedelta(days=1)
-
-    # Streak must start from today or yesterday to be "current"
     if sorted_dates[0] < yesterday:
         return 0
 
@@ -162,5 +213,4 @@ def get_current_streak(session: Session) -> int:
             check_date -= timedelta(days=1)
         else:
             break
-
     return streak

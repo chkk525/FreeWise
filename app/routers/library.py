@@ -367,11 +367,14 @@ async def ui_book_update(
     session.commit()
     session.refresh(book)
     
-    # Get highlight count for the book
-    highlights_stmt = select(Highlight).where(Highlight.book_id == book_id)
-    highlights = session.exec(highlights_stmt).all()
-    highlight_count = len(highlights)
-    
+    # Highlight count via SQL aggregate (perf H5) — pre-fix this hydrated
+    # every Highlight row just to call len().
+    highlight_count = session.exec(
+        select(func.count(Highlight.id)).where(Highlight.book_id == book_id)
+    ).one()
+    if isinstance(highlight_count, tuple):
+        highlight_count = highlight_count[0]
+
     return _render_book_header(request, book, highlight_count)
 
 
@@ -386,11 +389,14 @@ async def ui_book_cancel_edit(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     
-    # Get highlight count for the book
-    highlights_stmt = select(Highlight).where(Highlight.book_id == book_id)
-    highlights = session.exec(highlights_stmt).all()
-    highlight_count = len(highlights)
-    
+    # Highlight count via SQL aggregate (perf H5) — pre-fix this hydrated
+    # every Highlight row just to call len().
+    highlight_count = session.exec(
+        select(func.count(Highlight.id)).where(Highlight.book_id == book_id)
+    ).one()
+    if isinstance(highlight_count, tuple):
+        highlight_count = highlight_count[0]
+
     return _render_book_header(request, book, highlight_count)
 
 
@@ -503,13 +509,11 @@ async def ui_book_delete(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     
-    # Delete all highlights associated with this book
-    highlights_stmt = select(Highlight).where(Highlight.book_id == book_id)
-    highlights = session.exec(highlights_stmt).all()
-    for highlight in highlights:
-        session.delete(highlight)
-    
-    # Delete the book
+    # Bulk delete instead of N×DELETE round-trips (perf H4). On a book
+    # with hundreds of highlights this drops from O(n) to O(1) statements.
+    from sqlalchemy import delete as sa_delete
+    session.exec(sa_delete(Highlight).where(Highlight.book_id == book_id))
+    # And the book row.
     session.delete(book)
     session.commit()
     

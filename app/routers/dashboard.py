@@ -78,33 +78,33 @@ async def ui_dashboard(
         str(row[0]): row[1] for row in session.exec(heatmap_stmt).all()
     }
     
-    # Get review session data for review activity heatmap
-    review_sessions_stmt = select(ReviewSession).where(ReviewSession.is_completed == True)
-    completed_sessions = session.exec(review_sessions_stmt).all()
-    
-    # Create binary heatmap data (1 if reviewed that day, 0 otherwise)
-    review_heatmap_data: Dict[str, int] = {}
-    for review_session in completed_sessions:
-        date_key = review_session.session_date.isoformat()
-        review_heatmap_data[date_key] = 1  # Binary: reviewed or not
-    
+    # Review activity heatmap: aggregate distinct review-days SQL-side instead
+    # of hydrating every ReviewSession row into Python (perf H3). Binary 1/0
+    # per day is preserved by collapsing the per-row count to "exists".
+    review_dates_stmt = (
+        select(ReviewSession.session_date)
+        .where(ReviewSession.is_completed == True)  # noqa: E712
+        .distinct()
+        .order_by(ReviewSession.session_date.asc())
+    )
+    completed_dates = list(session.exec(review_dates_stmt).all())
+    review_heatmap_data: Dict[str, int] = {d.isoformat(): 1 for d in completed_dates}
+
     # Current streak — shared utility (same logic used by the nav middleware)
     current_streak = get_current_streak(session)
     longest_streak = 0
 
-    if completed_sessions:
-        # Longest ever streak; deduplicate same-day sessions first
-        all_dates_sorted = sorted({rs.session_date for rs in completed_sessions})
-        if all_dates_sorted:
-            temp_streak = 1
-            longest_streak = 1
-            for i in range(1, len(all_dates_sorted)):
-                days_diff = (all_dates_sorted[i] - all_dates_sorted[i - 1]).days
-                if days_diff == 1:
-                    temp_streak += 1
-                    longest_streak = max(longest_streak, temp_streak)
-                else:
-                    temp_streak = 1
+    if completed_dates:
+        # Longest-ever streak from the already-distinct sorted list.
+        temp_streak = 1
+        longest_streak = 1
+        for i in range(1, len(completed_dates)):
+            days_diff = (completed_dates[i] - completed_dates[i - 1]).days
+            if days_diff == 1:
+                temp_streak += 1
+                longest_streak = max(longest_streak, temp_streak)
+            else:
+                temp_streak = 1
 
     kindle_status = get_kindle_status(session)
 
