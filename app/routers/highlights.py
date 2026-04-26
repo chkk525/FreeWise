@@ -1224,6 +1224,78 @@ async def ui_today(
     )
 
 
+@router.get("/ui/tags/insights", response_class=HTMLResponse)
+async def ui_tags_insights(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Per-tag highlight counts + top tag-pair co-occurrences.
+
+    Two queries:
+      - Tags by usage: COUNT(*) per non-system tag, sorted desc, top 50.
+      - Co-occurrences: self-join on highlight_tag, count distinct
+        highlight_ids that carry both tags. Top 30 pairs.
+
+    Both queries scoped to active (non-discarded) highlights, user_id=1.
+    Defer-loadable but small enough to render inline at current scale.
+    """
+    settings = get_settings(session)
+
+    # Tag usage distribution.
+    tag_counts = session.exec(
+        select(Tag.name, func.count(HighlightTag.highlight_id).label("c"))
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(~Tag.name.in_(["favorite", "discard"]))
+        .group_by(Tag.name)
+        .order_by(func.count(HighlightTag.highlight_id).desc())
+        .limit(50)
+    ).all()
+
+    # Co-occurrence: self-join HighlightTag a, b on a.highlight_id ==
+    # b.highlight_id and a.tag_id < b.tag_id (so each pair counted once).
+    from sqlalchemy.orm import aliased
+    ht_a = aliased(HighlightTag)
+    ht_b = aliased(HighlightTag)
+    tag_a = aliased(Tag)
+    tag_b = aliased(Tag)
+    pairs_stmt = (
+        select(
+            tag_a.name.label("name_a"),
+            tag_b.name.label("name_b"),
+            func.count(func.distinct(ht_a.highlight_id)).label("c"),
+        )
+        .join(ht_b, (ht_b.highlight_id == ht_a.highlight_id) & (ht_b.tag_id > ht_a.tag_id))
+        .join(tag_a, tag_a.id == ht_a.tag_id)
+        .join(tag_b, tag_b.id == ht_b.tag_id)
+        .join(Highlight, Highlight.id == ht_a.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(~tag_a.name.in_(["favorite", "discard"]))
+        .where(~tag_b.name.in_(["favorite", "discard"]))
+        .group_by(tag_a.name, tag_b.name)
+        .having(func.count(func.distinct(ht_a.highlight_id)) >= 2)
+        .order_by(func.count(func.distinct(ht_a.highlight_id)).desc())
+        .limit(30)
+    )
+    pairs = session.exec(pairs_stmt).all()
+
+    return templates.TemplateResponse(
+        request, "tag_insights.html",
+        {
+            "settings": settings,
+            "tag_counts": [
+                {"name": name, "count": int(count)} for name, count in tag_counts
+            ],
+            "pairs": [
+                {"a": a, "b": b, "count": int(c)} for a, b, c in pairs
+            ],
+        },
+    )
+
+
 @router.get("/ui/tag/{name:path}", response_class=HTMLResponse)
 async def ui_tag_detail(
     request: Request,

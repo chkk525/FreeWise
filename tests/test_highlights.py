@@ -1222,3 +1222,83 @@ class TestPermalinkOgMeta:
         # Other pages keep the empty og_meta block — no og:* tags.
         assert "og:type" not in r.text
         assert "twitter:card" not in r.text
+
+
+class TestTagInsightsPage:
+    """GET /highlights/ui/tags/insights — distribution + co-occurrences."""
+
+    def _attach(self, client, hid, name):
+        client.post(f"/highlights/{hid}/tags/add", data={"new_tag": name})
+
+    def test_empty_state(self, client):
+        r = client.get("/highlights/ui/tags/insights")
+        assert r.status_code == 200
+        assert "No tags yet" in r.text
+
+    def test_renders_tag_distribution(self, client, make_highlight):
+        h1 = make_highlight(text="a")
+        h2 = make_highlight(text="b")
+        h3 = make_highlight(text="c")
+        for h in (h1, h2, h3):
+            self._attach(client, h.id, "alpha")
+        for h in (h1, h2):
+            self._attach(client, h.id, "beta")
+        self._attach(client, h1.id, "gamma")
+
+        r = client.get("/highlights/ui/tags/insights")
+        assert r.status_code == 200
+        assert "Most used tags" in r.text
+        assert r.text.index("alpha") < r.text.index("beta") < r.text.index("gamma")
+
+    def test_renders_co_occurrence_pairs(self, client, make_highlight):
+        h1 = make_highlight(text="a")
+        h2 = make_highlight(text="b")
+        for h in (h1, h2):
+            self._attach(client, h.id, "ml")
+            self._attach(client, h.id, "python")
+        # Single-occurrence pair (count=1) is excluded by HAVING >= 2.
+        h3 = make_highlight(text="c")
+        self._attach(client, h3.id, "ml")
+        self._attach(client, h3.id, "rust")
+
+        r = client.get("/highlights/ui/tags/insights")
+        assert r.status_code == 200
+        assert "Frequently paired" in r.text
+        # Find the co-occurrence section and check pair membership only there.
+        co_idx = r.text.index("Frequently paired")
+        co_section = r.text[co_idx:]
+        # ml ↔ python pair appears (count 2 ≥ HAVING threshold)
+        assert ">ml<" in co_section and ">python<" in co_section
+        # ml ↔ rust pair does NOT (count 1, below threshold). The
+        # ml-tag link can still appear (paired with python).
+        # Crude: rust appears at most as a tag mentioned via ml-rust pair
+        # row, which we want to be absent.
+        assert ">rust<" not in co_section
+
+    def test_excludes_system_tags(self, client, db, make_highlight):
+        from app.models import Tag, HighlightTag
+        h1 = make_highlight(text="x")
+        h2 = make_highlight(text="y")
+        # Real tag on both
+        self._attach(client, h1.id, "real")
+        self._attach(client, h2.id, "real")
+        # Manually attach `favorite` (the route refuses reserved names).
+        # One Tag row, two HighlightTag links.
+        fav = Tag(name="favorite")
+        db.add(fav); db.commit(); db.refresh(fav)
+        for hid in (h1.id, h2.id):
+            db.add(HighlightTag(highlight_id=hid, tag_id=fav.id))
+        db.commit()
+        r = client.get("/highlights/ui/tags/insights")
+        assert r.status_code == 200
+        # The "real" tag should appear in the distribution chart.
+        assert 'href="/highlights/ui/tag/real"' in r.text
+        # System tag must NOT show up as a clickable tag chip anywhere.
+        assert 'href="/highlights/ui/tag/favorite"' not in r.text
+
+    def test_link_from_dashboard_tag_cloud(self, client, db, make_highlight):
+        h = make_highlight(text="x")
+        self._attach(client, h.id, "anything")
+        r = client.get("/dashboard/ui")
+        assert r.status_code == 200
+        assert 'href="/highlights/ui/tags/insights"' in r.text
