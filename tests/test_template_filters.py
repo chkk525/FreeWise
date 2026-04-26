@@ -52,6 +52,26 @@ class TestAutolink:
         assert 'href="https://example.com"' in out
         assert "&lt;bad&gt;" in out
 
+    def test_trailing_period_excluded_from_href(self):
+        out = str(autolink("see https://example.com."))
+        # The period belongs to the sentence, not the URL.
+        assert 'href="https://example.com"' in out
+        assert 'href="https://example.com."' not in out
+        # The period still appears in the rendered text.
+        assert "</a>." in out
+
+    def test_trailing_comma_and_question_mark(self):
+        out = str(autolink("https://a.com, https://b.com?"))
+        assert 'href="https://a.com"' in out
+        assert 'href="https://b.com"' in out
+        assert 'href="https://a.com,"' not in out
+        assert 'href="https://b.com?"' not in out
+
+    def test_url_with_paren_not_stripped(self):
+        # Wikipedia-style URLs include parens — do not strip them.
+        out = str(autolink("https://en.wikipedia.org/wiki/Foo_(bar)"))
+        assert 'href="https://en.wikipedia.org/wiki/Foo_(bar)"' in out
+
     def test_multiple_urls_in_one_string(self):
         out = str(autolink("a https://a.com b https://b.com c"))
         assert out.count("<a ") == 2
