@@ -463,21 +463,58 @@ def cmd_health(args: argparse.Namespace) -> int:
 
 
 def cmd_backup(args: argparse.Namespace) -> int:
-    """Download an atomic SQLite snapshot to ``--out`` (default: cwd dated)."""
+    """Download an atomic SQLite snapshot.
+
+    Two modes:
+      single-file:   --out PATH                (default: cwd freewise-YYYY-MM-DD.sqlite)
+      rotating dir:  --to-dir DIR [--retain N] (cron-friendly, prunes oldest)
+    """
+    import glob
     import os
-    from datetime import date as _date
-    out = args.out
-    if not out:
-        out = f"freewise-{_date.today().isoformat()}.sqlite"
-    if os.path.exists(out) and not args.force:
-        print(f"refusing to overwrite existing {out!r} (pass --force)", file=sys.stderr)
-        return 2
+    from datetime import datetime as _datetime, timezone as _tz
+
+    if args.to_dir:
+        if args.out:
+            print("--to-dir and --out are mutually exclusive", file=sys.stderr)
+            return 2
+        os.makedirs(args.to_dir, exist_ok=True)
+        # Sub-second granularity in the timestamp prevents two cron
+        # invocations within the same second from clobbering each other.
+        now_utc = _datetime.now(_tz.utc)
+        stamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
+        out = os.path.join(args.to_dir, f"freewise-{stamp}.sqlite")
+    else:
+        out = args.out or f"freewise-{_datetime.now(_tz.utc).date().isoformat()}.sqlite"
+        if os.path.exists(out) and not args.force:
+            print(f"refusing to overwrite existing {out!r} (pass --force)", file=sys.stderr)
+            return 2
+
     client = _client_from_args(args)
     written = client.backup(out)
+
+    pruned: list[str] = []
+    if args.to_dir and args.retain and args.retain > 0:
+        # List EVERY freewise-*.sqlite in the dir, sort newest-first by
+        # mtime (the file we just wrote will be on top), drop everything
+        # past the retention window. Glob pattern is bounded to our own
+        # filename prefix so we never delete unrelated files.
+        candidates = glob.glob(os.path.join(args.to_dir, "freewise-*.sqlite"))
+        candidates.sort(key=os.path.getmtime, reverse=True)
+        for victim in candidates[args.retain:]:
+            try:
+                os.unlink(victim)
+                pruned.append(victim)
+            except OSError as e:
+                print(f"warn: could not prune {victim}: {e}", file=sys.stderr)
+
     if args.json:
-        _print_json({"path": out, "bytes": written})
+        _print_json({"path": out, "bytes": written, "pruned": pruned})
         return 0
     print(f"wrote {written:,} bytes → {out}")
+    if pruned:
+        print(f"pruned {len(pruned)} old snapshot(s):")
+        for p in pruned:
+            print(f"  rm {p}")
     return 0
 
 
@@ -870,8 +907,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # backup
     bk = sub.add_parser("backup", help="Download an atomic SQLite snapshot of the database.")
-    bk.add_argument("--out", help="Output path (default: ./freewise-YYYY-MM-DD.sqlite).")
+    bk.add_argument("--out", help="Single-file mode output path (default: ./freewise-YYYY-MM-DD.sqlite).")
     bk.add_argument("--force", action="store_true", help="Overwrite an existing file at --out.")
+    bk.add_argument("--to-dir", help="Rotating mode: write timestamped snapshot in DIR. Mutually exclusive with --out.")
+    bk.add_argument("--retain", type=int, default=0, help="Keep only N most-recent snapshots in --to-dir (0 = no pruning).")
     bk.set_defaults(func=cmd_backup)
 
     # import

@@ -374,3 +374,71 @@ def test_add_creates_highlight(http_client, auth_token, capsys):
     with Session(_test_engine) as s:
         rows = s.exec(__import__("sqlmodel").select(Highlight)).all()
         assert any(h.text == "captured from CLI" for h in rows)
+
+
+# ── backup --to-dir / --retain rotation (U90) ──────────────────────────────
+
+
+def test_backup_to_dir_writes_timestamped_file(tmp_path, http_client, auth_token, capsys):
+    _add_highlight("snapshot me")
+    rc, out, _ = _run(
+        ["backup", "--to-dir", str(tmp_path)], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    files = list(tmp_path.glob("freewise-*.sqlite"))
+    assert len(files) == 1
+    assert files[0].name.startswith("freewise-")
+    assert files[0].name.endswith(".sqlite")
+    # Real SQLite blob.
+    assert files[0].read_bytes()[:16] == b"SQLite format 3\x00"
+
+
+def test_backup_retain_prunes_oldest(tmp_path, http_client, auth_token, capsys):
+    _add_highlight("snapshot me")
+    # Pre-seed three older snapshots so the rotation has something to prune.
+    import os
+    import time
+    older = []
+    for i in range(3):
+        p = tmp_path / f"freewise-OLD{i}.sqlite"
+        p.write_bytes(b"SQLite format 3\x00stub")
+        # Stagger mtimes so the prune picks the oldest, not arbitrary order.
+        os.utime(p, (time.time() - (10 - i), time.time() - (10 - i)))
+        older.append(p)
+
+    rc, _, _ = _run(
+        ["backup", "--to-dir", str(tmp_path), "--retain", "2"],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    # 2 should remain: the new write + the most-recent of the old ones.
+    remaining = sorted(tmp_path.glob("freewise-*.sqlite"))
+    assert len(remaining) == 2
+
+
+def test_backup_to_dir_and_out_mutually_exclusive(tmp_path, http_client, auth_token, capsys):
+    rc, _, err = _run(
+        ["backup", "--to-dir", str(tmp_path), "--out", str(tmp_path / "x.sqlite")],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 2
+    assert "mutually exclusive" in err
+
+
+def test_backup_json_includes_pruned_list(tmp_path, http_client, auth_token, capsys):
+    _add_highlight("hi")
+    # Two older files so retain=1 prunes one of them.
+    import os, time
+    for i in range(2):
+        p = tmp_path / f"freewise-OLD{i}.sqlite"
+        p.write_bytes(b"x")
+        os.utime(p, (time.time() - (10 - i), time.time() - (10 - i)))
+    rc, out, _ = _run(
+        ["--json", "backup", "--to-dir", str(tmp_path), "--retain", "1"],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    body = json.loads(out)
+    assert "path" in body and body["bytes"] > 0
+    assert isinstance(body["pruned"], list)
+    assert len(body["pruned"]) == 2  # both OLD files dropped
