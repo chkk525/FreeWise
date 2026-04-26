@@ -707,6 +707,41 @@ async def ui_discarded(
     )
 
 
+@router.get("/ui/mastered", response_class=HTMLResponse)
+async def ui_mastered(
+    request: Request,
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
+):
+    """Render HTML page with paginated mastered highlights.
+
+    Mirrors /favorites and /discarded. Mastered = excluded from review
+    queue but still surfaced in library/search/exports — this page is
+    the explicit "what have I marked as mastered?" inventory.
+    """
+    settings = get_settings(session)
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, Highlight.is_mastered == True,  # noqa: E712
+            page=page, page_size=page_size,
+        )
+    )
+    return templates.TemplateResponse(
+        request, "mastered.html",
+        {
+            "highlights": rows,
+            "settings": settings,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
+
+
 @router.get("/{id}/view", response_class=HTMLResponse)
 async def view_highlight_partial(
     request: Request,

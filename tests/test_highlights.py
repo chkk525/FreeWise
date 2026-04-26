@@ -258,6 +258,32 @@ class TestDiscardedPage:
         assert "Active" not in resp.text
 
 
+class TestMasteredPage:
+    """GET /highlights/ui/mastered — mastered listing."""
+
+    def test_mastered_page_renders(self, client):
+        resp = client.get("/highlights/ui/mastered")
+        assert resp.status_code == 200
+        # Empty-state copy.
+        assert "No mastered highlights" in resp.text or "0" in resp.text
+
+    def test_mastered_page_filters(self, client, make_highlight):
+        make_highlight(text="MasterMe", is_mastered=True)
+        make_highlight(text="StillReviewing", is_mastered=False)
+        resp = client.get("/highlights/ui/mastered")
+        assert resp.status_code == 200
+        assert "MasterMe" in resp.text
+        assert "StillReviewing" not in resp.text
+
+    def test_mastered_page_paginates(self, client, make_highlight):
+        for i in range(45):
+            make_highlight(text=f"M{i}", is_mastered=True)
+        resp = client.get("/highlights/ui/mastered", params={"page_size": "10"})
+        assert resp.status_code == 200
+        # Pagination footer should mention 45 total.
+        assert "45" in resp.text
+
+
 class TestMastery:
     """POST /highlights/{id}/master — toggle is_mastered flag."""
 

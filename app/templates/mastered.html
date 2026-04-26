@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Mastered — FreeWise{% endblock %}
+
+{% block heading %}Mastered Highlights{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="text-center mb-6">
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+            Highlights you've marked mastered are excluded from the spaced-repetition review queue but remain visible in library, search, and exports.
+        </p>
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+            <span class="font-semibold">{{ total if total is defined else highlights|length }}</span>
+            mastered highlight{{ 's' if (total if total is defined else highlights|length) != 1 else '' }}
+        </p>
+    </div>
+
+    {% if highlights %}
+        {% set enable_bulk_select = True %}
+        <div class="space-y-4">
+            {% for highlight in highlights %}
+                {% include "_highlight_row.html" %}
+            {% endfor %}
+        </div>
+        {% with pagination_label='mastered highlights' %}{% include "_pagination_footer.html" %}{% endwith %}
+        {% include "_bulk_action_bar.html" %}
+    {% else %}
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+            <i data-lucide="graduation-cap" class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"></i>
+            <p class="text-gray-700 dark:text-gray-200 font-medium mb-2">No mastered highlights yet</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Click the graduation-cap icon on any highlight to mark it mastered. Mastered rows stop appearing in your daily review.
+            </p>
+            <a href="/highlights/ui/review" class="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:underline">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                <span>Go to review</span>
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
