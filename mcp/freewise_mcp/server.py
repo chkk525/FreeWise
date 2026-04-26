@@ -130,6 +130,17 @@ def freewise_discard(highlight_id: int, on: bool = True) -> str:
 
 
 @mcp.tool()
+def freewise_master(highlight_id: int, on: bool = True) -> str:
+    """Mark/unmark a highlight as mastered.
+
+    Mastered highlights are excluded from the spaced-repetition review
+    queue but remain visible in library, search, and exports. Pass
+    ``on=False`` to bring a row back into review.
+    """
+    return _call("master failed", lambda: _client().patch_highlight(highlight_id, is_mastered=on))
+
+
+@mcp.tool()
 def freewise_tag_list(highlight_id: int) -> str:
     """List the tags currently attached to a highlight."""
     return _call("tag_list failed", lambda: _client().list_tags(highlight_id))

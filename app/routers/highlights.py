@@ -1094,7 +1094,10 @@ async def toggle_master_html(
 # ── Bulk operations ─────────────────────────────────────────────────────────
 
 
-_ALLOWED_BULK_ACTIONS = {"favorite", "unfavorite", "discard", "restore", "tag", "untag"}
+_ALLOWED_BULK_ACTIONS = {
+    "favorite", "unfavorite", "discard", "restore",
+    "master", "unmaster", "tag", "untag",
+}
 
 
 def _parse_bulk_ids(raw: str) -> list[int]:
@@ -1180,6 +1183,16 @@ async def bulk_action(
         for h in highlights:
             if h.is_discarded:
                 h.is_discarded = False; session.add(h); changed += 1
+    elif action == "master":
+        for h in highlights:
+            if h.is_discarded:
+                skipped += 1; continue
+            if not h.is_mastered:
+                h.is_mastered = True; session.add(h); changed += 1
+    elif action == "unmaster":
+        for h in highlights:
+            if h.is_mastered:
+                h.is_mastered = False; session.add(h); changed += 1
     elif action == "tag":
         name = _normalize_tag_name(tag)
         if not name or name in ("favorite", "discard"):

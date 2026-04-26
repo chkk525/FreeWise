@@ -180,6 +180,26 @@ def test_patch_discard_auto_unfavorites(client, db, make_highlight):
     assert body["is_favorited"] is False
 
 
+def test_patch_toggles_mastered(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    r = client.patch(
+        f"/api/v2/highlights/{h.id}", headers=headers, json={"is_mastered": True},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["is_mastered"] is True
+
+
+def test_patch_rejects_mastering_discarded(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x", is_discarded=True)
+    r = client.patch(
+        f"/api/v2/highlights/{h.id}", headers=headers, json={"is_mastered": True},
+    )
+    assert r.status_code == 400
+
+
 def test_patch_rejects_favoriting_discarded(client, db, make_highlight):
     headers = _auth_headers(db)
     h = make_highlight(text="x", is_discarded=True)
@@ -317,13 +337,15 @@ def test_stats_returns_counts(client, db, make_highlight, make_book):
     make_highlight(text="a", book=book)
     make_highlight(text="b", book=book, is_favorited=True)
     make_highlight(text="c", book=book, is_discarded=True)
+    make_highlight(text="d", book=book, is_mastered=True)
     resp = client.get("/api/v2/stats", headers=headers)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["highlights_total"] == 3
-    assert body["highlights_active"] == 2
+    assert body["highlights_total"] == 4
+    assert body["highlights_active"] == 3      # excludes discarded only
     assert body["highlights_discarded"] == 1
     assert body["highlights_favorited"] == 1
+    assert body["highlights_mastered"] == 1
     assert body["books_total"] == 1
-    # Two active highlights with NULL next_review are due.
+    # Active + not mastered = 2 (a, b). c is discarded, d is mastered.
     assert body["review_due_today"] == 2

@@ -29,6 +29,7 @@ BOOKS = server.freewise_books
 SET_NOTE = server.freewise_set_note
 FAVORITE = server.freewise_favorite
 DISCARD = server.freewise_discard
+MASTER = server.freewise_master
 ADD = server.freewise_add
 TAG_LIST = server.freewise_tag_list
 TAG_ADD = server.freewise_tag_add
@@ -161,6 +162,14 @@ def test_discard_auto_unfavorites(patched_client):
     assert out["is_favorited"] is False
 
 
+def test_master_then_unmaster(patched_client):
+    hid = _add("x")
+    on = json.loads(MASTER(hid, on=True))
+    assert on["is_mastered"] is True
+    off = json.loads(MASTER(hid, on=False))
+    assert off["is_mastered"] is False
+
+
 def test_add_creates_highlight(patched_client):
     out = json.loads(ADD(text="captured", book="From MCP", author="Me", note="ctx"))
     assert out["created"] == 1
@@ -206,14 +215,15 @@ def test_search_with_tag_filter(patched_client):
 
 
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 12 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 13 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
     expected = {
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_stats", "freewise_books", "freewise_set_note",
-        "freewise_favorite", "freewise_discard", "freewise_add",
+        "freewise_favorite", "freewise_discard", "freewise_master",
+        "freewise_add",
         "freewise_tag_list", "freewise_tag_add", "freewise_tag_remove",
     }
     assert names == expected

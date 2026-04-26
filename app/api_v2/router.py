@@ -398,6 +398,7 @@ def _highlight_to_detail(
         book_id=h.book_id,
         is_favorited=h.is_favorited,
         is_discarded=h.is_discarded,
+        is_mastered=getattr(h, "is_mastered", False),
         tags=tags or [],
     )
 
@@ -521,6 +522,16 @@ def update_highlight(
         # Discarding auto-unfavorites — mirrors discard endpoint behavior.
         if h.is_discarded and h.is_favorited:
             h.is_favorited = False
+    if payload.is_mastered is not None:
+        # Mirror the HTML toggle endpoint: mastering a discarded row is
+        # nonsense, but un-mastering one is allowed (lets clients fix
+        # bad legacy state).
+        if payload.is_mastered and h.is_discarded:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot master a discarded highlight.",
+            )
+        h.is_mastered = payload.is_mastered
     session.add(h)
     session.commit()
     session.refresh(h)
@@ -643,6 +654,9 @@ def get_stats(
     favorited = session.exec(
         base.where(Highlight.is_favorited == True)  # noqa: E712
     ).one()
+    mastered = session.exec(
+        base.where(Highlight.is_mastered == True)  # noqa: E712
+    ).one()
     books_total = session.exec(
         select(func.count(func.distinct(Highlight.book_id)))
         .where(Highlight.user_id == token.user_id)
@@ -651,6 +665,8 @@ def get_stats(
     now = datetime.now(UTC).replace(tzinfo=None)
     review_due = session.exec(
         base.where(Highlight.is_discarded == False)  # noqa: E712
+        # Mirror the review queue's filter: mastered rows aren't due.
+        .where(Highlight.is_mastered == False)  # noqa: E712
         .where(
             (Highlight.next_review.is_(None)) | (Highlight.next_review <= now)
         )
@@ -660,6 +676,7 @@ def get_stats(
         highlights_active=active,
         highlights_discarded=discarded,
         highlights_favorited=favorited,
+        highlights_mastered=mastered,
         books_total=books_total,
         review_due_today=review_due,
     )

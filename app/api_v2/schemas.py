@@ -93,6 +93,7 @@ class HighlightDetail(BaseModel):
     book_id: Optional[int] = None
     is_favorited: bool = False
     is_discarded: bool = False
+    is_mastered: bool = False
     tags: List[str] = Field(default_factory=list)
 
 
@@ -114,6 +115,7 @@ class HighlightUpdatePayload(BaseModel):
     note: Optional[str] = None
     is_favorited: Optional[bool] = None
     is_discarded: Optional[bool] = None
+    is_mastered: Optional[bool] = None
 
 
 class StatsResponse(BaseModel):
@@ -123,5 +125,6 @@ class StatsResponse(BaseModel):
     highlights_active: int
     highlights_discarded: int
     highlights_favorited: int
+    highlights_mastered: int
     books_total: int
     review_due_today: int

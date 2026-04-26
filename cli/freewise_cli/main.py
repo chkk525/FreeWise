@@ -72,6 +72,7 @@ def _print_highlight_full(h: dict) -> None:
     flags = []
     if h.get("is_favorited"): flags.append("favorited")
     if h.get("is_discarded"): flags.append("discarded")
+    if h.get("is_mastered"): flags.append("mastered")
     if flags:
         print(f"  flags: {', '.join(flags)}")
     print()
@@ -88,6 +89,8 @@ def _print_stats(s: dict) -> None:
     print(f"  active:             {s['highlights_active']}")
     print(f"  discarded:          {s['highlights_discarded']}")
     print(f"  favorited:          {s['highlights_favorited']}")
+    if "highlights_mastered" in s:
+        print(f"  mastered:           {s['highlights_mastered']}")
     print(f"books:                {s['books_total']}")
     print(f"due for review today: {s['review_due_today']}")
 
@@ -247,6 +250,26 @@ def cmd_restore(args: argparse.Namespace) -> int:
         _print_json(h)
         return 0
     print(f"#{h['id']} restored")
+    return 0
+
+
+def cmd_master(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    h = client.patch_highlight(args.highlight_id, is_mastered=True)
+    if args.json:
+        _print_json(h)
+        return 0
+    print(f"#{h['id']} mastered (excluded from review)")
+    return 0
+
+
+def cmd_unmaster(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    h = client.patch_highlight(args.highlight_id, is_mastered=False)
+    if args.json:
+        _print_json(h)
+        return 0
+    print(f"#{h['id']} unmastered (back in review queue)")
     return 0
 
 
@@ -415,6 +438,14 @@ def _build_parser() -> argparse.ArgumentParser:
     rest = sub.add_parser("restore", help="Restore a discarded highlight to active.")
     rest.add_argument("highlight_id", type=int)
     rest.set_defaults(func=cmd_restore)
+
+    mas = sub.add_parser("master", help="Mark mastered (excluded from review queue).")
+    mas.add_argument("highlight_id", type=int)
+    mas.set_defaults(func=cmd_master)
+
+    unmas = sub.add_parser("unmaster", help="Clear the mastered flag.")
+    unmas.add_argument("highlight_id", type=int)
+    unmas.set_defaults(func=cmd_unmaster)
 
     # export
     ex = sub.add_parser("export", help="Download CSV / Markdown / atomic-notes export.")

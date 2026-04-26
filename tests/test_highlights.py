@@ -408,6 +408,26 @@ class TestBulkOperations:
         resp = client.post("/highlights/bulk", data={"action": "favorite", "ids": ""})
         assert resp.status_code in (400, 422)
 
+    def test_bulk_master(self, client, make_highlight, db):
+        h1 = make_highlight(text="a")
+        h2 = make_highlight(text="b")
+        h3 = make_highlight(text="c", is_discarded=True)
+        resp = client.post(
+            "/highlights/bulk",
+            data={"action": "master", "ids": f"{h1.id},{h2.id},{h3.id}"},
+        )
+        assert resp.status_code == 200
+        # h3 was discarded → skipped
+        assert "skipped" in resp.text
+        for h in (h1, h2):
+            db.refresh(h); assert h.is_mastered is True
+        db.refresh(h3); assert h3.is_mastered is False
+
+    def test_bulk_unmaster(self, client, make_highlight, db):
+        h = make_highlight(text="x", is_mastered=True)
+        client.post("/highlights/bulk", data={"action": "unmaster", "ids": str(h.id)})
+        db.refresh(h); assert h.is_mastered is False
+
     def test_bulk_garbage_ids_filtered(self, client, make_highlight, db):
         """Stale page state could send 'abc' alongside real ids; skip the trash."""
         h = make_highlight(text="x")

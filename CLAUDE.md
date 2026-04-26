@@ -85,7 +85,7 @@ Beyond the upstream HTML/HTMX UI:
 | GET   | `/api/v2/highlights/`        | Paginated list |
 | GET   | `/api/v2/highlights/search`  | LIKE search (text+note) — fork extension |
 | GET   | `/api/v2/highlights/{id}`    | Single detail (incl. tags) — fork extension |
-| PATCH | `/api/v2/highlights/{id}`    | Note/favorite/discard — fork extension |
+| PATCH | `/api/v2/highlights/{id}`    | Note/favorite/discard/mastered — fork extension |
 | GET   | `/api/v2/highlights/{id}/tags`        | List highlight tags — fork extension |
 | POST  | `/api/v2/highlights/{id}/tags`        | Add tag (idempotent) — fork extension |
 | DELETE| `/api/v2/highlights/{id}/tags/{name}` | Remove tag (idempotent) — fork extension |

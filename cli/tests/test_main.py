@@ -109,6 +109,18 @@ def test_favorite_then_unfavorite(http_client, auth_token, capsys):
         assert s.get(Highlight, hid).is_favorited is False
 
 
+def test_master_and_unmaster(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    rc, out, _ = _run(["master", str(hid)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "mastered" in out.lower()
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_mastered is True
+    _run(["unmaster", str(hid)], http_client, auth_token, capsys)
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_mastered is False
+
+
 def test_discard_and_restore(http_client, auth_token, capsys):
     hid = _add_highlight("x")
     _run(["discard", str(hid)], http_client, auth_token, capsys)
