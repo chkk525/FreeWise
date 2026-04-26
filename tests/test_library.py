@@ -68,6 +68,57 @@ class TestLibraryPage:
 # ── Author filter ─────────────────────────────────────────────────────────────
 
 
+class TestLibraryBookSearch:
+    """GET /library/ui?q=text — text search across title + author."""
+
+    def test_search_matches_title(self, client, make_book):
+        make_book(title="Antifragile")
+        make_book(title="Black Swan")
+        resp = client.get("/library/ui", params={"q": "Antifragile"})
+        assert resp.status_code == 200
+        assert "Antifragile" in resp.text
+        assert "Black Swan" not in resp.text
+
+    def test_search_matches_author(self, client, make_book):
+        make_book(title="X1", author="Nassim Taleb")
+        make_book(title="Y1", author="Daniel Kahneman")
+        resp = client.get("/library/ui", params={"q": "Taleb"})
+        assert resp.status_code == 200
+        assert "X1" in resp.text
+        assert "Y1" not in resp.text
+
+    def test_search_case_insensitive(self, client, make_book):
+        make_book(title="UpperCase Book")
+        resp = client.get("/library/ui", params={"q": "uppercase"})
+        # SQLite LIKE is case-insensitive for ASCII by default; matches.
+        assert "UpperCase Book" in resp.text
+
+    def test_search_escapes_wildcards(self, client, make_book):
+        """A ``%`` query should match a literal percent, not every row."""
+        make_book(title="50% off literal")
+        make_book(title="completely unrelated content")
+        resp = client.get("/library/ui", params={"q": "%"})
+        assert "50% off literal" in resp.text
+        assert "completely unrelated" not in resp.text
+
+    def test_search_combines_with_author_filter(self, client, make_book):
+        """Both author= and q= should narrow together."""
+        make_book(title="A1", author="Alice")
+        make_book(title="B1", author="Alice")
+        make_book(title="A2", author="Bob")
+        resp = client.get(
+            "/library/ui", params={"author": "Alice", "q": "A1"},
+        )
+        assert "A1" in resp.text
+        assert "B1" not in resp.text
+        assert "A2" not in resp.text
+
+    def test_search_banner_renders(self, client, make_book):
+        make_book(title="Book One")
+        resp = client.get("/library/ui", params={"q": "Book"})
+        assert "Filtering by query" in resp.text
+
+
 class TestLibraryAuthorFilter:
     """GET /library/ui?author=X — filter books by author."""
 

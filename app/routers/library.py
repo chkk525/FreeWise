@@ -34,6 +34,7 @@ async def ui_library(
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
     author: Optional[str] = None,
+    q: Optional[str] = None,
     session: Session = Depends(get_session)
 ):
     """Render library page with sortable + paginated table of books.
@@ -80,6 +81,18 @@ async def ui_library(
     if author_filter:
         books_query = books_query.where(Book.author == author_filter)
 
+    # Optional text search — case-insensitive substring on title OR
+    # author. LIKE wildcards in the user's query are escaped so a "%"
+    # query matches a literal percent rather than every row.
+    q_clean = (q or "").strip()
+    if q_clean:
+        needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        books_query = books_query.where(
+            Book.title.like(pattern, escape="\\")
+            | Book.author.like(pattern, escape="\\")
+        )
+
     sort_col = {
         "title": Book.title,
         "author": Book.author,
@@ -91,6 +104,14 @@ async def ui_library(
     total_query = select(func.count()).select_from(Book)
     if author_filter:
         total_query = total_query.where(Book.author == author_filter)
+    if q_clean:
+        # Mirror the same LIKE filter so pagination math stays right.
+        needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        total_query = total_query.where(
+            Book.title.like(pattern, escape="\\")
+            | Book.author.like(pattern, escape="\\")
+        )
     total = session.exec(total_query).one()
     if isinstance(total, tuple):
         total = total[0]
@@ -131,6 +152,7 @@ async def ui_library(
             "showing_first": showing_first,
             "showing_last": showing_last,
             "author_filter": author_filter or None,
+            "q_filter": q_clean or None,
         },
     )
 

@@ -5,9 +5,35 @@
 {% block heading %}Library{% endblock %}
 
 {% block content %}
-<p class="text-gray-600 dark:text-gray-400 mb-2">
+<p class="text-gray-600 dark:text-gray-400 mb-3">
     Browse your collection of {{ total if total is defined else books|length }} book{{ 's' if (total if total is defined else books|length) != 1 else '' }}.
 </p>
+
+<form method="get" action="/library/ui" class="mb-4">
+    <label class="relative block max-w-md">
+        <span class="sr-only">Search books</span>
+        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+        <input type="search" name="q"
+               value="{{ q_filter or '' }}"
+               placeholder="Search book title or author…"
+               class="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+        {% if author_filter %}
+        {# Preserve the active author filter when narrowing further. #}
+        <input type="hidden" name="author" value="{{ author_filter }}">
+        {% endif %}
+    </label>
+</form>
+
+{% if q_filter %}
+<div class="mb-4 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-full text-sm text-blue-800 dark:text-blue-200">
+    <i data-lucide="search" class="w-4 h-4"></i>
+    <span>Filtering by query: <strong>{{ q_filter }}</strong></span>
+    <a href="/library/ui{% if author_filter %}?author={{ author_filter|urlencode }}{% endif %}"
+       class="ml-2 text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-100" title="Clear search">
+        <i data-lucide="x" class="w-4 h-4"></i>
+    </a>
+</div>
+{% endif %}
 
 {% if author_filter %}
 <div class="mb-4 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-full text-sm text-blue-800 dark:text-blue-200">
