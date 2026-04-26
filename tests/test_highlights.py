@@ -461,6 +461,52 @@ class TestDuplicatesPage:
         assert "drop" in resp.text
 
 
+class TestSemanticDuplicatesPage:
+    """GET /highlights/ui/duplicates/semantic — embedding-based pair view."""
+
+    def test_empty_library_shows_inbox_state(self, client):
+        resp = client.get("/highlights/ui/duplicates/semantic")
+        assert resp.status_code == 200
+        assert "No highlights to compare yet" in resp.text
+
+    def test_low_coverage_prompts_backfill(self, client, make_highlight):
+        # 3 highlights, 0 embeddings → coverage 0% → backfill prompt
+        for i in range(3):
+            make_highlight(text=f"highlight {i}")
+        resp = client.get("/highlights/ui/duplicates/semantic")
+        assert resp.status_code == 200
+        assert "Embeddings not yet backfilled" in resp.text
+        assert "freewise embed backfill" in resp.text
+        # Did not run the matmul: pairs banner not rendered
+        assert "near-duplicate pair" not in resp.text
+        assert 'id="semdup-list"' not in resp.text
+
+    def test_renders_pairs_when_embedded(self, client, db, make_highlight):
+        from app.models import Embedding
+        from app.services.embeddings import pack_vector
+        a = make_highlight(text="cats sleep a lot of the day")
+        b = make_highlight(text="kitties sleep most of the daytime")
+        c = make_highlight(text="completely unrelated about ships")
+        db.add(Embedding(highlight_id=a.id, model_name="nomic-embed-text",
+                         dim=2, vector=pack_vector([1.0, 0.0])))
+        db.add(Embedding(highlight_id=b.id, model_name="nomic-embed-text",
+                         dim=2, vector=pack_vector([0.99, 0.01])))
+        db.add(Embedding(highlight_id=c.id, model_name="nomic-embed-text",
+                         dim=2, vector=pack_vector([-1.0, 0.0])))
+        db.commit()
+        resp = client.get(
+            "/highlights/ui/duplicates/semantic",
+            params={"threshold": 0.9},
+        )
+        assert resp.status_code == 200
+        # Pair markup rendered
+        assert 'id="semdup-list"' in resp.text
+        assert "near-duplicate pair" in resp.text
+        assert f"#{a.id} ↔ #{b.id}" in resp.text or f"#{b.id} ↔ #{a.id}" in resp.text
+        # Far-away vector should not be matched against either
+        assert "completely unrelated" not in resp.text
+
+
 class TestTodayHighlightHTML:
     """GET /highlights/ui/today — dashboard daily-pick partial."""
 

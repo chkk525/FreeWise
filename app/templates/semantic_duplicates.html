@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Semantic Duplicates — FreeWise{% endblock %}
+
+{% block heading %}Semantic Near-Duplicates{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+        Pairs ranked by cosine similarity of their embeddings. Catches
+        paraphrases and re-worded repeats across books that the
+        <a href="/highlights/ui/duplicates" class="underline hover:text-primary-600 dark:hover:text-primary-400">prefix-based duplicates page</a>
+        can't see.
+    </p>
+    <p class="text-xs text-gray-500 dark:text-gray-400 mb-6">
+        Coverage: {{ embedded_count }} / {{ candidate_count }}
+        ({{ "%.0f"|format(coverage * 100) }}%) embedded · model
+        <code>{{ model_name }}</code> · threshold ≥ {{ "%.2f"|format(threshold) }}.
+    </p>
+
+    {% if candidate_count == 0 %}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+        <i data-lucide="inbox" class="w-10 h-10 mx-auto mb-3 text-gray-400"></i>
+        <p class="text-gray-700 dark:text-gray-200 font-medium">No highlights to compare yet.</p>
+    </div>
+    {% elif coverage < 0.10 %}
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl p-6">
+        <div class="flex items-start gap-3">
+            <i data-lucide="alert-triangle" class="w-6 h-6 mt-0.5 text-amber-600 dark:text-amber-400 shrink-0"></i>
+            <div>
+                <p class="font-medium text-amber-900 dark:text-amber-100">Embeddings not yet backfilled.</p>
+                <p class="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                    Only {{ embedded_count }} of {{ candidate_count }} highlights have a
+                    <code>{{ model_name }}</code> embedding. Run
+                    <code class="bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded">freewise embed backfill</code>
+                    or POST <code>/api/v3/embeddings/backfill</code> to populate, then reload.
+                </p>
+            </div>
+        </div>
+    </div>
+    {% elif not pairs %}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+        <i data-lucide="check-circle-2" class="w-10 h-10 mx-auto mb-3 text-emerald-500"></i>
+        <p class="text-gray-700 dark:text-gray-200 font-medium">No near-duplicates above {{ "%.2f"|format(threshold) }}.</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Try a lower threshold (<code>?threshold=0.85</code>) for fuzzier matches.
+        </p>
+    </div>
+    {% else %}
+    <p class="text-sm text-amber-700 dark:text-amber-300 mb-4">
+        <i data-lucide="alert-triangle" class="w-4 h-4 inline-block mr-1"></i>
+        <strong>{{ pairs|length }} near-duplicate pair{{ 's' if pairs|length != 1 else '' }}</strong>
+        — review and discard the redundant side of each.
+    </p>
+    <div class="space-y-4" id="semdup-list">
+        {% for p in pairs %}
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm" data-pair-row>
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-xs font-mono text-gray-500 dark:text-gray-400">
+                    similarity {{ "%.3f"|format(p.similarity) }}
+                </span>
+                <span class="text-xs text-gray-400 dark:text-gray-500">#{{ p.a_id }} ↔ #{{ p.b_id }}</span>
+            </div>
+            <div class="grid md:grid-cols-2 gap-3">
+                {% for side, hl_id, hl_text in [('a', p.a_id, p.a_text), ('b', p.b_id, p.b_text)] %}
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3" data-side="{{ side }}">
+                    <p class="font-serif text-sm text-gray-900 dark:text-gray-100 line-clamp-4 mb-3">{{ hl_text }}</p>
+                    <div class="flex items-center justify-between">
+                        <a href="/highlights/ui/h/{{ hl_id }}"
+                           class="text-xs font-mono text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                            #{{ hl_id }} →
+                        </a>
+                        <button type="button"
+                                onclick="discardSemDup(this, {{ hl_id }})"
+                                class="inline-flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white text-xs px-2.5 py-1 rounded">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                            Discard #{{ hl_id }}
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function discardSemDup(btn, id) {
+    if (!confirm(`Discard highlight #${id}? This removes it from review and keeps the other side.`)) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Discarding…';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    try {
+        const r = await fetch(`/highlights/${id}/discard`, { method: 'POST' });
+        if (r.ok) {
+            if (window.showToast) window.showToast(`Discarded #${id}`, 'success');
+            const row = btn.closest('[data-pair-row]');
+            if (row) {
+                row.style.opacity = '0.4';
+                row.style.pointerEvents = 'none';
+            }
+            btn.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i> Done';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } else {
+            if (window.showToast) window.showToast('Discard failed', 'error');
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="trash-2" class="w-3 h-3"></i> Retry #${id}`;
+        }
+    } catch (err) {
+        if (window.showToast) window.showToast('Network error', 'error');
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

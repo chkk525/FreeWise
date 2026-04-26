@@ -9,7 +9,9 @@
     <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
         Highlights grouped by their first {{ prefix_chars }} characters.
         Useful after re-importing the same Kindle book — the duplicates
-        end up with different ids but identical text.
+        end up with different ids but identical text. For paraphrases
+        and re-worded repeats, see
+        <a href="/highlights/ui/duplicates/semantic" class="underline hover:text-primary-600 dark:hover:text-primary-400">semantic near-duplicates</a>.
     </p>
 
     {% if total_redundant > 0 %}

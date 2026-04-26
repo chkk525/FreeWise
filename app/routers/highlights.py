@@ -12,7 +12,7 @@ from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from app.db import get_session, get_settings
-from app.models import Highlight, HighlightTag, ReviewSession, Tag
+from app.models import Embedding, Highlight, HighlightTag, ReviewSession, Tag
 
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
@@ -976,6 +976,62 @@ async def ui_duplicates(
             "min_group_size": min_group_size,
             "limit": limit,
             "total_redundant": total_redundant,
+        },
+    )
+
+
+@router.get("/ui/duplicates/semantic", response_class=HTMLResponse)
+async def ui_duplicates_semantic(
+    request: Request,
+    threshold: float = 0.92,
+    limit: int = 100,
+    session: Session = Depends(get_session),
+):
+    """Render semantic-near-duplicate pairs with per-highlight discard.
+
+    Wraps ``app.services.embeddings.find_semantic_duplicates`` for the UI.
+    Catches paraphrases / re-worded repeats that the prefix-based
+    /ui/duplicates page misses. Requires embeddings to be backfilled —
+    surfaces a backfill prompt when coverage is below 10%.
+    """
+    from app.services.embeddings import _env_model, find_semantic_duplicates
+
+    settings = get_settings(session)
+    threshold = max(0.5, min(1.0, float(threshold)))
+    limit = max(1, min(500, int(limit)))
+
+    model_name = _env_model()
+    candidate_count = session.exec(
+        select(func.count(Highlight.id))
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one()
+    embedded_count = session.exec(
+        select(func.count(func.distinct(Embedding.highlight_id)))
+        .join(Highlight, Highlight.id == Embedding.highlight_id)
+        .where(Embedding.model_name == model_name)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one()
+
+    coverage = (embedded_count / candidate_count) if candidate_count else 0.0
+    pairs: list[dict] = []
+    if candidate_count and coverage >= 0.10:
+        pairs = find_semantic_duplicates(
+            session, threshold=threshold, limit=limit, user_id=1,
+        )
+
+    return templates.TemplateResponse(
+        request, "semantic_duplicates.html",
+        {
+            "settings": settings,
+            "pairs": pairs,
+            "threshold": threshold,
+            "limit": limit,
+            "model_name": model_name,
+            "candidate_count": candidate_count,
+            "embedded_count": embedded_count,
+            "coverage": coverage,
         },
     )
 
