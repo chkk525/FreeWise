@@ -67,6 +67,22 @@
                                class="w-full pl-8 pr-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500">
                     </label>
                 </form>
+                <!-- Theme toggle: cycles light → dark → auto. -->
+                {% set _t = (settings.theme if settings and settings.theme else 'light') %}
+                <button type="button"
+                        hx-post="/settings/theme/toggle"
+                        hx-swap="none"
+                        title="Theme: {{ _t }} (click to cycle)"
+                        aria-label="Toggle theme (current: {{ _t }})"
+                        class="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    {% if _t == 'dark' %}
+                    <i data-lucide="moon" class="w-5 h-5"></i>
+                    {% elif _t == 'auto' %}
+                    <i data-lucide="monitor" class="w-5 h-5"></i>
+                    {% else %}
+                    <i data-lucide="sun" class="w-5 h-5"></i>
+                    {% endif %}
+                </button>
                 <!-- Streak indicator: always pinned to the far right -->
                 <div class="flex items-center gap-1.5 flex-shrink-0">
                     {% set streak = request.state.streak | default(0) %}
@@ -151,6 +167,7 @@
                     </dl>
                     <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Anywhere</h3>
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">/</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Focus search box</dd>
                         <dt><kbd class="kbd">?</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Toggle this help</dd>
                         <dt><kbd class="kbd">Esc</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Close help / dismiss</dd>
                     </dl>

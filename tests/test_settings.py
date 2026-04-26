@@ -21,6 +21,21 @@ class TestSettingsPage:
         assert resp.status_code == 200
         # The page should display "2" somewhere for the highlight count
 
+    def test_theme_toggle_cycles_light_dark_auto(self, client, db):
+        """POST /settings/theme/toggle advances light → dark → auto → light."""
+        # Sanity: starting theme is 'light' from defaults.
+        from app.models import Settings
+        s = db.exec(select(Settings)).first()
+        assert s.theme == "light"
+
+        for expected in ("dark", "auto", "light"):
+            r = client.post("/settings/theme/toggle")
+            assert r.status_code == 204
+            assert r.headers.get("HX-Refresh") == "true"
+            assert r.headers.get("X-Theme") == expected
+            db.refresh(s)
+            assert s.theme == expected
+
     def test_reset_modal_requires_typed_confirmation(self, client):
         """Type-to-confirm guard for the destructive reset library button."""
         resp = client.get("/settings/ui")

@@ -1,11 +1,13 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 
 from app.db import get_session, get_settings
 from app.models import Settings, Highlight
+
+THEME_CYCLE = ("light", "dark", "auto")
 
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -53,6 +55,27 @@ async def update_settings_ui(
     return templates.TemplateResponse(request, "settings.html", {"settings": settings,
         "highlights_count": highlights_count,
         "success_message": "Settings saved successfully!"})
+
+
+@router.post("/theme/toggle")
+async def toggle_theme(session: Session = Depends(get_session)):
+    """Advance the theme through light → dark → auto → light.
+
+    Returns 204 with HX-Refresh so the htmx-driven nav button reloads the
+    page and `data-theme` re-renders against the new value. Non-htmx
+    callers see the same status and can read the new value from the
+    `X-Theme` response header.
+    """
+    settings = get_settings(session)
+    current = settings.theme if settings.theme in THEME_CYCLE else "light"
+    next_theme = THEME_CYCLE[(THEME_CYCLE.index(current) + 1) % len(THEME_CYCLE)]
+    settings.theme = next_theme
+    session.add(settings)
+    session.commit()
+    return Response(
+        status_code=204,
+        headers={"HX-Refresh": "true", "X-Theme": next_theme},
+    )
 
 
 @router.post("/reset-library", response_class=HTMLResponse)

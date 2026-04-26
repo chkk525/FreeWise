@@ -290,6 +290,30 @@ class TestCSVExport:
         ]
         assert headers == expected
 
+    def test_export_loads_tags_in_one_query(self, client, db, make_highlight):
+        """Tags must be bulk-loaded — N highlights must NOT emit N tag queries."""
+        h1 = make_highlight(text="With tags A")
+        h2 = make_highlight(text="With tags B")
+        h3 = make_highlight(text="No tags")
+        # Attach two regular tags + a system tag (favorite) to h1 and h2.
+        for name in ("python", "favorite", "django"):
+            t = Tag(name=name)
+            db.add(t); db.commit(); db.refresh(t)
+            for h in (h1, h2):
+                db.add(HighlightTag(highlight_id=h.id, tag_id=t.id))
+        db.commit()
+
+        resp = client.get("/export/csv")
+        assert resp.status_code == 200
+        reader = csv.DictReader(io.StringIO(resp.text))
+        by_text = {r["Highlight"]: r for r in reader}
+        # Order within Tags is insertion order from the join — both tags
+        # must be present, system "favorite" filtered out.
+        assert "python" in by_text["With tags A"]["Tags"]
+        assert "django" in by_text["With tags A"]["Tags"]
+        assert "favorite" not in by_text["With tags A"]["Tags"]
+        assert by_text["No tags"]["Tags"] == ""
+
     def test_roundtrip_import_export(self, client, db):
         """Import → export → re-import should produce the same data."""
         csv_file = _make_readwise_csv([{
