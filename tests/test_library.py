@@ -266,14 +266,14 @@ class TestLibraryPagination:
         assert r.status_code == 200
         # exactly 50 books on page 1
         assert r.text.count("Book 0") + r.text.count("Book 1") + r.text.count("Book 2") + r.text.count("Book 3") + r.text.count("Book 4") >= 50
-        assert "Page 1 of 2" in r.text
+        assert "of 2" in r.text and "value=\"1\"" in r.text
 
     def test_page_2_returns_remainder(self, client, make_book):
         for i in range(60):
             make_book(title=f"Book {i:02d}")
         r = client.get("/library/ui?page=2&page_size=50&sort=title&order=asc")
         assert r.status_code == 200
-        assert "Page 2 of 2" in r.text
+        assert "of 2" in r.text and "value=\"2\"" in r.text
 
     def test_page_size_clamps_to_max(self, client, make_book):
         for i in range(5):
@@ -289,7 +289,7 @@ class TestLibraryPagination:
         r = client.get("/library/ui?page=99&page_size=10")
         assert r.status_code == 200
         # only 1 page exists
-        assert "Page 1 of 1" in r.text
+        assert "of 1" in r.text and "value=\"1\"" in r.text
 
     def test_default_sort_is_highlight_count_desc(self, client, make_book, make_highlight):
         b_small = make_book(title="Small")

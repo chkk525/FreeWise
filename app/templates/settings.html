@@ -294,58 +294,50 @@
     </div>
 </div>
 
+<style>
+    @keyframes sb-stripes {
+        0% { background-position: 0 0; }
+        100% { background-position: 34px 0; }
+    }
+</style>
+
 <script>
+    /**
+     * Honest export indicator. The browser drives the actual /export/csv
+     * download — we have no server-side progress signal — so we just show
+     * an indeterminate "Preparing your CSV…" message + spinner and then
+     * hide it after a short delay. Replaces the previous fake-progress bar
+     * that ticked Math.random() and lied about percentages.
+     */
     function showExportProgress(event) {
-        // Don't prevent default - let the download happen
-        
-        // Disable button temporarily
         const exportBtn = document.getElementById('export-btn');
         exportBtn.style.opacity = '0.5';
         exportBtn.style.pointerEvents = 'none';
-        
-        // Show progress container
-        document.getElementById('export-progress-container').style.display = 'block';
-        
-        // Simulate progress
-        let progress = 0;
-        const progressBar = document.getElementById('export-progress-bar');
-        const progressText = document.getElementById('export-progress-text');
-        
-        const messages = [
-            'Querying database...',
-            'Collecting highlights...',
-            'Processing book metadata...',
-            'Formatting tags...',
-            'Generating CSV...',
-            'Download starting...'
-        ];
-        
-        let messageIndex = 0;
-        progressText.textContent = messages[0];
-        
-        const interval = setInterval(() => {
-            progress += Math.random() * 20;
-            if (progress > 100) progress = 100;
-            
-            progressBar.style.width = progress + '%';
-            
-            // Update message periodically
-            if (progress > (messageIndex + 1) * 16 && messageIndex < messages.length - 1) {
-                messageIndex++;
-                progressText.textContent = messages[messageIndex];
-            }
-            
-            // Complete and hide after reaching 100%
-            if (progress >= 100) {
-                clearInterval(interval);
-                setTimeout(() => {
-                    document.getElementById('export-progress-container').style.display = 'none';
-                    progressBar.style.width = '0%';
-                    exportBtn.style.opacity = '1';
-                    exportBtn.style.pointerEvents = 'auto';
-                }, 1000);
-            }
-        }, 200);
+        const container = document.getElementById('export-progress-container');
+        const bar = document.getElementById('export-progress-bar');
+        const text = document.getElementById('export-progress-text');
+        container.style.display = 'block';
+        // Indeterminate: full-width animated stripe instead of a 0→100 lie.
+        bar.style.width = '100%';
+        bar.style.background =
+            'repeating-linear-gradient(45deg, #6366f1, #6366f1 12px, #818cf8 12px, #818cf8 24px)';
+        bar.style.backgroundSize = '34px 34px';
+        bar.style.animation = 'sb-stripes 1s linear infinite';
+        text.textContent = 'Preparing your CSV…';
+        // Re-enable + hide after the browser has had time to start the
+        // download. The actual download progress is in the browser's
+        // download manager; we don't need to mirror it.
+        setTimeout(() => {
+            text.textContent = 'Download started — check your browser downloads.';
+        }, 1200);
+        setTimeout(() => {
+            container.style.display = 'none';
+            bar.style.animation = '';
+            bar.style.background = '';
+            bar.style.width = '0%';
+            exportBtn.style.opacity = '1';
+            exportBtn.style.pointerEvents = 'auto';
+        }, 3500);
     }
 
     // Initialize Lucide icons

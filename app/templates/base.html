@@ -111,17 +111,48 @@
                 lucide.createIcons();
             }
         }
-        
+
+        /**
+         * Convert any <time data-iso="ISO-8601"> or <span data-iso="..."> in
+         * the document to the browser's local time. The dataset value is
+         * the canonical machine-readable timestamp; the visible text gets
+         * replaced with a human-friendly local rendering and the original
+         * ISO is preserved in the title= attribute for hover.
+         *
+         * Re-runs after HTMX swaps so dynamically inserted content also
+         * gets formatted.
+         */
+        function formatIsoTimestamps(root) {
+            const scope = root || document;
+            scope.querySelectorAll('[data-iso]').forEach(function (el) {
+                const iso = el.getAttribute('data-iso');
+                if (!iso) return;
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return;
+                const opts = el.dataset.format === 'date'
+                    ? { year: 'numeric', month: 'short', day: 'numeric' }
+                    : { year: 'numeric', month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit' };
+                el.textContent = d.toLocaleString(undefined, opts);
+                if (!el.title) el.title = iso;
+            });
+        }
+
+        function initAll() {
+            initLucideIcons();
+            formatIsoTimestamps();
+        }
+
         // Initialize on page load
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initLucideIcons);
+            document.addEventListener('DOMContentLoaded', initAll);
         } else {
-            initLucideIcons();
+            initAll();
         }
-        
+
         // Re-initialize after HTMX swaps content
-        document.addEventListener('htmx:afterSwap', initLucideIcons);
-        document.addEventListener('htmx:afterSettle', initLucideIcons);
+        document.addEventListener('htmx:afterSwap', initAll);
+        document.addEventListener('htmx:afterSettle', initAll);
     </script>
 </body>
 </html>
