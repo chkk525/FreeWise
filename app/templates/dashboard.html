@@ -183,14 +183,14 @@
 </div>
 {% endif %}
 
-<!-- Highlight of the Moment (random, shuffleable) -->
+<!-- Highlight of the Day (deterministic, with shuffle) -->
 {% if total_highlights and total_highlights > 0 %}
 <div class="mb-8">
     <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
         <i data-lucide="sparkles" class="w-5 h-5 text-amber-500"></i>
-        Highlight of the moment
+        Highlight of the day
     </h3>
-    <div hx-get="/highlights/ui/random" hx-trigger="load" hx-swap="outerHTML">
+    <div hx-get="/highlights/ui/today" hx-trigger="load" hx-swap="outerHTML">
         <div id="random-highlight-card"
              class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
             <p class="text-sm text-gray-500 dark:text-gray-400">Loading…</p>

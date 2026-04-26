@@ -1,8 +1,27 @@
-{# Compact "highlight of the moment" partial for the dashboard.
-   Wrapped in a div with id="random-highlight-card" so the shuffle
-   button's HTMX swap can replace it cleanly. #}
+{# Daily-pick / shuffle partial for the dashboard.
+
+   Wrapped in #random-highlight-card so the shuffle / today buttons
+   can swap it via HTMX. ``is_today`` toggles the badge label and the
+   "Shuffle vs Show today's" button pair.
+
+   The dashboard initially loads /highlights/ui/today (deterministic).
+   Clicking Shuffle pulls a random row; clicking "Today's pick" while
+   viewing a random returns to the stable daily one. #}
 <div id="random-highlight-card"
      class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
+    <div class="flex items-center justify-between gap-2 mb-2">
+        {% if is_today %}
+        <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+            <i data-lucide="sun" class="w-3 h-3"></i>
+            Today's pick
+        </span>
+        {% else %}
+        <span class="inline-flex items-center gap-1 text-xs font-medium text-purple-700 dark:text-purple-300">
+            <i data-lucide="shuffle" class="w-3 h-3"></i>
+            Random
+        </span>
+        {% endif %}
+    </div>
     {% if highlight.book %}
     <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
         <a href="/library/ui/book/{{ highlight.book.id }}" class="hover:text-primary-600 dark:hover:text-primary-400">
@@ -26,14 +45,37 @@
             {% if highlight.is_favorited %} · ★{% endif %}
             {% if highlight.is_mastered %} · 🎓{% endif %}
         </span>
-        <button type="button"
-                hx-get="/highlights/ui/random"
-                hx-target="#random-highlight-card"
-                hx-swap="outerHTML"
-                class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title="Shuffle to another random highlight">
-            <i data-lucide="shuffle" class="w-3 h-3"></i>
-            <span>Shuffle</span>
-        </button>
+        <div class="flex items-center gap-1">
+            {% if is_today %}
+            <button type="button"
+                    hx-get="/highlights/ui/random"
+                    hx-target="#random-highlight-card"
+                    hx-swap="outerHTML"
+                    class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    title="Pick a random highlight instead">
+                <i data-lucide="shuffle" class="w-3 h-3"></i>
+                <span>Shuffle</span>
+            </button>
+            {% else %}
+            <button type="button"
+                    hx-get="/highlights/ui/random"
+                    hx-target="#random-highlight-card"
+                    hx-swap="outerHTML"
+                    class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    title="Reroll random">
+                <i data-lucide="shuffle" class="w-3 h-3"></i>
+                <span>Reroll</span>
+            </button>
+            <button type="button"
+                    hx-get="/highlights/ui/today"
+                    hx-target="#random-highlight-card"
+                    hx-swap="outerHTML"
+                    class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                    title="Show today's stable pick">
+                <i data-lucide="sun" class="w-3 h-3"></i>
+                <span>Today</span>
+            </button>
+            {% endif %}
+        </div>
     </div>
 </div>

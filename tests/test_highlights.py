@@ -461,6 +461,37 @@ class TestDuplicatesPage:
         assert "drop" in resp.text
 
 
+class TestTodayHighlightHTML:
+    """GET /highlights/ui/today — dashboard daily-pick partial."""
+
+    def test_renders_today_label(self, client, make_highlight):
+        make_highlight(text="stable pick")
+        resp = client.get("/highlights/ui/today")
+        assert resp.status_code == 200
+        # The "Today's pick" badge is the differentiator vs /random.
+        assert "Today" in resp.text
+        # Card wrapper id must remain consistent so HTMX swaps work.
+        assert 'id="random-highlight-card"' in resp.text
+
+    def test_today_is_stable_within_day(self, client, make_highlight):
+        for i in range(20):
+            make_highlight(text=f"row-{i}")
+        # Two consecutive HTML calls return the same chosen highlight.
+        a = client.get("/highlights/ui/today").text
+        b = client.get("/highlights/ui/today").text
+        # Extract the rendered text snippet to compare without the whole page churn.
+        import re
+        ma = re.search(r'class="font-serif[^"]*">\s*([^<]+)', a)
+        mb = re.search(r'class="font-serif[^"]*">\s*([^<]+)', b)
+        assert ma is not None and mb is not None
+        assert ma.group(1).strip() == mb.group(1).strip()
+
+    def test_today_empty_state(self, client):
+        resp = client.get("/highlights/ui/today")
+        assert resp.status_code == 200
+        assert "No highlights" in resp.text
+
+
 class TestRandomHighlight:
     """GET /highlights/ui/random — random-highlight HTML partial."""
 

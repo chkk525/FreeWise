@@ -1004,7 +1004,44 @@ async def ui_random(
             '<p class="text-sm text-gray-500 dark:text-gray-400">No highlights yet.</p>',
         )
     return templates.TemplateResponse(
-        request, "_random_highlight.html", {"highlight": h},
+        request, "_random_highlight.html", {"highlight": h, "is_today": False},
+    )
+
+
+@router.get("/ui/today", response_class=HTMLResponse)
+async def ui_today(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Render today's deterministic highlight pick (stable all day).
+
+    Used by the dashboard. Same algorithm as /api/v2/highlights/today
+    but scoped to single-user mode (user_id=1) since this is an HTML
+    route. The render uses the same partial as /ui/random with a
+    ``is_today=True`` flag so the template can label it.
+    """
+    import hashlib
+
+    ids = [
+        i for i in session.exec(
+            select(Highlight.id)
+            .where(Highlight.user_id == 1)
+            .where(Highlight.is_discarded == False)  # noqa: E712
+            .order_by(Highlight.id.asc())
+        ).all()
+    ]
+    if not ids:
+        return HTMLResponse(
+            '<p class="text-sm text-gray-500 dark:text-gray-400">No highlights yet.</p>',
+        )
+    seed = date.today().isoformat().encode()
+    digest = int.from_bytes(hashlib.sha256(seed).digest()[:8], "big")
+    chosen_id = ids[digest % len(ids)]
+    h = session.exec(
+        select(Highlight).options(selectinload(Highlight.book)).where(Highlight.id == chosen_id)
+    ).first()
+    return templates.TemplateResponse(
+        request, "_random_highlight.html", {"highlight": h, "is_today": True},
     )
 
 
