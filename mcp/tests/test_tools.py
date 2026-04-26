@@ -30,6 +30,9 @@ SET_NOTE = server.freewise_set_note
 FAVORITE = server.freewise_favorite
 DISCARD = server.freewise_discard
 ADD = server.freewise_add
+TAG_LIST = server.freewise_tag_list
+TAG_ADD = server.freewise_tag_add
+TAG_REMOVE = server.freewise_tag_remove
 
 
 def _add(text: str, **kwargs) -> int:
@@ -166,8 +169,44 @@ def test_add_creates_highlight(patched_client):
         assert any(h.text == "captured" for h in rows)
 
 
+def test_tag_add_normalizes_and_returns_list(patched_client):
+    hid = _add("x")
+    out = json.loads(TAG_ADD(hid, "  Python  "))
+    assert out == {"tags": ["python"]}
+
+
+def test_tag_add_idempotent(patched_client):
+    hid = _add("x")
+    TAG_ADD(hid, "ml")
+    out = json.loads(TAG_ADD(hid, "ml"))
+    assert out == {"tags": ["ml"]}
+
+
+def test_tag_remove(patched_client):
+    hid = _add("x")
+    TAG_ADD(hid, "a"); TAG_ADD(hid, "b")
+    out = json.loads(TAG_REMOVE(hid, "a"))
+    assert out == {"tags": ["b"]}
+
+
+def test_tag_list(patched_client):
+    hid = _add("x")
+    TAG_ADD(hid, "z"); TAG_ADD(hid, "a")
+    out = json.loads(TAG_LIST(hid))
+    assert out == {"tags": ["a", "z"]}
+
+
+def test_search_with_tag_filter(patched_client):
+    h1 = _add("alpha quote")
+    _add("alpha other")
+    TAG_ADD(h1, "important")
+    out = json.loads(SEARCH("alpha", tag="important"))
+    assert out["count"] == 1
+    assert out["results"][0]["id"] == h1
+
+
 def test_tool_surface_complete(patched_client):
-    """Sanity: FastMCP server should have exactly the 9 expected tools registered."""
+    """Sanity: FastMCP server should have exactly the 12 expected tools registered."""
     import asyncio
     tools = asyncio.run(server.mcp.list_tools())
     names = {t.name for t in tools}
@@ -175,5 +214,6 @@ def test_tool_surface_complete(patched_client):
         "freewise_search", "freewise_recent", "freewise_show",
         "freewise_stats", "freewise_books", "freewise_set_note",
         "freewise_favorite", "freewise_discard", "freewise_add",
+        "freewise_tag_list", "freewise_tag_add", "freewise_tag_remove",
     }
     assert names == expected

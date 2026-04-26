@@ -56,6 +56,9 @@ Restart Claude Code. The 9 tools below appear under the `freewise` namespace.
 | `freewise_favorite`   | Set or clear the favorited flag                           |
 | `freewise_discard`    | Discard or restore a highlight                            |
 | `freewise_add`        | Capture a new highlight (book auto-created if missing)    |
+| `freewise_tag_list`   | List tags on a highlight                                  |
+| `freewise_tag_add`    | Attach a tag (idempotent; lowercased server-side)         |
+| `freewise_tag_remove` | Remove a tag (idempotent)                                 |
 
 All tools return JSON strings. Errors are wrapped as `{"error": "..."}` so the calling agent can branch on the shape rather than catching exceptions.
 

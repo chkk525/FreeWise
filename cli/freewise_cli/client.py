@@ -68,15 +68,14 @@ class Client:
         self._request("GET", "/api/v2/auth/")
 
     def search(self, q: str, *, page: int = 1, page_size: int = 50,
-               include_discarded: bool = False) -> dict:
-        return self._request(
-            "GET",
-            "/api/v2/highlights/search",
-            params={
-                "q": q, "page": page, "page_size": page_size,
-                "include_discarded": str(include_discarded).lower(),
-            },
-        )
+               include_discarded: bool = False, tag: str | None = None) -> dict:
+        params: dict[str, Any] = {
+            "q": q, "page": page, "page_size": page_size,
+            "include_discarded": str(include_discarded).lower(),
+        }
+        if tag:
+            params["tag"] = tag
+        return self._request("GET", "/api/v2/highlights/search", params=params)
 
     def list_highlights(self, *, page: int = 1, page_size: int = 50,
                         book_id: int | None = None) -> dict:
@@ -102,6 +101,22 @@ class Client:
 
     def stats(self) -> dict:
         return self._request("GET", "/api/v2/stats")
+
+    def list_tags(self, highlight_id: int) -> dict:
+        return self._request("GET", f"/api/v2/highlights/{highlight_id}/tags")
+
+    def add_tag(self, highlight_id: int, name: str) -> dict:
+        return self._request(
+            "POST", f"/api/v2/highlights/{highlight_id}/tags",
+            json={"name": name},
+        )
+
+    def remove_tag(self, highlight_id: int, name: str) -> dict:
+        from urllib.parse import quote
+        # Encode the tag in the path so spaces / non-ASCII round-trip safely.
+        return self._request(
+            "DELETE", f"/api/v2/highlights/{highlight_id}/tags/{quote(name, safe='')}",
+        )
 
     def stream_export(self, fmt: str) -> tuple[bytes, str | None]:
         """Fetch /export/<fmt> and return (bytes, suggested filename).

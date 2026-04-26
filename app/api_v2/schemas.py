@@ -93,6 +93,19 @@ class HighlightDetail(BaseModel):
     book_id: Optional[int] = None
     is_favorited: bool = False
     is_discarded: bool = False
+    tags: List[str] = Field(default_factory=list)
+
+
+class TagAddPayload(BaseModel):
+    """Body for ``POST /api/v2/highlights/{id}/tags`` — single tag string."""
+
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+class TagListResponse(BaseModel):
+    """Body for ``GET /api/v2/highlights/{id}/tags``."""
+
+    tags: List[str]
 
 
 class HighlightUpdatePayload(BaseModel):

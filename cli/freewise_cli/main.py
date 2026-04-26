@@ -142,6 +142,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     body = client.search(
         args.query, page=1, page_size=args.limit,
         include_discarded=args.include_discarded,
+        tag=getattr(args, "tag", None),
     )
     if args.json:
         _print_json(body)
@@ -249,6 +250,40 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tag_list(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.list_tags(args.highlight_id)
+    if args.json:
+        _print_json(body)
+        return 0
+    tags = body.get("tags", [])
+    if not tags:
+        print(f"#{args.highlight_id}: (no tags)")
+    else:
+        print(f"#{args.highlight_id}: {', '.join(tags)}")
+    return 0
+
+
+def cmd_tag_add(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.add_tag(args.highlight_id, args.tag)
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"#{args.highlight_id} tags: {', '.join(body.get('tags', []))}")
+    return 0
+
+
+def cmd_tag_remove(args: argparse.Namespace) -> int:
+    client = _client_from_args(args)
+    body = client.remove_tag(args.highlight_id, args.tag)
+    if args.json:
+        _print_json(body)
+        return 0
+    print(f"#{args.highlight_id} tags: {', '.join(body.get('tags', []))}")
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
     body, suggested_name = client.stream_export(args.format)
@@ -319,7 +354,23 @@ def _build_parser() -> argparse.ArgumentParser:
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=20)
     s.add_argument("--include-discarded", action="store_true")
+    s.add_argument("--tag", help="Filter to highlights carrying this tag (case-insensitive).")
     s.set_defaults(func=cmd_search)
+
+    # tag list/add/remove
+    tg = sub.add_parser("tag", help="Manage highlight tags.")
+    tg_sub = tg.add_subparsers(dest="tag_cmd", required=True, metavar="<subcmd>")
+    tgl = tg_sub.add_parser("list", help="List tags on a highlight.")
+    tgl.add_argument("highlight_id", type=int)
+    tgl.set_defaults(func=cmd_tag_list)
+    tga = tg_sub.add_parser("add", help="Attach a tag to a highlight (idempotent).")
+    tga.add_argument("highlight_id", type=int)
+    tga.add_argument("tag")
+    tga.set_defaults(func=cmd_tag_add)
+    tgr = tg_sub.add_parser("remove", help="Remove a tag from a highlight (idempotent).")
+    tgr.add_argument("highlight_id", type=int)
+    tgr.add_argument("tag")
+    tgr.set_defaults(func=cmd_tag_remove)
 
     # recent
     r = sub.add_parser("recent", help="Most recent highlights.")

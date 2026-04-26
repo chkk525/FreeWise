@@ -66,14 +66,21 @@ mcp = FastMCP("freewise-mcp")
 
 
 @mcp.tool()
-def freewise_search(query: str, limit: int = 20, include_discarded: bool = False) -> str:
+def freewise_search(
+    query: str,
+    limit: int = 20,
+    include_discarded: bool = False,
+    tag: str | None = None,
+) -> str:
     """Full-text search across this user's highlights (text + note).
 
     Returns up to `limit` matches as JSON. Discarded highlights are excluded
-    by default. The query supports literal `%` and `_` — they're escaped server-side.
+    by default. The query supports literal `%` and `_` — they're escaped
+    server-side. Pass `tag` to additionally filter to highlights carrying
+    that exact tag (case-insensitive).
     """
     return _call("search failed", lambda: _client().search(
-        query, page=1, page_size=limit, include_discarded=include_discarded,
+        query, page=1, page_size=limit, include_discarded=include_discarded, tag=tag,
     ))
 
 
@@ -120,6 +127,28 @@ def freewise_favorite(highlight_id: int, on: bool = True) -> str:
 def freewise_discard(highlight_id: int, on: bool = True) -> str:
     """Discard or restore a highlight. Discarding auto-clears the favorite flag."""
     return _call("discard failed", lambda: _client().patch_highlight(highlight_id, is_discarded=on))
+
+
+@mcp.tool()
+def freewise_tag_list(highlight_id: int) -> str:
+    """List the tags currently attached to a highlight."""
+    return _call("tag_list failed", lambda: _client().list_tags(highlight_id))
+
+
+@mcp.tool()
+def freewise_tag_add(highlight_id: int, tag: str) -> str:
+    """Attach a tag to a highlight. Idempotent — re-adding is a no-op.
+
+    Tag names are normalized to lowercase + collapsed whitespace server-side.
+    The names ``favorite`` and ``discard`` are reserved and rejected with 400.
+    """
+    return _call("tag_add failed", lambda: _client().add_tag(highlight_id, tag))
+
+
+@mcp.tool()
+def freewise_tag_remove(highlight_id: int, tag: str) -> str:
+    """Remove a tag from a highlight. Idempotent."""
+    return _call("tag_remove failed", lambda: _client().remove_tag(highlight_id, tag))
 
 
 @mcp.tool()

@@ -84,8 +84,11 @@ Beyond the upstream HTML/HTMX UI:
 | POST  | `/api/v2/highlights/`        | Bulk create (Readwise-shaped) |
 | GET   | `/api/v2/highlights/`        | Paginated list |
 | GET   | `/api/v2/highlights/search`  | LIKE search (text+note) — fork extension |
-| GET   | `/api/v2/highlights/{id}`    | Single detail — fork extension |
+| GET   | `/api/v2/highlights/{id}`    | Single detail (incl. tags) — fork extension |
 | PATCH | `/api/v2/highlights/{id}`    | Note/favorite/discard — fork extension |
+| GET   | `/api/v2/highlights/{id}/tags`        | List highlight tags — fork extension |
+| POST  | `/api/v2/highlights/{id}/tags`        | Add tag (idempotent) — fork extension |
+| DELETE| `/api/v2/highlights/{id}/tags/{name}` | Remove tag (idempotent) — fork extension |
 | GET   | `/api/v2/books/`             | Paginated book list |
 | GET   | `/api/v2/stats`              | Counts + review-due — fork extension |
 | GET   | `/export/csv`                | Readwise-compatible CSV |

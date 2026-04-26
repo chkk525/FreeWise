@@ -48,9 +48,11 @@ from app.api_v2.schemas import (
     HighlightUpdatePayload,
     PaginatedResponse,
     StatsResponse,
+    TagAddPayload,
+    TagListResponse,
 )
 from app.db import get_session
-from app.models import ApiToken, Book, Highlight
+from app.models import ApiToken, Book, Highlight, HighlightTag, Tag
 from app.routers.importer import get_or_create_book
 
 logger = logging.getLogger(__name__)
@@ -361,7 +363,29 @@ def list_books(
 # ── CLI / programmatic-use extensions (not part of Readwise's public API) ────
 
 
-def _highlight_to_detail(h: Highlight, book: Optional[Book]) -> HighlightDetail:
+def _tags_for_highlight(session: Session, highlight_id: int) -> list[str]:
+    """Return tag names for one highlight in a single query.
+
+    Excludes legacy "favorite"/"discard" pseudo-tags that the importer
+    historically used as flags before the dedicated boolean columns existed.
+    Sorted alphabetically so output is deterministic for tests + clients.
+    """
+    rows = session.exec(
+        select(Tag.name)
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .where(HighlightTag.highlight_id == highlight_id)
+    ).all()
+    return sorted(
+        n for n in rows
+        if n and n.lower() not in ("favorite", "discard")
+    )
+
+
+def _highlight_to_detail(
+    h: Highlight,
+    book: Optional[Book],
+    tags: Optional[list[str]] = None,
+) -> HighlightDetail:
     return HighlightDetail(
         id=h.id,
         text=h.text,
@@ -374,6 +398,7 @@ def _highlight_to_detail(h: Highlight, book: Optional[Book]) -> HighlightDetail:
         book_id=h.book_id,
         is_favorited=h.is_favorited,
         is_discarded=h.is_discarded,
+        tags=tags or [],
     )
 
 
@@ -383,6 +408,7 @@ def search_highlights(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=1000),
     include_discarded: bool = Query(default=False),
+    tag: Optional[str] = Query(default=None, max_length=64),
     token: ApiToken = Depends(get_api_token),
     session: Session = Depends(get_session),
 ) -> PaginatedResponse:
@@ -390,7 +416,8 @@ def search_highlights(
 
     Not a Readwise endpoint — FreeWise extension under the same prefix.
     Wildcard chars in ``q`` are escaped so a ``%`` query matches a literal
-    percent sign rather than every row.
+    percent sign rather than every row. Optional ``tag`` filters to highlights
+    that carry that exact tag (case-insensitive).
     """
     needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     pattern = f"%{needle}%"
@@ -400,6 +427,16 @@ def search_highlights(
     )
     if not include_discarded:
         base = base.where(Highlight.is_discarded == False)  # noqa: E712
+
+    if tag is not None and tag.strip():
+        # Subquery that yields highlight_ids carrying the requested tag.
+        tag_name = _normalize_tag(tag)
+        tagged = (
+            select(HighlightTag.highlight_id)
+            .join(Tag, HighlightTag.tag_id == Tag.id)
+            .where(Tag.name == tag_name)
+        )
+        base = base.where(Highlight.id.in_(tagged))
 
     count = session.exec(
         select(func.count()).select_from(base.subquery())
@@ -417,8 +454,27 @@ def search_highlights(
         books = session.exec(select(Book).where(Book.id.in_(book_ids))).all()
         books_by_id = {b.id: b for b in books}
 
+    # Bulk-load tags for all returned highlights in one query (no N+1).
+    hl_ids = [h.id for h in rows]
+    tags_by_hl: dict[int, list[str]] = {}
+    if hl_ids:
+        pairs = session.exec(
+            select(HighlightTag.highlight_id, Tag.name)
+            .join(Tag, HighlightTag.tag_id == Tag.id)
+            .where(HighlightTag.highlight_id.in_(hl_ids))
+        ).all()
+        for hl_id, name in pairs:
+            if name and name.lower() not in ("favorite", "discard"):
+                tags_by_hl.setdefault(hl_id, []).append(name)
+        for hl_id in tags_by_hl:
+            tags_by_hl[hl_id].sort()
+
     results = [
-        _highlight_to_detail(h, books_by_id.get(h.book_id) if h.book_id else None).model_dump(mode="json")
+        _highlight_to_detail(
+            h,
+            books_by_id.get(h.book_id) if h.book_id else None,
+            tags=tags_by_hl.get(h.id, []),
+        ).model_dump(mode="json")
         for h in rows
     ]
     return PaginatedResponse(count=count, results=results)
@@ -435,7 +491,8 @@ def get_highlight(
     if h is None or h.user_id != token.user_id:
         raise HTTPException(status_code=404, detail="Highlight not found.")
     book = session.get(Book, h.book_id) if h.book_id is not None else None
-    return _highlight_to_detail(h, book)
+    tags = _tags_for_highlight(session, h.id)
+    return _highlight_to_detail(h, book, tags=tags)
 
 
 @router.patch("/highlights/{highlight_id}", response_model=HighlightDetail)
@@ -468,7 +525,105 @@ def update_highlight(
     session.commit()
     session.refresh(h)
     book = session.get(Book, h.book_id) if h.book_id is not None else None
-    return _highlight_to_detail(h, book)
+    tags = _tags_for_highlight(session, h.id)
+    return _highlight_to_detail(h, book, tags=tags)
+
+
+# ── Highlight-level tags ────────────────────────────────────────────────────
+
+
+@router.get("/highlights/{highlight_id}/tags", response_model=TagListResponse)
+def list_highlight_tags(
+    highlight_id: int,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> TagListResponse:
+    """List tags attached to one highlight."""
+    h = session.get(Highlight, highlight_id)
+    if h is None or h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+    return TagListResponse(tags=_tags_for_highlight(session, h.id))
+
+
+def _normalize_tag(name: str) -> str:
+    """Lowercase + collapse whitespace. Tags are case-insensitive on lookup."""
+    return " ".join(name.strip().split()).lower()
+
+
+@router.post(
+    "/highlights/{highlight_id}/tags",
+    response_model=TagListResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_highlight_tag(
+    highlight_id: int,
+    payload: TagAddPayload,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> TagListResponse:
+    """Attach a tag to a highlight. Idempotent — re-attaching a tag is a no-op
+    rather than a 4xx, so callers don't need to know whether the link existed."""
+    h = session.get(Highlight, highlight_id)
+    if h is None or h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+
+    name = _normalize_tag(payload.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="Tag name cannot be empty.")
+    if name in ("favorite", "discard"):
+        # These are legacy pseudo-tags reserved by the importer for boolean
+        # flag semantics. Use is_favorited / is_discarded fields instead.
+        raise HTTPException(
+            status_code=400,
+            detail="Tag names 'favorite' and 'discard' are reserved.",
+        )
+
+    tag = session.exec(select(Tag).where(Tag.name == name)).first()
+    if tag is None:
+        tag = Tag(name=name)
+        session.add(tag); session.commit(); session.refresh(tag)
+
+    existing = session.exec(
+        select(HighlightTag)
+        .where(HighlightTag.highlight_id == h.id)
+        .where(HighlightTag.tag_id == tag.id)
+    ).first()
+    if existing is None:
+        session.add(HighlightTag(highlight_id=h.id, tag_id=tag.id))
+        session.commit()
+
+    return TagListResponse(tags=_tags_for_highlight(session, h.id))
+
+
+@router.delete(
+    "/highlights/{highlight_id}/tags/{tag_name}",
+    response_model=TagListResponse,
+)
+def remove_highlight_tag(
+    highlight_id: int,
+    tag_name: str,
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> TagListResponse:
+    """Remove a tag from a highlight. Idempotent — removing a non-existent
+    link returns the current tag list with no error."""
+    h = session.get(Highlight, highlight_id)
+    if h is None or h.user_id != token.user_id:
+        raise HTTPException(status_code=404, detail="Highlight not found.")
+
+    name = _normalize_tag(tag_name)
+    tag = session.exec(select(Tag).where(Tag.name == name)).first()
+    if tag is not None:
+        link = session.exec(
+            select(HighlightTag)
+            .where(HighlightTag.highlight_id == h.id)
+            .where(HighlightTag.tag_id == tag.id)
+        ).first()
+        if link is not None:
+            session.delete(link)
+            session.commit()
+
+    return TagListResponse(tags=_tags_for_highlight(session, h.id))
 
 
 @router.get("/stats", response_model=StatsResponse)

@@ -119,6 +119,41 @@ def test_discard_and_restore(http_client, auth_token, capsys):
         assert s.get(Highlight, hid).is_discarded is False
 
 
+# ── tag ──────────────────────────────────────────────────────────────────
+
+
+def test_tag_add_then_list(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    rc, out, _ = _run(["tag", "add", str(hid), "Python"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "python" in out
+    rc, out, _ = _run(["tag", "list", str(hid)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "python" in out
+
+
+def test_tag_remove(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    _run(["tag", "add", str(hid), "a"], http_client, auth_token, capsys)
+    _run(["tag", "add", str(hid), "b"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tag", "remove", str(hid), "a"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "b" in out
+    assert ", a" not in out
+
+
+def test_search_with_tag_filter(http_client, auth_token, capsys):
+    h1 = _add_highlight("alpha quote")
+    _add_highlight("alpha other")
+    _run(["tag", "add", str(h1), "important"], http_client, auth_token, capsys)
+    rc, out, _ = _run(
+        ["search", "alpha", "--tag", "important"], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "alpha quote" in out
+    assert "alpha other" not in out
+
+
 # ── export ───────────────────────────────────────────────────────────────
 
 

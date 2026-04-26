@@ -191,6 +191,123 @@ def test_patch_rejects_favoriting_discarded(client, db, make_highlight):
     assert resp.status_code == 400
 
 
+# ── Highlight-level tags ─────────────────────────────────────────────────────
+
+
+def test_list_tags_empty_when_none(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    resp = client.get(f"/api/v2/highlights/{h.id}/tags", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json() == {"tags": []}
+
+
+def test_add_tag_creates_link_and_returns_list(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "Python"},
+    )
+    assert r.status_code == 201
+    # Tags are normalized to lowercase.
+    assert r.json() == {"tags": ["python"]}
+
+
+def test_add_tag_is_idempotent(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    client.post(f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "ml"})
+    r = client.post(f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "ml"})
+    assert r.status_code == 201
+    assert r.json() == {"tags": ["ml"]}
+
+
+def test_add_tag_normalizes_whitespace_and_case(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/tags", headers=headers,
+        json={"name": "  Deep   Learning  "},
+    )
+    assert r.status_code == 201
+    assert r.json() == {"tags": ["deep learning"]}
+
+
+def test_add_tag_rejects_reserved_names(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    for name in ("favorite", "Favorite", "FAVORITE", "discard"):
+        r = client.post(
+            f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": name},
+        )
+        assert r.status_code == 400, f"reserved name {name!r} should be rejected"
+
+
+def test_add_tag_404_for_other_user(client, db, make_highlight):
+    h = make_highlight(text="theirs")
+    h.user_id = 2
+    db.add(h); db.commit()
+    headers = _auth_headers(db)
+    r = client.post(
+        f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "x"},
+    )
+    assert r.status_code == 404
+
+
+def test_remove_tag_removes_link(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    client.post(f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "a"})
+    client.post(f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "b"})
+    r = client.delete(f"/api/v2/highlights/{h.id}/tags/a", headers=headers)
+    assert r.status_code == 200
+    assert r.json() == {"tags": ["b"]}
+
+
+def test_remove_tag_idempotent(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    r = client.delete(f"/api/v2/highlights/{h.id}/tags/never-existed", headers=headers)
+    assert r.status_code == 200
+    assert r.json() == {"tags": []}
+
+
+def test_get_highlight_includes_tags(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="x")
+    client.post(f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "z"})
+    client.post(f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "a"})
+    r = client.get(f"/api/v2/highlights/{h.id}", headers=headers)
+    assert r.status_code == 200
+    # Returned alphabetically for deterministic clients.
+    assert r.json()["tags"] == ["a", "z"]
+
+
+def test_search_filters_by_tag(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h1 = make_highlight(text="alpha quote")
+    h2 = make_highlight(text="alpha other")
+    client.post(f"/api/v2/highlights/{h1.id}/tags", headers=headers, json={"name": "important"})
+    # Search without tag filter: both match.
+    r = client.get("/api/v2/highlights/search", headers=headers, params={"q": "alpha"})
+    assert r.json()["count"] == 2
+    # With tag filter: only the tagged one.
+    r = client.get(
+        "/api/v2/highlights/search", headers=headers,
+        params={"q": "alpha", "tag": "important"},
+    )
+    assert r.json()["count"] == 1
+    assert r.json()["results"][0]["id"] == h1.id
+
+
+def test_search_results_include_tags(client, db, make_highlight):
+    headers = _auth_headers(db)
+    h = make_highlight(text="searchable")
+    client.post(f"/api/v2/highlights/{h.id}/tags", headers=headers, json={"name": "topic"})
+    r = client.get("/api/v2/highlights/search", headers=headers, params={"q": "searchable"})
+    assert r.json()["results"][0]["tags"] == ["topic"]
+
+
 # ── GET /api/v2/stats ────────────────────────────────────────────────────────
 
 

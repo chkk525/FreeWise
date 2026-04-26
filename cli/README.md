@@ -47,6 +47,11 @@ freewise restore 1234
 freewise add --text "captured quote" \
              --book "Book Title" --author "Author"
 
+freewise tag add 1234 "deep learning"      # add tag (normalized to lowercase)
+freewise tag remove 1234 "deep learning"
+freewise tag list 1234
+freewise search "x" --tag "deep learning"  # search filtered by tag
+
 freewise export csv -o backup.csv          # Readwise-compatible CSV
 freewise export markdown -o vault.zip      # Obsidian/Logseq-ready ZIP
 freewise export csv | head                 # any export streams to stdout if -o omitted
