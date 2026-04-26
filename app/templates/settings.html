@@ -196,13 +196,21 @@
                 </div>
 
                 {% if highlights_count and highlights_count > 0 %}
-                <a href="/export/csv" 
-                   id="export-btn"
-                   onclick="showExportProgress(event)"
-                   class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
-                    <i data-lucide="download" class="w-5 h-5"></i>
-                    <span>Download CSV Export</span>
-                </a>
+                <div class="flex flex-wrap gap-3">
+                    <a href="/export/csv"
+                       id="export-btn"
+                       onclick="showExportProgress(event)"
+                       class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                        <span>Download CSV Export</span>
+                    </a>
+                    <a href="/export/markdown.zip"
+                       title="One Markdown file per book, zipped — Obsidian / Logseq friendly."
+                       class="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                        <span>Download Markdown ZIP</span>
+                    </a>
+                </div>
                 {% else %}
                 <button type="button"
                         class="inline-flex items-center gap-2 bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-6 py-3 rounded-lg font-semibold cursor-not-allowed">
