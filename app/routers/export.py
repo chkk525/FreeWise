@@ -18,14 +18,24 @@ router = APIRouter(prefix="/export", tags=["export"])
 
 @router.get("/csv")
 async def export_highlights_csv(
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    tag: str | None = Query(default=None, description="Restrict to highlights with this exact tag name."),
+    book_id: int | None = Query(default=None, description="Restrict to highlights from this book."),
+    author: str | None = Query(default=None, description="Restrict to highlights from books by this exact author."),
+    favorited_only: bool = Query(default=False, description="Only include is_favorited=True rows."),
+    active_only: bool = Query(default=False, description="Exclude is_discarded=True rows."),
 ):
     """
-    Export all highlights to CSV with Readwise-compatible schema.
+    Export highlights to CSV with Readwise-compatible schema.
 
     The export follows the official Readwise CSV format for the first 11 columns,
     allowing direct re-import into Readwise or FreeWise. Additional FreeWise-specific
     metadata columns are appended after the Readwise-compatible block.
+
+    All filter params are conjunctive. With no params the response is the
+    full library (matches the historical behavior so existing scripts
+    keep working). The exact-match semantics on ``tag`` / ``author`` mirror
+    /highlights/ui/search facets.
 
     Readwise columns (1-11):
     - Highlight, Book Title, Book Author, Amazon Book ID, Note, Color,
@@ -34,15 +44,43 @@ async def export_highlights_csv(
     Extended columns (12-13):
     - is_favorited, is_discarded
     """
-    # Pull all highlights + book in one join.
     statement = (
         select(Highlight, Book)
         .outerjoin(Book, Highlight.book_id == Book.id)
-        .order_by(Highlight.created_at.desc())
     )
+
+    tag_clean = (tag or "").strip()
+    author_clean = (author or "").strip()
+    has_filter = bool(tag_clean or book_id or author_clean or favorited_only or active_only)
+
+    if tag_clean:
+        statement = statement.where(
+            Highlight.id.in_(
+                select(HighlightTag.highlight_id)
+                .join(Tag, Tag.id == HighlightTag.tag_id)
+                .where(Tag.name == tag_clean)
+            )
+        )
+    if book_id is not None:
+        statement = statement.where(Highlight.book_id == book_id)
+    if author_clean:
+        statement = statement.where(Book.author == author_clean)
+    if favorited_only:
+        statement = statement.where(Highlight.is_favorited == True)  # noqa: E712
+    if active_only:
+        statement = statement.where(Highlight.is_discarded == False)  # noqa: E712
+
+    statement = statement.order_by(Highlight.created_at.desc())
     results = session.exec(statement).all()
 
     if not results:
+        # Stay consistent with the historical 400 when truly empty, but
+        # call out the common case (filters too narrow) in the message.
+        if has_filter:
+            raise HTTPException(
+                status_code=400,
+                detail="No highlights match the supplied filters.",
+            )
         raise HTTPException(status_code=400, detail="No highlights available to export.")
 
     # Pre-load every (highlight_id, tag_name) pair in ONE query, replacing

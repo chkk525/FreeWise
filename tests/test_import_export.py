@@ -290,6 +290,84 @@ class TestCSVExport:
         ]
         assert headers == expected
 
+    def test_export_filter_favorited_only(self, client, make_highlight):
+        make_highlight(text="keep me", is_favorited=True)
+        make_highlight(text="not me")
+        resp = client.get("/export/csv?favorited_only=true")
+        assert resp.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(resp.text)))
+        assert len(rows) == 1
+        assert rows[0]["Highlight"] == "keep me"
+
+    def test_export_filter_active_only_excludes_discarded(self, client, make_highlight):
+        make_highlight(text="alive")
+        make_highlight(text="trashed", is_discarded=True)
+        resp = client.get("/export/csv?active_only=true")
+        assert resp.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(resp.text)))
+        assert len(rows) == 1
+        assert rows[0]["Highlight"] == "alive"
+
+    def test_export_filter_book_id(self, client, make_highlight, make_book):
+        b1 = make_book(title="One")
+        b2 = make_book(title="Two")
+        make_highlight(text="from one", book=b1)
+        make_highlight(text="from two", book=b2)
+        resp = client.get(f"/export/csv?book_id={b1.id}")
+        assert resp.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(resp.text)))
+        assert len(rows) == 1
+        assert rows[0]["Book Title"] == "One"
+
+    def test_export_filter_author(self, client, make_highlight, make_book):
+        a = make_book(title="A1", author="Alice")
+        b = make_book(title="B1", author="Bob")
+        make_highlight(text="alice quote", book=a)
+        make_highlight(text="bob quote", book=b)
+        resp = client.get("/export/csv?author=Alice")
+        assert resp.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(resp.text)))
+        assert len(rows) == 1
+        assert rows[0]["Book Author"] == "Alice"
+
+    def test_export_filter_tag(self, client, db, make_highlight):
+        from app.models import Tag, HighlightTag
+        h1 = make_highlight(text="ml stuff")
+        h2 = make_highlight(text="other stuff")
+        t = Tag(name="ml"); db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h1.id, tag_id=t.id))
+        db.commit()
+        resp = client.get("/export/csv?tag=ml")
+        assert resp.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(resp.text)))
+        assert len(rows) == 1
+        assert rows[0]["Highlight"] == "ml stuff"
+
+    def test_export_filter_no_match_returns_400(self, client, make_highlight):
+        make_highlight(text="nothing favorited")
+        resp = client.get("/export/csv?favorited_only=true")
+        assert resp.status_code == 400
+        # Filter-specific message, not the generic empty-library one.
+        assert "filters" in resp.text.lower()
+
+    def test_export_filters_compose(self, client, db, make_highlight, make_book):
+        """tag + favorited_only should AND together, not OR."""
+        from app.models import Tag, HighlightTag
+        b = make_book(title="X")
+        h_fav_tagged = make_highlight(text="fav+tag", book=b, is_favorited=True)
+        h_fav_only = make_highlight(text="fav only", book=b, is_favorited=True)
+        h_tag_only = make_highlight(text="tag only", book=b)
+        t = Tag(name="ml"); db.add(t); db.commit(); db.refresh(t)
+        db.add(HighlightTag(highlight_id=h_fav_tagged.id, tag_id=t.id))
+        db.add(HighlightTag(highlight_id=h_tag_only.id, tag_id=t.id))
+        db.commit()
+        resp = client.get("/export/csv?tag=ml&favorited_only=true")
+        assert resp.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(resp.text)))
+        assert len(rows) == 1
+        assert rows[0]["Highlight"] == "fav+tag"
+
+
     def test_markdown_export_returns_zip(self, client, make_highlight, make_book):
         """GET /export/markdown.zip should return a ZIP with one .md per book."""
         import io as _io
