@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chikaki.com/freewise/schemas/kindle-export-v1.json",
+  "title": "Kindle Notebook Export Envelope (v1)",
+  "type": "object",
+  "required": ["schema_version", "exported_at", "source", "books"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$"
+    },
+    "exported_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "const": "kindle_notebook"
+    },
+    "books": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Book" }
+    }
+  },
+  "$defs": {
+    "Book": {
+      "type": "object",
+      "required": ["asin", "title", "highlights"],
+      "additionalProperties": false,
+      "properties": {
+        "asin": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "author": { "type": ["string", "null"] },
+        "cover_url": { "type": ["string", "null"] },
+        "highlights": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Highlight" }
+        }
+      }
+    },
+    "Highlight": {
+      "type": "object",
+      "required": ["id", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string" },
+        "note": { "type": ["string", "null"] },
+        "color": {
+          "anyOf": [
+            { "type": "null" },
+            { "enum": ["yellow", "blue", "pink", "orange"] }
+          ]
+        },
+        "location": { "type": ["integer", "null"] },
+        "page": { "type": ["integer", "null"] },
+        "created_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    }
+  }
+}
