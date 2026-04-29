@@ -4,7 +4,7 @@
 
 **Goal:** Replace the failing QNAP headless Playwright scraper with a Chrome MV3 browser extension that scrapes `read.amazon.com/kp/notebook` inside the user's real browser session and POSTs the results to a new `/api/v2/imports/kindle` endpoint, plus a dashboard UI for uploading the `storage_state.json` cookie used by the surviving monthly fallback scraper.
 
-**Architecture:** Extension → hidden tab → DOM scrape → POST → reuse existing `import_kindle_notebook_json()` importer. Subdomain split (`api.freewise.chikaki.com`) bypasses Cloudflare Access. DRY achieved by moving Python scraper into the main FreeWise repo so a single `shared/` directory holds the DOM selectors and JSON Schema used by both Python and TypeScript.
+**Architecture:** Extension → hidden tab → DOM scrape → POST → reuse existing `import_kindle_notebook_json()` importer. Subdomain split (`freewiseapi.chikaki.com`) bypasses Cloudflare Access. DRY achieved by moving Python scraper into the main FreeWise repo so a single `shared/` directory holds the DOM selectors and JSON Schema used by both Python and TypeScript.
 
 **Tech Stack:** Python 3.12, FastAPI, SQLModel, SQLite (server). TypeScript + Vite + Vitest + ajv (extension). Manifest V3, Chrome / Edge only.
 
@@ -272,57 +272,76 @@ instead of expecting it in this deploy repo."
 
 ---
 
-# Phase A — Cloudflare subdomain (manual infra)
+# Phase A — Cloudflare subdomain (infra)
 
-This phase is performed manually in the Cloudflare dashboard and the QNAP `cloudflared` config. No code is committed; verification is via `curl`.
+This phase is performed via the Cloudflare API (no code is committed; verification is via `curl`).
 
-### Task A.1: Add DNS + Tunnel ingress for `api.freewise.chikaki.com`
+> **Note (executed 2026-04-29):** Originally specified `api.freewise.chikaki.com`, but Cloudflare's free Universal SSL only covers `chikaki.com` + `*.chikaki.com` (one level). A 2-level subdomain would need an Advanced Certificate ($10/mo). Renamed to `freewiseapi.chikaki.com` (1-level) — same security model (separate hostname → no CF Access), zero cost.
 
-- [ ] **Step 1: Inspect current cloudflared config on QNAP**
+### Task A.1: Add DNS + Tunnel ingress for `freewiseapi.chikaki.com`
 
-```bash
-ssh qnap 'cat /share/Container/freewise/cloudflared/config.yml 2>/dev/null || \
-          cat /etc/cloudflared/config.yml 2>/dev/null || \
-          docker inspect cloudflared --format "{{range .Mounts}}{{.Source}}:{{.Destination}}{{println}}{{end}}"' 2>&1 | head -40
-```
-
-Look for the existing ingress rule that maps `freewise.chikaki.com` → `http://freewise:8063`.
-
-- [ ] **Step 2: Add `api.freewise.chikaki.com` to the same Tunnel**
-
-In the Cloudflare dashboard, under the Tunnel that hosts `freewise.chikaki.com`, add a new Public Hostname:
-- Subdomain: `api`
-- Domain: `freewise.chikaki.com`
-- Service: `http://freewise:8063` (same as primary hostname)
-
-This auto-creates the CNAME DNS record.
-
-- [ ] **Step 3: Confirm Access policy is hostname-scoped to the bare domain**
-
-In Cloudflare Access > Applications, open the existing FreeWise app and confirm its hostname matches `freewise.chikaki.com` only — NOT `*.freewise.chikaki.com`. If the wildcard matched, the api subdomain would inherit the policy.
-
-If a wildcard policy exists, narrow it to just `freewise.chikaki.com`.
-
-- [ ] **Step 4: Verify**
+- [x] **Step 1: Identify Account/Zone/Tunnel IDs via API**
 
 ```bash
-# Should return JSON (or 401 if no token), NOT the CF Access login HTML
-curl -i https://api.freewise.chikaki.com/api/v2/auth/ 2>&1 | head -20
+export CF_API_TOKEN=<token-with-Zone:Read,Zone:DNS:Edit,Account:Cloudflare-Tunnel:Edit>
+# Zone (account_id is in the zone metadata)
+curl -s "https://api.cloudflare.com/client/v4/zones?name=chikaki.com" \
+  -H "Authorization: Bearer $CF_API_TOKEN" | jq '.result[] | {id,account:.account.id}'
+# Tunnels
+curl -s "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/cfd_tunnel?is_deleted=false" \
+  -H "Authorization: Bearer $CF_API_TOKEN" | jq '.result[] | {id,name}'
 ```
 
-Expected status: `401 Unauthorized` from FastAPI (because no `Authorization` header), with `WWW-Authenticate: Token realm="freewise"` header. Body is JSON.
+Outcome: ZONE_ID=`dae9c9ba553b003b9f043c074f6e54cb`, ACCOUNT_ID=`b8c1de77334ebcda42b581fcbe19b7ca`, TUNNEL_ID=`c1ccecab-7e9d-4882-9c7f-9b3380c611e0` (`freewise-qnap`).
 
-If the response is HTML containing "Cloudflare Access" or a login page, the Access policy still applies — go back to step 3.
-
-- [ ] **Step 5: Verify with valid token**
+- [x] **Step 2: Inspect current ingress (DO NOT clobber)**
 
 ```bash
-TOKEN="<paste a valid token from /settings/api-tokens>"
-curl -H "Authorization: Token $TOKEN" \
-     https://api.freewise.chikaki.com/api/v2/auth/ 2>&1 | head
+curl -s "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" \
+  -H "Authorization: Bearer $CF_API_TOKEN" | jq .result.config.ingress
 ```
 
-Expected: `200 OK` with JSON body.
+Existing: single rule `freewise.chikaki.com → http://freewise:8063` plus `http_status:404` catchall.
+
+- [x] **Step 3: Create CNAME `freewiseapi.chikaki.com`**
+
+```bash
+curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+  -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+  --data '{"type":"CNAME","name":"freewiseapi","content":"<TUNNEL_ID>.cfargotunnel.com","proxied":true,"ttl":1}'
+```
+
+- [x] **Step 4: Update tunnel ingress (preserving existing rules + catchall)**
+
+```bash
+curl -s -X PUT "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/configurations" \
+  -H "Authorization: Bearer $CF_API_TOKEN" -H "Content-Type: application/json" \
+  --data '{"config":{"ingress":[
+    {"hostname":"freewise.chikaki.com","service":"http://freewise:8063"},
+    {"hostname":"freewiseapi.chikaki.com","service":"http://freewise:8063"},
+    {"service":"http_status:404"}
+  ],"warp-routing":{"enabled":false}}}'
+```
+
+- [x] **Step 5: Confirm CF Access app is bare-hostname only**
+
+```bash
+curl -s "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/access/apps" \
+  -H "Authorization: Bearer $CF_API_TOKEN" | jq '.result[] | {name, self_hosted_domains}'
+```
+
+The `freewise` app has `self_hosted_domains: ["freewise.chikaki.com"]` (no wildcard) — `freewiseapi.chikaki.com` is automatically uncovered. No edit needed.
+
+- [x] **Step 6: Verify**
+
+```bash
+# Backend reaches: 200 with healthz JSON (CF Access not applied)
+curl -i https://freewiseapi.chikaki.com/healthz | head -5
+# Sanity: bare host still gated by Access (302 to login)
+curl -o /dev/null -s -w "%{http_code} %{redirect_url}\n" https://freewise.chikaki.com/dashboard
+```
+
+Result (executed 2026-04-29): `freewiseapi.chikaki.com/healthz` → 200; `freewise.chikaki.com/dashboard` → 302 to `chikaki.cloudflareaccess.com`. Phase A complete.
 
 (No commit — infra change.)
 
@@ -1969,7 +1988,7 @@ export default defineConfig({
   "permissions": ["tabs", "scripting", "storage"],
   "host_permissions": [
     "https://read.amazon.com/*",
-    "https://api.freewise.chikaki.com/*"
+    "https://freewiseapi.chikaki.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -2603,7 +2622,7 @@ git commit -m "feat(extension): content-script orchestrator iterates library + s
 
 ```typescript
 export type Settings = {
-  server_url: string;  // e.g. 'https://api.freewise.chikaki.com'
+  server_url: string;  // e.g. 'https://freewiseapi.chikaki.com'
   token: string;
 };
 
@@ -2664,7 +2683,7 @@ function renderSettings() {
     <label class="block mb-2">
       <span class="text-xs">Server URL</span>
       <input id="server" type="url"
-             placeholder="https://api.freewise.chikaki.com"
+             placeholder="https://freewiseapi.chikaki.com"
              class="w-full border px-1 py-0.5 mt-0.5">
     </label>
     <label class="block mb-2">
@@ -2997,7 +3016,7 @@ Copy the value.
 - [ ] **Step 2: Configure the extension**
 
 Open extension popup → Settings:
-- Server URL: `https://api.freewise.chikaki.com`
+- Server URL: `https://freewiseapi.chikaki.com`
 - Token: pasted value
 - Save.
 

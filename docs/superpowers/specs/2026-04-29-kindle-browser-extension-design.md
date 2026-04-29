@@ -57,7 +57,7 @@ Three independent paths converge on the same `Book` / `Highlight` rows in SQLite
 ┌──────────────────────────────┐         ┌────────────────────────────────┐
 │  Chrome / Edge (user)        │         │  FreeWise                       │
 │                              │         │                                 │
-│  Browser extension           │  POST   │  api.freewise.chikaki.com       │
+│  Browser extension           │  POST   │  freewiseapi.chikaki.com       │
 │   ・popup (Sync now)         ├─────────▶  /api/v2/imports/kindle (new)   │
 │   ・content script (scrape) ◀┼─ DOM ──▶│   ・ApiToken auth (existing)    │
 │   ・background SW            │         │   ・CORS for ext origin         │
@@ -89,7 +89,7 @@ The extension is the primary path. Cookie upload UI removes the SSH workflow tha
 
 0a. User opens the popup. Settings tab shows empty `Server URL` and `Token` fields.
 0b. In another tab, user generates an API token at `https://freewise.chikaki.com/settings/api-tokens` (existing UI), copies the value.
-0c. Returns to the extension popup, pastes `Server URL: https://api.freewise.chikaki.com` and the token. Saves.
+0c. Returns to the extension popup, pastes `Server URL: https://freewiseapi.chikaki.com` and the token. Saves.
 0d. Setup is now complete; the popup main view shows the "Sync now" button.
 
 **Sync flow** (every time the user wants to sync):
@@ -103,7 +103,7 @@ The extension is the primary path. Cookie upload UI removes the SSH workflow tha
 7. When done, content script sends final `KindleExportV1` envelope to SW.
 8. SW closes the hidden tab.
 9. SW reads `server_url` and `token` from `chrome.storage.local`.
-10. SW POSTs `https://api.freewise.chikaki.com/api/v2/imports/kindle` with `Authorization: Token <value>` and gzipped body.
+10. SW POSTs `https://freewiseapi.chikaki.com/api/v2/imports/kindle` with `Authorization: Token <value>` and gzipped body.
 11. SW pushes result to popup. Popup renders contextual success message (see § 9 First-sync UX).
 
 If the user closes the popup mid-sync, the sync continues in the SW. Reopening the popup shows current state (the SW persists the in-progress flag in `chrome.storage.session`).
@@ -119,7 +119,7 @@ If the user closes the popup mid-sync, the sync continues in the SW. Reopening t
 | Hostname | Purpose | Protected by |
 |---|---|---|
 | `freewise.chikaki.com` | Human-facing UI (dashboard, all `/dashboard/*`, settings) | Cloudflare Access |
-| `api.freewise.chikaki.com` | Machine API (`/api/v2/*`) | ApiToken (FastAPI dependency); Cloudflare Access not applied |
+| `freewiseapi.chikaki.com` | Machine API (`/api/v2/*`) | ApiToken (FastAPI dependency); Cloudflare Access not applied |
 
 Both hostnames point to the same Cloudflare Tunnel and the same FastAPI app. The split is enforced at Cloudflare Access policy level, not in the application — the FastAPI side serves both, and the existing routers don't need a hostname check (the `api_v2` router is namespaced under `/api/v2/*` regardless of host).
 
@@ -127,10 +127,10 @@ This subdomain split also benefits future API consumers (CLI, mobile, Readwise-c
 
 **Setup actions** (recorded for the implementation plan):
 
-1. Cloudflare DNS: add CNAME `api.freewise.chikaki.com` → same Tunnel as `freewise.chikaki.com`.
-2. Cloudflare Tunnel (`cloudflared` config on QNAP): add an ingress rule mapping `api.freewise.chikaki.com` to the same backend `http://freewise:8063`.
-3. Cloudflare Access: scope existing application to hostname `freewise.chikaki.com` only. The new `api.freewise.chikaki.com` subdomain has no Access application configured, so requests reach the origin unauthenticated at the Cloudflare level. ApiToken auth in FastAPI is the sole gate for the API subdomain.
-4. Verify `curl -H "Authorization: Token xxx" https://api.freewise.chikaki.com/api/v2/highlights` returns JSON, not the Cloudflare Access login HTML.
+1. Cloudflare DNS: add CNAME `freewiseapi.chikaki.com` → same Tunnel as `freewise.chikaki.com`.
+2. Cloudflare Tunnel (`cloudflared` config on QNAP): add an ingress rule mapping `freewiseapi.chikaki.com` to the same backend `http://freewise:8063`.
+3. Cloudflare Access: scope existing application to hostname `freewise.chikaki.com` only. The new `freewiseapi.chikaki.com` subdomain has no Access application configured, so requests reach the origin unauthenticated at the Cloudflare level. ApiToken auth in FastAPI is the sole gate for the API subdomain.
+4. Verify `curl -H "Authorization: Token xxx" https://freewiseapi.chikaki.com/api/v2/highlights` returns JSON, not the Cloudflare Access login HTML.
 
 ---
 
@@ -170,7 +170,7 @@ extensions/kindle-importer/
   "permissions": ["tabs", "scripting", "storage"],
   "host_permissions": [
     "https://read.amazon.com/*",
-    "https://api.freewise.chikaki.com/*"
+    "https://freewiseapi.chikaki.com/*"
   ],
   "action": { "default_popup": "popup.html" },
   "background": { "service_worker": "background.js", "type": "module" },
@@ -222,7 +222,7 @@ For a self-hosted single user, the `chrome.storage.local` ergonomics are accepta
 ### `POST /api/v2/imports/kindle` (new)
 
 ```
-Hostname: api.freewise.chikaki.com
+Hostname: freewiseapi.chikaki.com
 Auth: Authorization: Token <value>  (existing api_v2 dependency)
 Content-Type: application/json
 Content-Encoding: gzip  (optional, supported)
@@ -360,7 +360,7 @@ Progress bar during scan: "Scanning N of M books..." with cancel button.
 | User not logged in to Amazon | SW watches `chrome.tabs.onUpdated` for the hidden tab. If final URL after `complete` is `*amazon.com/ap/signin*` or any host other than `read.amazon.com/kp/notebook*`, login is required. (Content script never runs on the redirected signin page because it doesn't match the manifest URL.) | Popup: "Please log in to read.amazon.com first." Button: "Open Amazon login" (opens the redirect target as a visible tab so user can sign in). |
 | FreeWise unreachable | `fetch` throws `TypeError` (DNS/network) or 5xx | Popup: "FreeWise unreachable. Server: \<url\>". Button: "Retry" + "Open settings". |
 | Token rejected | 401 response | Popup: "Token expired or revoked. Re-paste in settings." Button: "Open settings" + "Open token page on FreeWise". |
-| CORS rejected by browser | `fetch` throws `TypeError: NetworkError when attempting to fetch resource` | Popup: "API CORS misconfigured. Check api.freewise.chikaki.com server." Console error with detail. |
+| CORS rejected by browser | `fetch` throws `TypeError: NetworkError when attempting to fetch resource` | Popup: "API CORS misconfigured. Check freewiseapi.chikaki.com server." Console error with detail. |
 | Schema validation fails (JS-side) | ajv rejects envelope | Popup: "Internal extraction error: \<field path\>". Console: full JSON for debugging. Sync aborts before POST. |
 | Amazon DOM changed | All selector candidates fail | Popup: "Amazon changed their notebook page format. Update extension." Console: which selectors failed. |
 | Hidden tab fails to load | `tabs.onUpdated` doesn't fire `complete` within 60s | Popup: "Couldn't open Amazon page. Try opening read.amazon.com manually first to verify your session." |
@@ -552,7 +552,7 @@ Implementation plan (the next document) will detail each step. Rough sketch:
 | Phase | Step | LOC est. | Dependencies |
 |---|---|---|---|
 | Repo | 0. Consolidate scrapers/kindle into main FreeWise repo | mostly file moves | — |
-| Infra | A. Cloudflare subdomain `api.freewise.chikaki.com` | infra only | — |
+| Infra | A. Cloudflare subdomain `freewiseapi.chikaki.com` | infra only | — |
 | Backend | B. Shared selectors JSON, refactor `scraper.py` to load from it | ~60 | 0 |
 | Backend | C. JSON Schema file + Python jsonschema validator | ~80 | 0 |
 | Backend | D. `POST /api/v2/imports/kindle` + gzip request middleware + tests | ~180 | C |
@@ -584,7 +584,7 @@ Recorded for future reference:
   - Rationale: same Chromium MV3 codebase covers both; Firefox / Safari not needed.
 - Fallback: keep QNAP scraper as monthly cron + manual button + new cookie upload UI.
   - Rationale: safety net for Amazon DOM regressions or extension bugs.
-- Subdomain split for API: `api.freewise.chikaki.com` bypasses Cloudflare Access.
+- Subdomain split for API: `freewiseapi.chikaki.com` bypasses Cloudflare Access.
   - Rationale: only way to make extension `fetch()` work without rewriting CF Access for cookie sharing.
 
 ---
