@@ -1,0 +1,24 @@
+{
+  "name": "freewise-kindle-importer",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && cp manifest.json dist/ && mkdir -p dist/icons && cp -R icons/. dist/icons/",
+    "dev": "vite build --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4",
+    "@vitest/web-worker": "^3.2.4",
+    "happy-dom": "^20.9.0"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  }
+}
