@@ -33,6 +33,12 @@ COPY scrapers/kindle/cli.py /work/scrapers/kindle/cli.py
 COPY scrapers/kindle/models.py /work/scrapers/kindle/models.py
 COPY scrapers/kindle/scraper.py /work/scrapers/kindle/scraper.py
 
+# Selectors loader: scraper.py does
+#   Path(__file__).resolve().parents[2] / "shared" / "kindle-selectors.json"
+# parents[2] inside the container is /work, so the JSON must live at
+# /work/shared/. Single source of truth shared with the browser extension.
+COPY shared/kindle-selectors.json /work/shared/kindle-selectors.json
+
 # Permissions handling mirrors Dockerfile.safaribooks: the bind mounts on QNAP
 # are owned by admin/root, so we run as root inside the container by default.
 # `KINDLE_RUN_AS=0:0` in compose makes that explicit and overridable.

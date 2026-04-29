@@ -47,6 +47,11 @@ RUN grep -vE '^\s*(pytest|pytest-asyncio)\b' requirements.txt > requirements-pro
 # Copy the application source
 COPY app/ app/
 
+# Importer + scrapers load DOM selectors and the JSON Schema from this dir
+# at module-import time (Path(__file__).resolve().parents[2] / "shared").
+# Must be present in the runtime image, not bind-mounted.
+COPY shared/ shared/
+
 # Overwrite the development CSS with the freshly-compiled version
 COPY --from=tailwind /build/app/static/css/tailwind.css app/static/css/tailwind.css
 
