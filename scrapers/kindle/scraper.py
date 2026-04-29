@@ -40,6 +40,7 @@ whole export.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -56,27 +57,19 @@ from scrapers.kindle.models import (
     ScrapeOutput,
 )
 
-NOTEBOOK_URL = "https://read.amazon.com/kp/notebook"
+_SHARED_DIR = Path(__file__).resolve().parents[2] / "shared"
+_SELECTORS = json.loads((_SHARED_DIR / "kindle-selectors.json").read_text())
 
-# Selector groups — try each in order so we degrade gracefully if Amazon
-# tweaks the DOM. We never trust a single selector in production code.
-LIBRARY_CONTAINER_SELECTORS: tuple[str, ...] = (
-    "#kp-notebook-library",
-    "#library-section",
-    "div.kp-notebook-library",
-)
-LIBRARY_ROW_SELECTOR = "div.kp-notebook-library-each-book"
-ANNOTATIONS_CONTAINER_SELECTORS: tuple[str, ...] = (
-    "#kp-notebook-annotations",
-    "#annotations",
-    "div.kp-notebook-annotation-list",
-)
-ANNOTATION_ROW_SELECTOR = "div.a-row.a-spacing-base.a-spacing-top-medium"
-HIGHLIGHT_TEXT_SELECTOR = "span#highlight"
-NOTE_TEXT_SELECTOR = "span#note"
-HIGHLIGHT_COLOR_PREFIX = "kp-notebook-highlight-"
-LOCATION_TEXT_SELECTOR = "span#kp-annotation-location"
-HEADER_NOTE_LABEL_SELECTOR = "span#annotationNoteHeader"
+NOTEBOOK_URL: str = _SELECTORS["notebook_url"]
+LIBRARY_CONTAINER_SELECTORS: tuple[str, ...] = tuple(_SELECTORS["library_container"])
+LIBRARY_ROW_SELECTOR: str = _SELECTORS["library_row"]
+ANNOTATIONS_CONTAINER_SELECTORS: tuple[str, ...] = tuple(_SELECTORS["annotation_container"])
+ANNOTATION_ROW_SELECTOR: str = _SELECTORS["annotation_row"]
+HIGHLIGHT_TEXT_SELECTOR: str = _SELECTORS["highlight_text"]
+NOTE_TEXT_SELECTOR: str = _SELECTORS["note_text"]
+HIGHLIGHT_COLOR_PREFIX: str = _SELECTORS["highlight_color_prefix"]
+LOCATION_TEXT_SELECTOR: str = _SELECTORS["location_text"]
+HEADER_NOTE_LABEL_SELECTOR: str = _SELECTORS["header_note_label"]
 
 DEFAULT_LOGIN_TIMEOUT_SECONDS = 300
 SCROLL_PAUSE_MS = 500
