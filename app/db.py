@@ -61,13 +61,18 @@ def ensure_schema_migrations(engine=None) -> None:
             if backfilled:
                 _log.info("migration: backfilled kindle_asin on %d book rows", backfilled)
 
-        cols = {
-            row[1]
-            for row in conn.execute(text("PRAGMA table_info(apitoken)")).all()
+        tables = {
+            row[0]
+            for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).all()
         }
-        if "scopes" not in cols:
-            _log.info("migration: adding apitoken.scopes column")
-            conn.execute(text("ALTER TABLE apitoken ADD COLUMN scopes VARCHAR"))
+        if "apitoken" in tables:
+            cols = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(apitoken)")).all()
+            }
+            if "scopes" not in cols:
+                _log.info("migration: adding apitoken.scopes column")
+                conn.execute(text("ALTER TABLE apitoken ADD COLUMN scopes VARCHAR"))
 
 
 def get_session():

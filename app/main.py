@@ -24,6 +24,7 @@ from app.routers import (
     api_tokens,
 )
 from app.api_v2 import router as api_v2_router
+from fastapi.middleware.cors import CORSMiddleware
 from app.middleware.gzip_request import GzipRequestMiddleware
 from app.services import kindle_import_watcher
 
@@ -117,6 +118,13 @@ def _maybe_start_kindle_scheduler():
 
 app = FastAPI(title="FreeWise", lifespan=lifespan)
 app.add_middleware(GzipRequestMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^chrome-extension://[a-z0-9]+$",
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Content-Encoding"],
+    max_age=86400,
+)
 
 
 _STREAK_BEARING_PATHS: tuple[str, ...] = (
