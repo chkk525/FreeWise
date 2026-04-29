@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1.7
+#
+# Kindle Notebook scraper image.
+#
+# Why this base image:
+#   mcr.microsoft.com/playwright/python ships pre-installed Chromium plus all
+#   the linker stubs Chromium needs (libnss3, libatk-bridge, …). Building a
+#   slim Python base ourselves and `playwright install --with-deps` adds ~5min
+#   to every build and frequently breaks on Debian-bookworm.
+#
+# QTWEBENGINE_* (used by safaribooks for ebook-convert) is NOT needed here —
+# Playwright manages its own browser lifecycle, and we never invoke Calibre.
+FROM mcr.microsoft.com/playwright/python:v1.49.0-jammy
+
+# Locale + sane Python defaults.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+WORKDIR /work
+
+# Tiny Python deps. The base image already has playwright; we just pin a
+# matching wheel to avoid drift.
+RUN pip install --no-cache-dir "playwright==1.49.0"
+
+# Copy only what we run. The fixtures + tests directory is left out so the
+# runtime image stays minimal — tests run in CI / on the developer machine.
+COPY scrapers/__init__.py /work/scrapers/__init__.py
+COPY scrapers/kindle/__init__.py /work/scrapers/kindle/__init__.py
+COPY scrapers/kindle/__main__.py /work/scrapers/kindle/__main__.py
+COPY scrapers/kindle/cli.py /work/scrapers/kindle/cli.py
+COPY scrapers/kindle/models.py /work/scrapers/kindle/models.py
+COPY scrapers/kindle/scraper.py /work/scrapers/kindle/scraper.py
+
+# Permissions handling mirrors Dockerfile.safaribooks: the bind mounts on QNAP
+# are owned by admin/root, so we run as root inside the container by default.
+# `KINDLE_RUN_AS=0:0` in compose makes that explicit and overridable.
+#
+# Two well-known directories — both are bind-mounted from the host at runtime:
+#   /work/state   storage_state.json (Playwright session) — must persist
+#   /work/output  kindle_highlights.json — picked up by the FreeWise importer
+RUN mkdir -p /work/state /work/output
+
+# `python -m scrapers.kindle <login|scrape> ...`
+ENTRYPOINT ["python", "-m", "scrapers.kindle"]
+
+# Default to a headless scrape; compose / CLI wrappers override this for login.
+CMD ["scrape", "--state", "/work/state/storage_state.json", \
+     "--output", "/work/output/kindle_highlights.json"]
