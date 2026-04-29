@@ -23,6 +23,7 @@ from app.routers import (
     export,
     api_tokens,
 )
+from app.routers import kindle_cookie as kindle_cookie_router
 from app.api_v2 import router as api_v2_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.middleware.gzip_request import GzipRequestMiddleware
@@ -173,6 +174,7 @@ app.include_router(importer.router)
 app.include_router(library.router)
 app.include_router(export.router)
 app.include_router(api_tokens.router)
+app.include_router(kindle_cookie_router.router)
 app.include_router(api_v2_router.router)
 
 

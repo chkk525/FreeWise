@@ -1,0 +1,22 @@
+{% if status.exists %}
+  {% if status.valid %}
+    <div class="p-3 rounded bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-sm text-gray-800 dark:text-gray-200">
+      <span class="text-emerald-700 dark:text-emerald-400">&#10003; Cookie present.</span>
+      Last updated: <time data-iso="{{ status.mtime }}">{{ status.mtime }}</time>
+      ({{ status.cookie_count }} cookies, {{ status.size }} bytes)
+      {% if status.has_at_main %}<span class="text-emerald-700 dark:text-emerald-400">at-main &#10003;</span>
+      {% else %}<span class="text-red-600 dark:text-red-400">at-main missing &#10007;</span>{% endif %}
+      <details class="mt-1"><summary class="text-xs cursor-pointer">Domains</summary>
+        <code class="text-xs">{{ status.domains | join(', ') }}</code>
+      </details>
+    </div>
+  {% else %}
+    <div class="p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 text-sm text-gray-800 dark:text-gray-200">
+      &#9888; File present but not valid JSON.
+    </div>
+  {% endif %}
+{% else %}
+  <div class="p-3 rounded bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300">
+    No cookie file uploaded yet. The monthly QNAP scraper cannot run until you upload one.
+  </div>
+{% endif %}
