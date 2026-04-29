@@ -179,10 +179,19 @@ app/
 ├── main.py              # FastAPI application entry point
 ├── db.py                # Database engine and session helpers
 ├── models.py            # SQLModel ORM models
+├── api_v2/              # Readwise-compatible /api/v2 router (token auth)
+├── importers/           # Import pipelines (Kindle JSON, Readwise CSV, …)
+├── middleware/          # Custom Starlette middleware (gzip request body, …)
 ├── routers/             # Route handlers (dashboard, library, highlights, …)
+├── services/            # Long-running / cross-cutting services
 ├── templates/           # Jinja2 HTML templates
 ├── static/              # CSS, JS, uploaded covers
 └── utils/               # Import parsers (Readwise, Meebook, custom CSV)
+extensions/
+└── kindle-importer/     # Chrome MV3 extension — see docs/KINDLE_BROWSER_EXTENSION.md
+scrapers/
+└── kindle/              # Playwright fallback scraper (monthly cron on QNAP)
+shared/                  # Selectors + JSON Schema shared by Python and TS
 tests/                   # pytest test suite
 Dockerfile               # Multi-stage production image (Node → Python)
 docker-compose.yml       # Single-service deployment with named volumes

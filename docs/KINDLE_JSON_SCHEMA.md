@@ -1,11 +1,21 @@
 # Kindle Notebook Export JSON Schema
 
-The contract between the **scraper** (separate repo: `freewise-qnap-deploy`,
-`feat/kindle-scraper` branch) and the **importer** (this repo, `app/importers/kindle_notebook.py`).
+The contract between **producers** (the QNAP Playwright scraper and the
+new Chrome MV3 browser extension) and the **importer**
+(`app/importers/kindle_notebook.py`).
+
+The canonical machine-readable schema is
+[`shared/kindle-export-v1.schema.json`](../shared/kindle-export-v1.schema.json)
+(JSON Schema Draft 2020-12). The importer validates every envelope
+against it via `jsonschema` before any DB write; the extension
+validates client-side via `ajv` before POSTing. Both sides therefore
+catch shape errors at the boundary, never silently. This document is
+the human-readable companion to the JSON Schema; if the two disagree,
+the JSON Schema wins.
 
 Both sides MUST agree on this schema. When changing it, bump `schema_version`
-and update the importer to handle both old and new versions until the scraper
-is also upgraded.
+and update the importer to handle both old and new versions until all
+producers are upgraded.
 
 ## Top-level
 
@@ -100,6 +110,25 @@ The importer MUST:
 
 1. Reject the file if `schema_version` major differs from supported.
 2. Reject the file if `source != "kindle_notebook"`.
-3. Skip (with a warning) any book missing `title` or `asin`.
-4. Skip (with a warning) any highlight missing `text` or `id`.
-5. Continue processing the remainder on per-record errors (best-effort import, never a single bad row failing the whole file).
+3. Reject the file if it fails the strict
+   [`shared/kindle-export-v1.schema.json`](../shared/kindle-export-v1.schema.json)
+   (Draft 2020-12). The first failing path is surfaced in the
+   `ValueError` message.
+4. Skip (with a structured per-row error) any book whose values pass
+   the schema but fail importer-level invariants (e.g. whitespace-only
+   title after strip).
+5. Continue processing the remainder on per-record errors (best-effort
+   import, never a single bad row failing the whole file).
+
+### Result shape
+
+`KindleImportResult.errors` is a `list[dict[str, str]]` with the shape
+`{"book_title": "...", "reason": "..."}` (per-book or per-highlight).
+The previous `list[str]` shape was changed in the v2 API rollout so
+the browser extension popup can render per-book failure detail.
+
+### `highlight.color`
+
+Stored as a JSON Schema enum (`yellow|blue|pink|orange|null`). Server
+v1 still does not persist color into the `Highlight` model — the field
+is validated but discarded. A future migration may add a column.
