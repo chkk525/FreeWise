@@ -35,12 +35,12 @@ _VALIDATOR = jsonschema.Draft202012Validator(_SCHEMA)
 
 @dataclass(frozen=True)
 class KindleImportResult:
-    """Aggregated counts and per-row error messages from a single import call."""
+    """Aggregated counts and per-row error dicts from a single import call."""
     books_created: int = 0
     books_matched: int = 0
     highlights_created: int = 0
     highlights_skipped_duplicates: int = 0
-    errors: list[str] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ def import_kindle_notebook_json(
     books_matched = 0
     highlights_created = 0
     highlights_skipped_duplicates = 0
-    errors: list[str] = []
+    errors: list[dict[str, str]] = []
 
     for book_idx, book_data in enumerate(payload.get("books", []) or []):
         try:
@@ -152,9 +152,10 @@ def import_kindle_notebook_json(
                 errors=errors,
             )
         except Exception as exc:  # defensive: never let one book kill the run
+            title = book_data.get("title") or f"<book at index {book_idx}>"
             msg = f"book[{book_idx}]: unexpected error: {exc}"
             logger.exception(msg)
-            errors.append(msg)
+            errors.append({"book_title": title, "reason": str(exc)})
             continue
 
         if counts is None:
@@ -183,7 +184,7 @@ def _import_book(
     session: Session,
     user_id: int,
     fallback_created_at: Optional[datetime],
-    errors: list[str],
+    errors: list[dict[str, str]],
 ) -> Optional[tuple[int, int, int, int]]:
     """
     Import one book and its highlights.
@@ -195,14 +196,12 @@ def _import_book(
     asin = (book_data.get("asin") or "").strip()
 
     if not title:
-        msg = f"Skipping book with missing title (asin={asin!r})"
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping book with missing title (asin=%r)", asin)
+        errors.append({"book_title": f"<book at asin {asin!r}>", "reason": "missing title"})
         return None
     if not asin:
-        msg = f"Skipping book {title!r}: missing asin"
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping book %r: missing asin", title)
+        errors.append({"book_title": title, "reason": "missing asin"})
         return None
 
     raw_highlights = book_data.get("highlights") or []
@@ -244,8 +243,7 @@ def _import_book(
             document_tags=f"asin:{asin}",
         )
         if book is None:  # pragma: no cover — only on empty title
-            msg = f"Failed to materialise book {title!r}"
-            errors.append(msg)
+            errors.append({"book_title": title, "reason": "failed to materialise book"})
             return None
 
     # Always set kindle_asin (Phase 3 column), and keep the document_tags
@@ -332,7 +330,7 @@ def _import_highlights(
     session: Session,
     user_id: int,
     fallback_created_at: Optional[datetime],
-    errors: list[str],
+    errors: list[dict[str, str]],
 ) -> tuple[int, int]:
     """Import highlights for a single book. Returns (created, skipped_duplicates)."""
     created = 0
@@ -350,11 +348,10 @@ def _import_highlights(
                 h_idx=h_idx,
             )
         except Exception as exc:
-            msg = (
-                f"book[{book.title!r}].highlight[{h_idx}]: unexpected error: {exc}"
+            logger.exception(
+                "book[%r].highlight[%d]: unexpected error: %s", book.title, h_idx, exc
             )
-            logger.exception(msg)
-            errors.append(msg)
+            errors.append({"book_title": book.title, "reason": f"highlight[{h_idx}]: {exc}"})
             continue
 
         if created_one:
@@ -372,7 +369,7 @@ def _import_one_highlight(
     session: Session,
     user_id: int,
     fallback_created_at: Optional[datetime],
-    errors: list[str],
+    errors: list[dict[str, str]],
     h_idx: int,
 ) -> tuple[bool, bool]:
     """
@@ -386,18 +383,12 @@ def _import_one_highlight(
     h_id = h.get("id")
 
     if not text:
-        msg = (
-            f"Skipping highlight #{h_idx} in book {book.title!r}: missing text"
-        )
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping highlight #%d in book %r: missing text", h_idx, book.title)
+        errors.append({"book_title": book.title, "reason": f"highlight #{h_idx}: missing text"})
         return (False, False)
     if not h_id:
-        msg = (
-            f"Skipping highlight #{h_idx} in book {book.title!r}: missing id"
-        )
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping highlight #%d in book %r: missing id", h_idx, book.title)
+        errors.append({"book_title": book.title, "reason": f"highlight #{h_idx}: missing id"})
         return (False, False)
 
     location, location_type = _resolve_location(h.get("location"), h.get("page"))

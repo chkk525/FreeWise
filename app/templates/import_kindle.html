@@ -38,7 +38,9 @@
                     </div>
                     <ul class="max-h-64 overflow-auto text-xs text-gray-700 dark:text-gray-200 space-y-1">
                         {% for err in errors %}
-                        <li class="px-2 py-1 border-b border-gray-100 dark:border-gray-800">{{ err }}</li>
+                        <li class="px-2 py-1 border-b border-gray-100 dark:border-gray-800">
+                          {% if err is mapping %}<strong>{{ err.book_title }}</strong>: {{ err.reason }}{% else %}{{ err }}{% endif %}
+                        </li>
                         {% endfor %}
                     </ul>
                 </div>

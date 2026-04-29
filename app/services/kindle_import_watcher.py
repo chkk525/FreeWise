@@ -109,7 +109,10 @@ def scan_and_import(
         books_matched += result.books_matched
         highlights_created += result.highlights_created
         highlights_skipped += result.highlights_skipped_duplicates
-        errors.extend(f"{path.name}: {e}" for e in result.errors)
+        errors.extend(
+            f"{path.name}: {e['book_title']}: {e['reason']}"
+            for e in result.errors
+        )
 
         target = processed_dir / path.name
         if target.exists():

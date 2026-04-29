@@ -413,3 +413,76 @@ def test_importer_rejects_book_with_no_asin(db):
     }
     with pytest.raises(ValueError, match="asin"):
         import_kindle_notebook_json(io.BytesIO(json.dumps(bad).encode()), db, user_id=1)
+
+
+# ── C.4: Structured errors ────────────────────────────────────────────────────
+
+
+def test_importer_partial_failure_returns_structured_errors(db, monkeypatch):
+    """When one book raises, errors is list[dict] with book_title + reason.
+    The good book still imports; the bad one is skipped."""
+    import app.importers.kindle_notebook as mod
+
+    real_get_or_create = mod.get_or_create_book
+
+    def flaky_get_or_create(session, *, title, author, **kwargs):
+        if title == "Bad Book":
+            raise RuntimeError("simulated dedup failure")
+        return real_get_or_create(session, title=title, author=author, **kwargs)
+
+    monkeypatch.setattr(mod, "get_or_create_book", flaky_get_or_create)
+
+    payload = {
+        "schema_version": "1.0",
+        "exported_at": "2026-04-29T00:00:00Z",
+        "source": "kindle_notebook",
+        "books": [
+            {
+                "asin": "B07GOOD",
+                "title": "Good Book",
+                "author": "A",
+                "cover_url": None,
+                "highlights": [
+                    {
+                        "id": "QID:1",
+                        "text": "valid highlight",
+                        "note": None,
+                        "color": None,
+                        "location": 1,
+                        "page": None,
+                        "created_at": None,
+                    }
+                ],
+            },
+            {
+                "asin": "B07BAD",
+                "title": "Bad Book",
+                "author": "B",
+                "cover_url": None,
+                "highlights": [
+                    {
+                        "id": "QID:99",
+                        "text": "bad book highlight",
+                        "note": None,
+                        "color": None,
+                        "location": 1,
+                        "page": None,
+                        "created_at": None,
+                    }
+                ],
+            },
+        ],
+    }
+    result = import_kindle_notebook_json(
+        io.BytesIO(json.dumps(payload).encode()), db, user_id=1
+    )
+
+    assert result.highlights_created == 1
+    assert result.books_created == 1
+
+    # The bad book produced a structured error.
+    assert len(result.errors) == 1
+    err = result.errors[0]
+    assert isinstance(err, dict)
+    assert err["book_title"] == "Bad Book"
+    assert "simulated dedup failure" in err["reason"]
