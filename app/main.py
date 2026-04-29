@@ -24,6 +24,7 @@ from app.routers import (
     api_tokens,
 )
 from app.api_v2 import router as api_v2_router
+from app.middleware.gzip_request import GzipRequestMiddleware
 from app.services import kindle_import_watcher
 
 
@@ -115,6 +116,7 @@ def _maybe_start_kindle_scheduler():
 
 
 app = FastAPI(title="FreeWise", lifespan=lifespan)
+app.add_middleware(GzipRequestMiddleware)
 
 
 _STREAK_BEARING_PATHS: tuple[str, ...] = (
