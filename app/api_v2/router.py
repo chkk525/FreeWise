@@ -38,6 +38,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlmodel import Session, func, select
 
 from app.api_v2.auth import get_api_token
+from app.api_v2.kindle_import import router as kindle_import_router
 from app.api_v2.schemas import (
     BookListItem,
     HighlightCreatePayload,
@@ -353,3 +354,6 @@ def list_books(
     )
 
     return PaginatedResponse(count=count, next=next_url, previous=prev_url, results=results)
+
+
+router.include_router(kindle_import_router)

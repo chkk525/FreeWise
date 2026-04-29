@@ -77,6 +77,15 @@ def client():
         yield c
 
 
+@pytest.fixture()
+def valid_token(db) -> str:
+    """Seed an ApiToken for user_id=1 and return its raw value."""
+    from app.models import ApiToken
+    t = ApiToken(token="test-token-value", name="kindle-ext-test", user_id=1)
+    db.add(t); db.commit()
+    return "test-token-value"
+
+
 # ── Factory helpers ───────────────────────────────────────────────────────────
 
 @pytest.fixture()
