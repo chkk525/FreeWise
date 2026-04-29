@@ -1,3 +1,5 @@
 node_modules/
 dist/
 *.log
+# Override root gitignore: allow src/lib/ (root ignores lib/ for Python)
+!src/lib/
