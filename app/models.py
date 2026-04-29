@@ -27,6 +27,7 @@ class ApiToken(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
     last_used_at: Optional[datetime] = Field(default=None, index=True)
+    scopes: Optional[str] = Field(default=None)
 
     def __repr__(self) -> str:
         return f"ApiToken(id={self.id}, name={self.name!r})"

@@ -81,3 +81,22 @@ def get_api_token(
     session.commit()
     session.refresh(row)
     return row
+
+
+def require_scope(*required: str):
+    """FastAPI dependency factory: require the token's ``scopes`` column to
+    include at least one of ``required``. Tokens with NULL/empty ``scopes``
+    are treated as full-access (legacy / pre-scope tokens) for
+    backwards compatibility.
+    """
+    def dep(token: ApiToken = Depends(get_api_token)) -> ApiToken:
+        if not token.scopes:
+            return token  # legacy: any scope OK
+        owned = {s.strip() for s in token.scopes.split(",") if s.strip()}
+        if not owned.intersection(required):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Token missing required scope: one of {required!r}",
+            )
+        return token
+    return dep

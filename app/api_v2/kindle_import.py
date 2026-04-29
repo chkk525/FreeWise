@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session
 
-from app.api_v2.auth import get_api_token
+from app.api_v2.auth import require_scope
 from app.db import get_session
 from app.importers.kindle_notebook import import_kindle_notebook_json
 from app.models import ApiToken
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/imports", tags=["v2-imports"])
 @router.post("/kindle")
 async def post_kindle_import(
     request: Request,
-    token: ApiToken = Depends(get_api_token),
+    token: ApiToken = Depends(require_scope("kindle:import")),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     raw = await request.body()
