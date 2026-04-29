@@ -12,8 +12,10 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import IO, Any, Optional, Union
 
+import jsonschema
 from sqlmodel import Session, select
 
 from app.models import Book, Highlight
@@ -25,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_SCHEMA_MAJOR = "1"
 SUPPORTED_SOURCE = "kindle_notebook"
+
+_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "shared" / "kindle-export-v1.schema.json"
+_SCHEMA = json.loads(_SCHEMA_PATH.read_text())
+_VALIDATOR = jsonschema.Draft202012Validator(_SCHEMA)
 
 
 @dataclass(frozen=True)
@@ -49,7 +55,8 @@ def _read_payload(file_obj: Union[IO[bytes], IO[str]]) -> dict[str, Any]:
 
 
 def _validate_envelope(payload: dict[str, Any]) -> None:
-    """Raise ValueError if schema_version major or source is unsupported."""
+    """Raise ValueError if schema_version major or source is unsupported, OR
+    if the envelope fails the strict shared JSON Schema."""
     schema_version = payload.get("schema_version", "")
     if not isinstance(schema_version, str) or "." not in schema_version:
         raise ValueError(
@@ -68,6 +75,12 @@ def _validate_envelope(payload: dict[str, Any]) -> None:
         raise ValueError(
             f"Unsupported source: {source!r} (expected {SUPPORTED_SOURCE!r})"
         )
+
+    schema_errors = sorted(_VALIDATOR.iter_errors(payload), key=lambda e: list(e.absolute_path))
+    if schema_errors:
+        first = schema_errors[0]
+        path = ".".join(str(p) for p in first.absolute_path) or "(root)"
+        raise ValueError(f"Schema validation failed at {path}: {first.message}")
 
 
 def _merge_asin_tag(existing: Optional[str], asin: str) -> str:

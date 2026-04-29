@@ -118,42 +118,48 @@ def test_rejects_unsupported_source(db):
 # ── Per-record best-effort behavior ──────────────────────────────────────────
 
 
-def test_skips_book_missing_asin(db):
+def test_rejects_envelope_with_empty_asin(db):
+    """An envelope containing a book with empty asin is rejected by the strict
+    JSON Schema validator before any DB write.
+
+    The shared schema requires asin: string with minLength:1. An empty or null
+    asin is therefore a schema-level error, not a per-book soft skip.
+    """
     payload = {
         "schema_version": "1.0",
         "exported_at": "2026-04-25T00:00:00Z",
         "source": "kindle_notebook",
         "books": [
             {
-                "asin": None,
+                "asin": "",
                 "title": "Bad Book",
                 "author": "Nobody",
+                "cover_url": None,
                 "highlights": [
-                    {"id": "x", "text": "irrelevant", "location": 1, "page": None},
-                ],
-            },
-            {
-                "asin": "B0VALID0001",
-                "title": "Good Book",
-                "author": "Author",
-                "highlights": [
-                    {"id": "g1", "text": "good highlight", "location": 5, "page": None},
+                    {
+                        "id": "x",
+                        "text": "irrelevant",
+                        "note": None,
+                        "color": None,
+                        "location": 1,
+                        "page": None,
+                        "created_at": None,
+                    }
                 ],
             },
         ],
     }
-    result = import_kindle_notebook_json(_to_bytes(payload), db, user_id=1)
+    with pytest.raises(ValueError, match="asin"):
+        import_kindle_notebook_json(_to_bytes(payload), db, user_id=1)
 
-    assert result.books_created == 1
-    assert result.highlights_created == 1
-    assert any("asin" in e.lower() or "skip" in e.lower() for e in result.errors)
-
-    books = db.exec(select(Book)).all()
-    assert len(books) == 1
-    assert books[0].title == "Good Book"
+    # No DB writes should have occurred.
+    assert db.exec(select(Book)).all() == []
 
 
 def test_skips_highlight_missing_text(db):
+    # The strict envelope schema requires id (type:string, minLength:1) and
+    # text (type:string, allows "").  Use empty string for text to exercise
+    # the per-highlight skip logic without violating the schema.
     payload = {
         "schema_version": "1.0",
         "exported_at": "2026-04-25T00:00:00Z",
@@ -163,10 +169,35 @@ def test_skips_highlight_missing_text(db):
                 "asin": "B0VALID0002",
                 "title": "Mixed Book",
                 "author": "Author",
+                "cover_url": None,
                 "highlights": [
-                    {"id": "ok", "text": "good text", "location": 10, "page": None},
-                    {"id": "bad", "text": None, "location": 20, "page": None},
-                    {"id": None, "text": "no id", "location": 30, "page": None},
+                    {
+                        "id": "ok",
+                        "text": "good text",
+                        "note": None,
+                        "color": None,
+                        "location": 10,
+                        "page": None,
+                        "created_at": None,
+                    },
+                    {
+                        "id": "bad-empty-text",
+                        "text": "",
+                        "note": None,
+                        "color": None,
+                        "location": 20,
+                        "page": None,
+                        "created_at": None,
+                    },
+                    {
+                        "id": "bad-whitespace-text",
+                        "text": "   ",
+                        "note": None,
+                        "color": None,
+                        "location": 30,
+                        "page": None,
+                        "created_at": None,
+                    },
                 ],
             },
         ],
@@ -175,7 +206,7 @@ def test_skips_highlight_missing_text(db):
 
     assert result.books_created == 1
     assert result.highlights_created == 1
-    assert len(result.errors) >= 2  # one for missing text, one for missing id
+    assert len(result.errors) >= 2  # one per empty/whitespace-only text
 
     highlights = db.exec(select(Highlight)).all()
     assert len(highlights) == 1
@@ -354,3 +385,31 @@ def test_dedup_does_not_match_substring_asin(db):
     db.refresh(longer)
     assert longer.id == longer_id
     assert longer.document_tags == "asin:B07FCMBLM6XX"
+
+
+# ── C.3: Strict JSON Schema validation ───────────────────────────────────────
+
+
+def test_importer_rejects_envelope_failing_schema(db):
+    """Envelope missing required `books` field is rejected before any DB write."""
+    bad = {
+        "schema_version": "1.0",
+        "exported_at": "2026-04-29T00:00:00Z",
+        "source": "kindle_notebook",
+        # books missing
+    }
+    with pytest.raises(ValueError, match="books"):
+        import_kindle_notebook_json(io.BytesIO(json.dumps(bad).encode()), db, user_id=1)
+
+
+def test_importer_rejects_book_with_no_asin(db):
+    bad = {
+        "schema_version": "1.0",
+        "exported_at": "2026-04-29T00:00:00Z",
+        "source": "kindle_notebook",
+        "books": [
+            {"title": "No ASIN", "highlights": []}
+        ],
+    }
+    with pytest.raises(ValueError, match="asin"):
+        import_kindle_notebook_json(io.BytesIO(json.dumps(bad).encode()), db, user_id=1)
