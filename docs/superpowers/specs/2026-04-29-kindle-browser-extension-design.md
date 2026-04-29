@@ -32,6 +32,21 @@ The QNAP scraper is preserved as a monthly fallback rather than deleted, with th
 - Background automatic scheduling (`chrome.alarms`). Deferred to a possible Phase 2.
 - Per-book streaming uploads, real-time progress over WebSocket, push notifications.
 
+## 2a. Repository consolidation (prerequisite)
+
+Current state across repos:
+
+| Repo | Holds today |
+|---|---|
+| `chkk525/FreeWise` (`/freewise-kindle`) | FastAPI app, importers, dashboard, api_v2 |
+| `chkk525/freewise-qnap-deploy` (`/freewise-qnap-kindle`) | `scrapers/kindle/`, `Dockerfile.kindle`, `docker-compose.kindle.yml`, QNAP deploy scripts |
+
+The browser extension and the Python scraper need to share `shared/kindle-selectors.json` and `shared/kindle-export-v1.schema.json`. A single source of truth across two git repos is impractical (submodules add fragility, sync scripts can drift silently).
+
+**Resolution.** Move `scrapers/kindle/` and its sibling artifacts (`Dockerfile.kindle`, `docker-compose.kindle.yml`, `tools/kindle_dl.sh`, `tools/kindle_login.sh`, `tools/kindle_check_state.sh`, `tools/install_kindle_cron.sh`, related tests) into the main `chkk525/FreeWise` repo. The QNAP deploy repo retains only the deploy orchestration (`docker-compose.qnap.yml`, `tools/deploy_qnap.sh`, env templates).
+
+This consolidation is **Phase 0** of the implementation plan. It is mechanical (move files, update import paths in the deploy scripts, update the QNAP cron path) and unlocks the rest of the work.
+
 ---
 
 ## 3. Architecture overview
@@ -43,7 +58,7 @@ Three independent paths converge on the same `Book` / `Highlight` rows in SQLite
 │  Chrome / Edge (user)        │         │  FreeWise                       │
 │                              │         │                                 │
 │  Browser extension           │  POST   │  api.freewise.chikaki.com       │
-│   ・popup (Sync now)         ├─────────▶  /v2/imports/kindle (new)       │
+│   ・popup (Sync now)         ├─────────▶  /api/v2/imports/kindle (new)   │
 │   ・content script (scrape) ◀┼─ DOM ──▶│   ・ApiToken auth (existing)    │
 │   ・background SW            │         │   ・CORS for ext origin         │
 │       opens hidden tab       │         │   ・dispatches to existing      │
@@ -88,7 +103,7 @@ The extension is the primary path. Cookie upload UI removes the SSH workflow tha
 7. When done, content script sends final `KindleExportV1` envelope to SW.
 8. SW closes the hidden tab.
 9. SW reads `server_url` and `token` from `chrome.storage.local`.
-10. SW POSTs `https://api.freewise.chikaki.com/v2/imports/kindle` with `Authorization: Token <value>` and gzipped body.
+10. SW POSTs `https://api.freewise.chikaki.com/api/v2/imports/kindle` with `Authorization: Token <value>` and gzipped body.
 11. SW pushes result to popup. Popup renders contextual success message (see § 9 First-sync UX).
 
 If the user closes the popup mid-sync, the sync continues in the SW. Reopening the popup shows current state (the SW persists the in-progress flag in `chrome.storage.session`).
@@ -104,7 +119,7 @@ If the user closes the popup mid-sync, the sync continues in the SW. Reopening t
 | Hostname | Purpose | Protected by |
 |---|---|---|
 | `freewise.chikaki.com` | Human-facing UI (dashboard, all `/dashboard/*`, settings) | Cloudflare Access |
-| `api.freewise.chikaki.com` | Machine API (`/v2/*`) | ApiToken (FastAPI dependency); CF Access bypassed |
+| `api.freewise.chikaki.com` | Machine API (`/api/v2/*`) | ApiToken (FastAPI dependency); Cloudflare Access not applied |
 
 Both hostnames point to the same Cloudflare Tunnel and the same FastAPI app. The split is enforced at Cloudflare Access policy level, not in the application — the FastAPI side serves both, and the existing routers don't need a hostname check (the `api_v2` router is namespaced under `/api/v2/*` regardless of host).
 
@@ -115,7 +130,7 @@ This subdomain split also benefits future API consumers (CLI, mobile, Readwise-c
 1. Cloudflare DNS: add CNAME `api.freewise.chikaki.com` → same Tunnel as `freewise.chikaki.com`.
 2. Cloudflare Tunnel (`cloudflared` config on QNAP): add an ingress rule mapping `api.freewise.chikaki.com` to the same backend `http://freewise:8063`.
 3. Cloudflare Access: scope existing application to hostname `freewise.chikaki.com` only. The new `api.freewise.chikaki.com` subdomain has no Access application configured, so requests reach the origin unauthenticated at the Cloudflare level. ApiToken auth in FastAPI is the sole gate for the API subdomain.
-4. Verify `curl -H "Authorization: Token xxx" https://api.freewise.chikaki.com/v2/highlights` returns JSON, not the Cloudflare Access login HTML.
+4. Verify `curl -H "Authorization: Token xxx" https://api.freewise.chikaki.com/api/v2/highlights` returns JSON, not the Cloudflare Access login HTML.
 
 ---
 
@@ -182,11 +197,17 @@ extensions/kindle-importer/
 
 ### Service worker eviction (HIGH)
 
-MV3 SWs evict after ~30s idle. The sync can run for minutes (100 books × ~2s each). Mitigation:
+MV3 SWs evict after ~30s idle. The sync can run for minutes (100 books × ~2s each). Mitigation centred on a long-lived `chrome.runtime.Port`:
 
-- The SW sends a `sync` message to the content script in the hidden tab and *holds open a port* (`chrome.runtime.connect`). The port keeps the SW alive while the content script is active.
-- The actual POST is performed from the SW (not the content script) to keep `Authorization` token out of the Amazon-context script — but the SW only does the POST after the content script has sent the final payload, so the SW's idle window is short-circuited just before the POST.
-- If eviction does occur, the SW reattaches via `chrome.tabs.onUpdated` and retries via stored state in `chrome.storage.session`.
+1. SW opens the hidden tab via `chrome.tabs.create({url, active: false})`.
+2. Content script auto-runs at `document_idle` per manifest URL match.
+3. **Content script opens the port toward the SW**: `const port = chrome.runtime.connect({ name: 'kindle-sync' })`. (Ports are always opened from non-SW context to SW; the SW cannot initiate.)
+4. SW receives `chrome.runtime.onConnect`. While the port stays connected the SW counts as "in use" and is exempt from the 30s idle timer.
+5. SW sends `port.postMessage({ type: 'start', tabId })` to kick off scraping.
+6. Content script streams `port.postMessage({ type: 'progress', current, total })` as books are scraped.
+7. Content script sends `port.postMessage({ type: 'done', payload })` with the full `KindleExportV1` envelope when complete.
+8. SW closes the hidden tab, then performs the `fetch` POST to FreeWise. The token never leaves the SW context — content script does not see it.
+9. If the port disconnects unexpectedly (tab closed, content script error), SW's `onDisconnect` handler updates `chrome.storage.session` with the failure state for the popup.
 
 ### Token storage
 
@@ -250,7 +271,7 @@ Multipart upload. Server-side validation:
 - `cookies` array contains at least one entry for `amazon.com` or `amazon.co.jp` domain.
 - At least one cookie named `at-main` or `session-token` exists.
 
-On success: atomic write via temp file + `os.replace`. Preserves owner (chowned to `freewise:freewise` so the scraper container can read). Returns updated status JSON.
+On success: atomic write via temp file + `os.replace`, then `os.chmod(path, 0o644)` so the scraper container can read it regardless of UID mismatch. Returns updated status JSON. Detail in § 13.
 
 Concurrency safety: before writing, check `KINDLE_SCRAPE_STATE_FILE` for `running == true` (running scrape). If active, return 409 Conflict. The user can wait or cancel the running scrape via the existing dashboard button.
 
@@ -336,7 +357,7 @@ Progress bar during scan: "Scanning N of M books..." with cancel button.
 
 | Scenario | Detection | UX response |
 |---|---|---|
-| User not logged in to Amazon | Content script: no `#kp-notebook-library` after 10s + login form found | Popup: "Please log in to read.amazon.com first." Button: "Open Amazon login". |
+| User not logged in to Amazon | SW watches `chrome.tabs.onUpdated` for the hidden tab. If final URL after `complete` is `*amazon.com/ap/signin*` or any host other than `read.amazon.com/kp/notebook*`, login is required. (Content script never runs on the redirected signin page because it doesn't match the manifest URL.) | Popup: "Please log in to read.amazon.com first." Button: "Open Amazon login" (opens the redirect target as a visible tab so user can sign in). |
 | FreeWise unreachable | `fetch` throws `TypeError` (DNS/network) or 5xx | Popup: "FreeWise unreachable. Server: \<url\>". Button: "Retry" + "Open settings". |
 | Token rejected | 401 response | Popup: "Token expired or revoked. Re-paste in settings." Button: "Open settings" + "Open token page on FreeWise". |
 | CORS rejected by browser | `fetch` throws `TypeError: NetworkError when attempting to fetch resource` | Popup: "API CORS misconfigured. Check api.freewise.chikaki.com server." Console error with detail. |
@@ -385,10 +406,12 @@ Atomic write sequence:
 2. Validate uploaded JSON.
 3. Write to `storage_state.json.tmp.<pid>` in the same directory.
 4. `os.replace(tmp_path, storage_state.json)` — atomic on POSIX, same filesystem.
-5. `os.chown(path, freewise_uid, freewise_gid)` — preserves ownership the scraper container needs.
+5. `os.chmod(path, 0o644)` — world-readable so the scraper container can read it regardless of UID mismatch between FreeWise and scraper. The volume mount is read-only on the scraper side, so write protection is preserved.
 6. Return updated status JSON.
 
 If the rename fails partway, the temp file remains and the next upload cleans it up. The scraper container never sees a partial file.
+
+Note: `chown` is not used. FreeWise runs as root on QNAP (per `docker-compose.qnap.yml`'s `user: 0:0` default) and the scraper container runs as the Playwright base image's user. Mode 0644 sidesteps the UID mismatch problem entirely.
 
 ---
 
@@ -432,8 +455,10 @@ After all automated tests pass, dogfood for 1 week before promoting to "stable" 
 
 ## 15. File layout (new + modified)
 
+After Phase 0 consolidation, the main `chkk525/FreeWise` repo contains both the FastAPI app and the Python scraper. The QNAP deploy repo retains only deploy orchestration.
+
 ```
-freewise/  (chkk525/FreeWise, branch feat/readwise-api-v2)
+chkk525/FreeWise (main repo, branch feat/readwise-api-v2)
 ├── extensions/                              NEW
 │   └── kindle-importer/
 │       ├── manifest.json
@@ -455,32 +480,58 @@ freewise/  (chkk525/FreeWise, branch feat/readwise-api-v2)
 │   └── kindle-export-v1.schema.json
 ├── app/
 │   ├── api_v2/
-│   │   ├── kindle_import.py                 NEW (POST /v2/imports/kindle)
+│   │   ├── kindle_import.py                 NEW (POST /api/v2/imports/kindle)
 │   │   ├── auth.py                          (existing, no changes)
 │   │   └── router.py                        MODIFY (mount kindle_import)
+│   ├── middleware/
+│   │   └── gzip_request.py                  NEW (decompress request bodies)
 │   ├── routers/
-│   │   ├── dashboard.py                     MODIFY (add cookie routes)
+│   │   ├── dashboard.py                     MODIFY (link to cookie page)
 │   │   └── kindle_cookie.py                 NEW (cookie upload page + endpoint)
 │   ├── services/
 │   │   └── kindle_cookie.py                 NEW (storage_state validation + atomic write)
 │   └── templates/
 │       ├── kindle_cookie.html               NEW
 │       └── _kindle_cookie_status.html       NEW (HTMX partial)
-├── scrapers/
+├── scrapers/                                MOVED FROM freewise-qnap-deploy
 │   └── kindle/
-│       └── scraper.py                       MODIFY (load selectors from shared/)
+│       ├── scraper.py                       MODIFY (load selectors from shared/)
+│       ├── cli.py
+│       ├── models.py
+│       ├── __init__.py, __main__.py
+│       ├── fixtures/
+│       └── tests/
+├── tools/                                   MOVED FROM freewise-qnap-deploy
+│   ├── kindle_dl.sh
+│   ├── kindle_login.sh
+│   ├── kindle_check_state.sh
+│   └── install_kindle_cron.sh
+├── Dockerfile.kindle                        MOVED FROM freewise-qnap-deploy
+├── docker-compose.kindle.yml                MOVED FROM freewise-qnap-deploy
 ├── tests/
 │   ├── api_v2/
 │   │   └── test_kindle_import.py            NEW
 │   ├── services/
 │   │   └── test_kindle_cookie.py            NEW
+│   ├── middleware/
+│   │   └── test_gzip_request.py             NEW
 │   └── importers/
 │       └── test_kindle_notebook.py          MODIFY (errors list[dict] shape)
 └── docs/
     ├── KINDLE_JSON_SCHEMA.md                MODIFY (note errors shape, link extension)
     └── superpowers/specs/
         └── 2026-04-29-kindle-browser-extension-design.md   (THIS FILE)
+
+chkk525/freewise-qnap-deploy (deploy repo)
+├── docker-compose.qnap.yml                  RETAIN (deploy orchestration)
+├── docker-compose.cloudflared.yml           RETAIN
+├── tools/
+│   └── deploy_qnap.sh                       MODIFY (Dockerfile.kindle now lives in main repo)
+├── requirements.qnap.txt                    RETAIN
+└── .env.qnap.example                        RETAIN
 ```
+
+Phase 0 file-move list is mechanical: `git mv` (or copy + delete since they're separate repos) the items marked `MOVED FROM freewise-qnap-deploy`, then update import paths in `scrapers/kindle/cli.py` and the deploy scripts.
 
 ---
 
@@ -500,19 +551,20 @@ Implementation plan (the next document) will detail each step. Rough sketch:
 
 | Phase | Step | LOC est. | Dependencies |
 |---|---|---|---|
+| Repo | 0. Consolidate scrapers/kindle into main FreeWise repo | mostly file moves | — |
 | Infra | A. Cloudflare subdomain `api.freewise.chikaki.com` | infra only | — |
-| Backend | B. Shared selectors JSON, refactor `scraper.py` | ~60 | A |
-| Backend | C. JSON Schema file + Python validator | ~80 | B |
-| Backend | D. `POST /api/v2/imports/kindle` + tests | ~150 | C |
-| Backend | E. CORS middleware on api subdomain + ApiToken scope | ~60 | A, D |
-| Backend | F. `/dashboard/kindle/cookie` page + endpoint + tests | ~200 | — |
-| Extension | G. Skeleton: manifest, popup, background, vite | ~150 | — |
-| Extension | H. Content script DOM extraction + schema validation | ~300 | B, C |
-| Extension | I. Popup UI + sync flow | ~200 | G |
-| Extension | J. Background SW: tab management + POST + gzip | ~150 | D, G |
-| QA | K. Manual E2E + dogfood week | — | all |
+| Backend | B. Shared selectors JSON, refactor `scraper.py` to load from it | ~60 | 0 |
+| Backend | C. JSON Schema file + Python jsonschema validator | ~80 | 0 |
+| Backend | D. `POST /api/v2/imports/kindle` + gzip request middleware + tests | ~180 | C |
+| Backend | E. CORS middleware for api subdomain origin + ApiToken `kindle:import` scope | ~80 | D |
+| Backend | F. `/dashboard/kindle/cookie` page + endpoint + tests | ~200 | 0 |
+| Extension | G. Skeleton: manifest, popup HTML/CSS, background SW, Vite/TS toolchain | ~150 | — |
+| Extension | H. Content script: DOM extraction + schema validation | ~300 | B, C |
+| Extension | I. Popup UI: settings, sync flow, progress + result rendering | ~200 | G |
+| Extension | J. Background SW: tab management + port lifecycle + POST + gzip | ~150 | D, G, H |
+| QA | K. Manual E2E + dogfood week | — | A, all backend, all extension |
 
-Total: ~1350 LOC new + ~50 LOC modified. Estimate 2-3 days of focused work.
+Total: ~1400 LOC new + ~50 LOC modified. Estimate 3-4 days of focused work (Phase 0 file moves add ~half a day).
 
 ---
 
@@ -539,7 +591,6 @@ Recorded for future reference:
 
 ## 19. Open questions for implementation
 
-- Exact Cloudflare Tunnel ingress config (need to inspect `cloudflared` setup on QNAP).
-- Where to source the FreeWise icon for extension (existing `app/static/` has favicons; resize to 16/48/128).
-- Whether to add a "Verify cookie" button in the cookie upload UI that does a live test scrape (deferred to v1.1; spec section in implementation plan).
-- Whether to gzip-compress responses from `/v2/imports/kindle` (the existing `GZipMiddleware` should already handle this; verify).
+- Exact Cloudflare Tunnel ingress config (need to inspect `cloudflared` setup on QNAP and confirm whether the existing `crw-cloudflared` or the dedicated `cloudflared` container handles `*.freewise.chikaki.com`).
+- Where to source the FreeWise icon for the extension (existing `app/static/` has favicons; resize to 16/48/128).
+- Whether to add a "Verify cookie" button in the cookie upload UI that does a live test scrape (deferred to v1.1; the implementation plan should call this out as a fast-follow).
