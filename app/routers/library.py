@@ -1,7 +1,6 @@
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Request, Form, File, UploadFile, HTTPException
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select, func
 from datetime import datetime
 import os
@@ -11,10 +10,11 @@ import httpx
 
 from app.db import get_session, get_settings
 from app.models import Book, Highlight, Settings
+from app.template_filters import make_templates
 
 
 router = APIRouter(prefix="/library", tags=["library"])
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 COVER_UPLOAD_DIR = os.path.join("app", "static", "uploads", "covers")
 ALLOWED_COVER_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -33,6 +33,8 @@ async def ui_library(
     order: Optional[str] = "desc",
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
+    author: Optional[str] = None,
+    q: Optional[str] = None,
     session: Session = Depends(get_session)
 ):
     """Render library page with sortable + paginated table of books.
@@ -72,6 +74,30 @@ async def ui_library(
         .group_by(Book.id)
     )
 
+    # Optional author filter — exact match on the persisted author field.
+    # Empty/whitespace strings are ignored so a typo doesn't silently
+    # show "no books".
+    author_filter = (author or "").strip()
+    if author_filter:
+        books_query = books_query.where(Book.author == author_filter)
+
+    # Optional text search — case-insensitive substring on title OR
+    # author. LIKE wildcards in the user's query are escaped so a "%"
+    # query matches a literal percent rather than every row.
+    q_clean = (q or "").strip()
+
+    def _like_pattern(needle: str) -> str:
+        """Escape SQL LIKE wildcards in user input, then wrap in %."""
+        escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return f"%{escaped}%"
+
+    if q_clean:
+        pattern = _like_pattern(q_clean)
+        books_query = books_query.where(
+            Book.title.like(pattern, escape="\\")
+            | Book.author.like(pattern, escape="\\")
+        )
+
     sort_col = {
         "title": Book.title,
         "author": Book.author,
@@ -80,7 +106,17 @@ async def ui_library(
     }[sort]
     books_query = books_query.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
 
-    total = session.exec(select(func.count()).select_from(Book)).one()
+    total_query = select(func.count()).select_from(Book)
+    if author_filter:
+        total_query = total_query.where(Book.author == author_filter)
+    if q_clean:
+        # Mirror the same LIKE filter so pagination math stays right.
+        pattern = _like_pattern(q_clean)
+        total_query = total_query.where(
+            Book.title.like(pattern, escape="\\")
+            | Book.author.like(pattern, escape="\\")
+        )
+    total = session.exec(total_query).one()
     if isinstance(total, tuple):
         total = total[0]
     total_pages = max(1, (total + page_size - 1) // page_size)
@@ -105,6 +141,42 @@ async def ui_library(
     showing_first = 0 if total == 0 else (page - 1) * page_size + 1
     showing_last = min(page * page_size, total)
 
+    # When filtering by author, compute summary stats for the card
+    # rendered above the table. One query each — no N+1.
+    author_summary: Optional[dict] = None
+    if author_filter:
+        # Single SQL row with all the counts.
+        from sqlmodel import case as sa_case
+        stats_row = session.exec(
+            select(
+                func.count(Highlight.id).label("total"),
+                func.sum(
+                    sa_case((Highlight.is_favorited == True, 1), else_=0)  # noqa: E712
+                ).label("favorited"),
+                func.sum(
+                    sa_case((Highlight.is_mastered == True, 1), else_=0)  # noqa: E712
+                ).label("mastered"),
+                func.sum(
+                    sa_case((Highlight.is_discarded == True, 1), else_=0)  # noqa: E712
+                ).label("discarded"),
+                func.max(Highlight.created_at).label("last_at"),
+            )
+            .join(Book, Book.id == Highlight.book_id)
+            .where(Book.author == author_filter)
+            .where(Highlight.user_id == 1)
+        ).first()
+        total_h = int(stats_row[0] or 0)
+        if total_h > 0:
+            author_summary = {
+                "highlights_total": total_h,
+                "highlights_active": total_h - int(stats_row[3] or 0),
+                "favorited": int(stats_row[1] or 0),
+                "mastered": int(stats_row[2] or 0),
+                "discarded": int(stats_row[3] or 0),
+                "books": int(total),  # total here = filtered books_query count
+                "last_highlight_at": stats_row[4],
+            }
+
     return templates.TemplateResponse(
         request,
         "library.html",
@@ -119,6 +191,79 @@ async def ui_library(
             "total_pages": total_pages,
             "showing_first": showing_first,
             "showing_last": showing_last,
+            "author_filter": author_filter or None,
+            "q_filter": q_clean or None,
+            "author_summary": author_summary,
+        },
+    )
+
+
+@router.get("/ui/authors", response_class=HTMLResponse)
+async def ui_authors(
+    request: Request,
+    sort: str = "highlights",
+    session: Session = Depends(get_session),
+):
+    """List every author with book/highlight counts and last activity.
+
+    Single GROUP BY query with an outer-join to Highlight; authors with
+    no highlights still appear (book count > 0). Sort options:
+      - highlights (default): most highlighted authors first
+      - books: most books first
+      - name: alphabetical
+      - recent: most recently captured highlight first
+    Each row links to /library/ui?author=<name> which already renders
+    the U74 per-author summary card and book list.
+    """
+    settings = get_settings(session)
+    if sort not in {"highlights", "books", "name", "recent"}:
+        sort = "highlights"
+
+    from sqlmodel import case as sa_case
+    stmt = (
+        select(
+            Book.author,
+            func.count(func.distinct(Book.id)).label("book_count"),
+            func.count(Highlight.id).label("highlight_count"),
+            func.sum(
+                sa_case((Highlight.is_favorited == True, 1), else_=0)  # noqa: E712
+            ).label("favorited"),
+            func.max(Highlight.created_at).label("last_at"),
+        )
+        .outerjoin(Highlight, (Highlight.book_id == Book.id) & (Highlight.user_id == 1))
+        .where(Book.author.is_not(None))
+        .where(Book.author != "")
+        .group_by(Book.author)
+    )
+    if sort == "highlights":
+        stmt = stmt.order_by(func.count(Highlight.id).desc(), Book.author.asc())
+    elif sort == "books":
+        stmt = stmt.order_by(func.count(func.distinct(Book.id)).desc(), Book.author.asc())
+    elif sort == "name":
+        stmt = stmt.order_by(Book.author.asc())
+    else:  # recent
+        stmt = stmt.order_by(func.max(Highlight.created_at).desc().nullslast(), Book.author.asc())
+
+    rows = session.exec(stmt).all()
+    authors = [
+        {
+            "name": r[0],
+            "book_count": int(r[1] or 0),
+            "highlight_count": int(r[2] or 0),
+            "favorited": int(r[3] or 0),
+            "last_at": r[4],
+        }
+        for r in rows
+    ]
+
+    return templates.TemplateResponse(
+        request, "authors.html",
+        {
+            "settings": settings,
+            "authors": authors,
+            "current_sort": sort,
+            "total_authors": len(authors),
+            "total_highlights": sum(a["highlight_count"] for a in authors),
         },
     )
 
@@ -367,11 +512,14 @@ async def ui_book_update(
     session.commit()
     session.refresh(book)
     
-    # Get highlight count for the book
-    highlights_stmt = select(Highlight).where(Highlight.book_id == book_id)
-    highlights = session.exec(highlights_stmt).all()
-    highlight_count = len(highlights)
-    
+    # Highlight count via SQL aggregate (perf H5) — pre-fix this hydrated
+    # every Highlight row just to call len().
+    highlight_count = session.exec(
+        select(func.count(Highlight.id)).where(Highlight.book_id == book_id)
+    ).one()
+    if isinstance(highlight_count, tuple):
+        highlight_count = highlight_count[0]
+
     return _render_book_header(request, book, highlight_count)
 
 
@@ -386,11 +534,14 @@ async def ui_book_cancel_edit(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     
-    # Get highlight count for the book
-    highlights_stmt = select(Highlight).where(Highlight.book_id == book_id)
-    highlights = session.exec(highlights_stmt).all()
-    highlight_count = len(highlights)
-    
+    # Highlight count via SQL aggregate (perf H5) — pre-fix this hydrated
+    # every Highlight row just to call len().
+    highlight_count = session.exec(
+        select(func.count(Highlight.id)).where(Highlight.book_id == book_id)
+    ).one()
+    if isinstance(highlight_count, tuple):
+        highlight_count = highlight_count[0]
+
     return _render_book_header(request, book, highlight_count)
 
 
@@ -503,13 +654,11 @@ async def ui_book_delete(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     
-    # Delete all highlights associated with this book
-    highlights_stmt = select(Highlight).where(Highlight.book_id == book_id)
-    highlights = session.exec(highlights_stmt).all()
-    for highlight in highlights:
-        session.delete(highlight)
-    
-    # Delete the book
+    # Bulk delete instead of N×DELETE round-trips (perf H4). On a book
+    # with hundreds of highlights this drops from O(n) to O(1) statements.
+    from sqlalchemy import delete as sa_delete
+    session.exec(sa_delete(Highlight).where(Highlight.book_id == book_id))
+    # And the book row.
     session.delete(book)
     session.commit()
     
@@ -557,3 +706,52 @@ def _render_book_header(request: Request, book: Book, highlight_count: int) -> H
     """Render the book header section."""
     return templates.TemplateResponse(request, "_book_header.html", {"book": book,
         "highlight_count": highlight_count})
+
+
+@router.post("/ui/book/{book_id}/summarize", response_class=HTMLResponse)
+async def ui_book_summarize(
+    request: Request,
+    book_id: int,
+    session: Session = Depends(get_session),
+):
+    """Summarize one book with RAG and return a partial for HTMX swap.
+
+    Wraps the same ask_library() pipeline used by /api/v2/ask but scopes
+    retrieval to this book's highlights and uses a default "summarize
+    key themes" prompt. Errors fold into the partial as an inline error
+    message rather than a 500 — matches the ask UI's degradation pattern.
+    """
+    from app.services.embeddings import OllamaUnavailable, ask_library
+
+    book = session.get(Book, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    # Single-user-mode ownership gate (defense-in-depth — same as bulk).
+    has_owned = session.exec(
+        select(Highlight.id)
+        .where(Highlight.book_id == book_id)
+        .where(Highlight.user_id == 1)
+        .limit(1)
+    ).first()
+    if has_owned is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    question = (
+        f"Summarize the key themes and ideas from this book ('{book.title}'"
+        + (f" by {book.author}" if book.author else "")
+        + ") based on the highlights below. Be concise."
+    )
+    try:
+        result = ask_library(
+            session, question=question, top_k=12,
+            book_id=book_id, user_id=1,  # single-user-mode default
+        )
+    except OllamaUnavailable as e:
+        return templates.TemplateResponse(
+            request, "_book_summary.html",
+            {"error": f"Ollama unreachable: {e}", "result": None, "book": book},
+        )
+    return templates.TemplateResponse(
+        request, "_book_summary.html",
+        {"error": None, "result": result.as_dict(), "book": book},
+    )

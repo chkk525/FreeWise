@@ -8,7 +8,7 @@ from app.models import ApiToken, Book, Highlight
 
 
 def _auth_headers(db, value: str = "tk") -> dict[str, str]:
-    db.add(ApiToken(token=value, name="ext", user_id=1))
+    db.add(ApiToken(token_prefix=value[:16], token_hash=__import__("hashlib").sha256(value.encode()).hexdigest(), name="ext", user_id=1))
     db.commit()
     return {"Authorization": f"Token {value}"}
 

@@ -43,15 +43,23 @@ class _DummyTemplate:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
 
-    def TemplateResponse(self, name, context, **kwargs):  # noqa: N802 (Starlette API)
+    def TemplateResponse(self, *args, **kwargs):  # noqa: N802 (Starlette API)
+        # Modern signature: TemplateResponse(request, name, context, ...)
+        # Legacy signature: TemplateResponse(name, context, ...)
+        # Accept both so this stub works pre/post-migration.
+        if len(args) >= 3:
+            _request, name, context = args[0], args[1], args[2]
+        elif len(args) == 2:
+            name, context = args[0], args[1]
+        else:
+            name, context = kwargs.get("name", ""), kwargs.get("context", {})
         self.calls.append((name, context))
-        # Return any object with a status_code so calling code is happy.
         from starlette.responses import Response
         return Response(content=context.get("new_token") or "", status_code=200)
 
 
 def test_get_api_token_handler_returns_token_list(db: Session):
-    db.add(ApiToken(token="existing-tok", name="laptop", user_id=1))
+    db.add(ApiToken(token_hash="abc", token_prefix="laptop-prefix01", name="laptop", user_id=1))
     db.commit()
 
     dummy = _DummyTemplate()
@@ -76,18 +84,28 @@ def test_post_creates_token_and_shows_it_once(db: Session):
             api_tokens_module.create_api_token(
                 request,
                 name="my-extension",
-                user_id=1,
                 session=db,
             )
         )
 
     rows = db.exec(select(ApiToken).where(ApiToken.name == "my-extension")).all()
     assert len(rows) == 1
-    raw = rows[0].token
-    assert len(raw) == 64  # 32 bytes hex
+    row = rows[0]
+    # Plaintext column must NOT be persisted for new rows.
+    assert row.token is None
+    # Hash + prefix must be set.
+    assert row.token_hash and len(row.token_hash) == 64
+    assert row.token_prefix and len(row.token_prefix) == 16
+    assert row.user_id == 1  # hard-coded, not user-controlled
     # Handler exposes the raw token in template context exactly once.
     _, context = dummy.calls[0]
-    assert context["new_token"] == raw
+    raw = context["new_token"]
+    assert raw.startswith("fw_")
+    assert len(raw) == 67  # "fw_" + 64 hex chars
+    # The hash + prefix MUST match the raw token shown.
+    import hashlib
+    assert row.token_prefix == raw[:16]
+    assert row.token_hash == hashlib.sha256(raw.encode("utf-8")).hexdigest()
     assert context["new_token_name"] == "my-extension"
 
 
@@ -97,7 +115,7 @@ def test_post_with_blank_name_uses_fallback(db: Session):
     with patch.object(api_tokens_module, "templates", dummy):
         _run(
             api_tokens_module.create_api_token(
-                request, name="   ", user_id=1, session=db
+                request, name="   ", session=db
             )
         )
 
@@ -111,3 +129,73 @@ def test_route_is_mounted_on_app():
 
     paths = {route.path for route in app.routes}
     assert "/import/api-token" in paths
+
+
+# ── CSRF + revocation (Phase 4 hardening) ───────────────────────────────────
+
+
+def _build_request_with_origin(origin: str | None) -> Request:
+    """Same as _build_request() but with an Origin header.
+
+    Pass origin=None to omit the header entirely (browser stripped it).
+    """
+    headers = []
+    if origin is not None:
+        headers.append((b"origin", origin.encode("utf-8")))
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/import/api-token",
+        "headers": headers,
+        "query_string": b"",
+        "server": ("testserver", 80),
+        "scheme": "http",
+    }
+    return Request(scope)
+
+
+def test_post_rejects_cross_origin(db: Session):
+    """A POST whose Origin doesn't match the request host must 403."""
+    from fastapi import HTTPException
+    request = _build_request_with_origin("https://evil.example.com")
+    dummy = _DummyTemplate()
+    with patch.object(api_tokens_module, "templates", dummy):
+        try:
+            _run(api_tokens_module.create_api_token(request, name="x", session=db))
+        except HTTPException as exc:
+            assert exc.status_code == 403
+        else:
+            raise AssertionError("expected HTTPException(403)")
+    # Nothing committed
+    assert db.exec(select(ApiToken)).first() is None
+
+
+def test_post_allows_missing_origin(db: Session):
+    """Same-site form posts strip Origin in some browsers — that path is OK."""
+    request = _build_request_with_origin(None)
+    dummy = _DummyTemplate()
+    with patch.object(api_tokens_module, "templates", dummy):
+        _run(api_tokens_module.create_api_token(request, name="ok", session=db))
+    rows = db.exec(select(ApiToken).where(ApiToken.name == "ok")).all()
+    assert len(rows) == 1
+
+
+def test_revoke_deletes_token(db: Session):
+    db.add(ApiToken(token_hash="abc", token_prefix="prefix1234567890", name="doomed", user_id=1))
+    db.commit()
+    row = db.exec(select(ApiToken).where(ApiToken.name == "doomed")).one()
+    request = _build_request_with_origin(None)  # same-host, no Origin → allowed
+    _run(api_tokens_module.revoke_api_token(row.id, request, session=db))
+    assert db.exec(select(ApiToken).where(ApiToken.name == "doomed")).first() is None
+
+
+def test_user_id_is_not_form_controlled(db: Session):
+    """Even if a request body included user_id=999, the route must ignore it."""
+    request = _build_request_with_origin(None)
+    dummy = _DummyTemplate()
+    with patch.object(api_tokens_module, "templates", dummy):
+        # user_id is NOT a parameter to create_api_token — we test that the
+        # signature itself doesn't accept it.
+        import inspect
+        sig = inspect.signature(api_tokens_module.create_api_token)
+        assert "user_id" not in sig.parameters

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Duplicates — FreeWise{% endblock %}
+
+{% block heading %}Duplicate Highlights{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+        Highlights grouped by their first {{ prefix_chars }} characters.
+        Useful after re-importing the same Kindle book — the duplicates
+        end up with different ids but identical text. For paraphrases
+        and re-worded repeats, see
+        <a href="/highlights/ui/duplicates/semantic" class="underline hover:text-primary-600 dark:hover:text-primary-400">semantic near-duplicates</a>.
+    </p>
+
+    {% if total_redundant > 0 %}
+    <p class="text-sm text-amber-700 dark:text-amber-300 mb-6">
+        <i data-lucide="alert-triangle" class="w-4 h-4 inline-block mr-1"></i>
+        {{ groups|length }} group{{ 's' if groups|length != 1 else '' }} ·
+        <strong>{{ total_redundant }} redundant row{{ 's' if total_redundant != 1 else '' }}</strong>
+        could be discarded by keeping the oldest of each group.
+    </p>
+    {% endif %}
+
+    {% if not groups %}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+        <i data-lucide="check-circle-2" class="w-10 h-10 mx-auto mb-3 text-emerald-500"></i>
+        <p class="text-gray-700 dark:text-gray-200 font-medium">No duplicate groups found at this prefix length.</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Try a shorter prefix (<code>?prefix_chars=40</code>) for fuzzier matching.
+        </p>
+    </div>
+    {% else %}
+    <div class="space-y-4">
+        {% for grp in groups %}
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs text-gray-500 dark:text-gray-400 font-mono mb-1">{{ grp.count }}× group</p>
+                    <p class="font-serif text-sm text-gray-900 dark:text-gray-100 line-clamp-2">{{ grp.prefix }}…</p>
+                </div>
+                {% if grp.discard_ids %}
+                <button type="button"
+                        onclick="discardDuplicates(this, '{{ grp.discard_ids }}', {{ grp.count }})"
+                        class="inline-flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg shrink-0">
+                    <i data-lucide="trash-2" class="w-3 h-3"></i>
+                    Keep oldest · discard {{ grp.count - 1 }}
+                </button>
+                {% endif %}
+            </div>
+            <ul class="mt-3 space-y-1.5 text-sm">
+                {% for h in grp.members %}
+                <li class="flex items-center gap-2 {% if loop.first %}font-medium{% else %}text-gray-500 dark:text-gray-400{% endif %}">
+                    {% if loop.first %}
+                    <span class="inline-block px-1.5 py-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200 rounded text-xs shrink-0">keep</span>
+                    {% else %}
+                    <span class="inline-block px-1.5 py-0.5 bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-200 rounded text-xs shrink-0">drop</span>
+                    {% endif %}
+                    <a href="/highlights/ui/h/{{ h.id }}" class="font-mono text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">#{{ h.id }}</a>
+                    {% if h.book %}
+                    <span class="text-xs text-gray-500 dark:text-gray-400 truncate">— {{ h.book.title }}</span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function discardDuplicates(btn, ids, count) {
+    if (!confirm(`Discard ${count - 1} duplicate${count - 1 !== 1 ? 's' : ''}? The oldest entry stays.`)) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Discarding…';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+    try {
+        const body = new FormData();
+        body.set('action', 'discard');
+        body.set('ids', ids);
+        const r = await fetch('/highlights/bulk', { method: 'POST', body });
+        if (r.ok) {
+            if (window.showToast) window.showToast(`Discarded ${count - 1}`, 'success');
+            // The card the user just acted on is now stale — fade it.
+            btn.closest('.bg-white').style.opacity = '0.4';
+            btn.closest('.bg-white').style.pointerEvents = 'none';
+            btn.innerHTML = '<i data-lucide="check" class="w-3 h-3"></i> Done';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        } else {
+            const t = await r.text();
+            if (window.showToast) window.showToast(t || 'Discard failed', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="trash-2" class="w-3 h-3"></i> Retry';
+        }
+    } catch (err) {
+        if (window.showToast) window.showToast('Network error', 'error');
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

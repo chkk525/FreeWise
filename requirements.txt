@@ -10,3 +10,4 @@ beautifulsoup4
 pytest
 pytest-asyncio
 apscheduler
+numpy>=2.0

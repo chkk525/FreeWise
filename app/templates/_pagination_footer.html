@@ -1,0 +1,80 @@
+{# Reusable pagination footer.
+
+    Required context:
+      page          (int, 1-based)
+      page_size     (int)
+      total         (int, total row count)
+      total_pages   (int, max(1, ceil(total / page_size)))
+      showing_first / showing_last  (1-based indices for the displayed slice)
+
+    Optional context:
+      pagination_label  (str, e.g. "highlights", "books"; default "items")
+      page_size_options (list[int], default [25, 50, 100, 200])
+
+    Preserves all current query params except `page` / `page_size` so sort
+    orders / filters survive page transitions.
+#}
+{% if total_pages and total_pages > 0 %}
+{% set _label = pagination_label if pagination_label is defined else 'items' %}
+{% set _sizes = page_size_options if page_size_options is defined else [25, 50, 100, 200] %}
+{% set _qs = request.query_params %}
+{% set _preserved = [] %}
+{% for k, v in _qs.multi_items() %}
+    {% if k not in ('page', 'page_size') %}
+        {% set _preserved = _preserved + [(k, v)] %}
+    {% endif %}
+{% endfor %}
+{% set _qbase = _preserved | map('join', '=') | join('&') %}
+{% set _prefix = (_qbase + '&') if _qbase else '' %}
+<div class="mt-6 flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3">
+    <div class="text-sm text-gray-600 dark:text-gray-400">
+        {% if total == 0 %}
+            No {{ _label }}
+        {% else %}
+            Showing <span class="font-medium text-gray-900 dark:text-white">{{ showing_first }}</span>–<span class="font-medium text-gray-900 dark:text-white">{{ showing_last }}</span>
+            of <span class="font-medium text-gray-900 dark:text-white">{{ total }}</span> {{ _label }}
+        {% endif %}
+    </div>
+    <div class="flex items-center gap-2 text-sm">
+        {% set qprev = page - 1 %}
+        {% set qnext = page + 1 %}
+        {% if page > 1 %}
+            <a href="?{{ _prefix }}page=1&page_size={{ page_size }}"
+               class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+               title="First page">«</a>
+            <a href="?{{ _prefix }}page={{ qprev }}&page_size={{ page_size }}"
+               class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">Prev</a>
+        {% else %}
+            <span class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">«</span>
+            <span class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">Prev</span>
+        {% endif %}
+        <form method="get" action="" class="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400">
+            {% for k, v in _preserved %}
+                <input type="hidden" name="{{ k }}" value="{{ v }}">
+            {% endfor %}
+            <input type="hidden" name="page_size" value="{{ page_size }}">
+            <span>Page</span>
+            <input type="number" name="page" value="{{ page }}" min="1" max="{{ total_pages }}"
+                   class="w-16 px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-center">
+            <span>of {{ total_pages }}</span>
+        </form>
+        {% if page < total_pages %}
+            <a href="?{{ _prefix }}page={{ qnext }}&page_size={{ page_size }}"
+               class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">Next</a>
+            <a href="?{{ _prefix }}page={{ total_pages }}&page_size={{ page_size }}"
+               class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+               title="Last page">»</a>
+        {% else %}
+            <span class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">Next</span>
+            <span class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">»</span>
+        {% endif %}
+        <select onchange="window.location.href='?{{ _prefix }}page=1&page_size=' + this.value"
+                class="ml-2 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-sm"
+                aria-label="{{ _label|capitalize }} per page">
+            {% for size in _sizes %}
+                <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}/page</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+{% endif %}

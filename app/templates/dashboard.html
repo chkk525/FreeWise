@@ -37,7 +37,7 @@
             Please import more highlights to get the full experience.
         </p>
         <div class="flex gap-4 justify-center flex-wrap">
-            <a href="/highlights/ui/review" class="inline-flex items-center gap-2 bg-amber-100 text-red-900 px-6 py-3 rounded-lg font-semibold hover:bg-amber-50 transition-all shadow-md">
+            <a href="/highlights/ui/review" class="inline-flex items-center gap-2 bg-amber-100 text-amber-900 px-6 py-3 rounded-lg font-semibold hover:bg-amber-50 transition-all shadow-md">
                 <i data-lucide="book-open" class="w-5 h-5"></i>
                 Start Review
             </a>
@@ -82,16 +82,148 @@
 </div>
 {% endif %}
 
+{# ── Quick capture: save a free-form thought as a new highlight ──── #}
+<div class="mb-6">
+    <form hx-post="/highlights/ui/quick-capture"
+          hx-target="#quick-capture-result"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) this.reset()"
+          class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+        <label class="block">
+            <span class="sr-only">Quick capture</span>
+            <div class="flex items-start gap-2">
+                <i data-lucide="pencil-line" class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-1"></i>
+                <textarea name="text" rows="2" maxlength="8191"
+                          placeholder="Quick capture: a thought, a quote, a reminder…"
+                          class="flex-1 px-2 py-1.5 bg-transparent focus:outline-none text-gray-900 dark:text-white resize-none"></textarea>
+                <button type="submit"
+                        class="inline-flex items-center gap-1 px-3 py-1 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 self-start mt-1">
+                    Save
+                </button>
+            </div>
+        </label>
+        <div id="quick-capture-result" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></div>
+    </form>
+</div>
+
+{# ── Ask widget (RAG) ─────────────────────────────────────────────── #}
+{% if embedding_coverage and embedding_coverage.embedded > 0 %}
+<div class="mb-6">
+    <form hx-post="/highlights/ui/ask"
+          hx-target="#dashboard-ask-answer"
+          hx-swap="outerHTML"
+          hx-indicator="#dashboard-ask-spinner"
+          class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+        <label class="block">
+            <span class="sr-only">Ask your library</span>
+            <div class="flex items-center gap-2">
+                <i data-lucide="sparkles" class="w-5 h-5 text-amber-500 shrink-0"></i>
+                <input type="text" name="question"
+                       placeholder="Ask your library… (e.g. what did I learn about stoicism?)"
+                       class="flex-1 px-2 py-1.5 bg-transparent focus:outline-none text-gray-900 dark:text-white">
+                <input type="hidden" name="top_k" value="6">
+                <button type="submit"
+                        class="inline-flex items-center gap-1 px-3 py-1 text-sm rounded-lg bg-primary-600 hover:bg-primary-700 text-white shrink-0">
+                    Ask
+                    <span id="dashboard-ask-spinner" class="htmx-indicator">
+                        <i data-lucide="loader" class="w-3 h-3 animate-spin"></i>
+                    </span>
+                </button>
+                <a href="/highlights/ui/ask"
+                   class="text-sm text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 shrink-0"
+                   title="Open dedicated ask page">
+                    <i data-lucide="external-link" class="w-4 h-4"></i>
+                </a>
+            </div>
+        </label>
+    </form>
+    <div id="dashboard-ask-answer" class="mt-3"></div>
+</div>
+{% endif %}
+
+{# ── Embedding coverage (C2) ──────────────────────────────────────── #}
+{% if embedding_coverage and embedding_coverage.total_active > 0 %}
+<div class="mb-6">
+    <div class="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-4 flex items-center gap-3">
+        <i data-lucide="git-branch" class="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0"></i>
+        <div class="flex-1 text-sm">
+            <p class="font-medium text-gray-900 dark:text-white">
+                Semantic similarity: <span class="font-mono">{{ embedding_coverage.percent }}%</span> embedded
+                <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">({{ embedding_coverage.embedded }} / {{ embedding_coverage.total_active }} active highlights, model <code>{{ embedding_coverage.model }}</code>)</span>
+            </p>
+            {% if embedding_coverage.percent < 100 %}
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                Run <code class="font-mono bg-white dark:bg-gray-900 px-1 py-0.5 rounded">freewise embed-backfill</code> to embed the rest. Until then, "Related highlights" on permalink pages will be incomplete.
+            </p>
+            {% endif %}
+        </div>
+        <div class="w-32 h-2 bg-purple-100 dark:bg-purple-900/40 rounded-full overflow-hidden shrink-0">
+            <div class="h-full bg-purple-600 dark:bg-purple-400 transition-all"
+                 style="width: {{ embedding_coverage.percent }}%"></div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Library health: defer-loaded so the dashboard returns instantly
+     even on a 25k-row library. Empty if no actionable signal. #}
+<div id="dashboard-health" class="mb-6"
+     hx-get="/dashboard/ui/health" hx-trigger="load once" hx-swap="innerHTML"></div>
+
+{# ── Tag cloud ─────────────────────────────────────────────────────── #}
+{% if tag_cloud and tag_cloud|length > 0 %}
+{% set _SIZE_CLS = {1: 'text-sm', 2: 'text-base', 3: 'text-lg', 4: 'text-xl', 5: 'text-2xl'} %}
+<div class="mb-8 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
+    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2 flex-wrap">
+        <i data-lucide="tags" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+        Tags
+        <a href="/highlights/ui/tags/insights"
+           class="ml-auto text-xs font-normal text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 inline-flex items-center gap-1">
+            <i data-lucide="bar-chart-3" class="w-3 h-3"></i>
+            insights
+        </a>
+    </h3>
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+        {% for t in tag_cloud %}
+        <a href="/highlights/ui/tag/{{ t.name|urlencode }}"
+           class="{{ _SIZE_CLS.get(t.size, 'text-base') }} font-medium text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 hover:underline transition-colors"
+           title="{{ t.count }} highlight{{ 's' if t.count != 1 else '' }}">{{ t.name }}<span class="text-xs text-gray-500 dark:text-gray-400 ml-0.5">·{{ t.count }}</span></a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Highlight of the Day (deterministic, with shuffle) -->
+{% if total_highlights and total_highlights > 0 %}
+<div class="mb-8">
+    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+        <i data-lucide="sparkles" class="w-5 h-5 text-amber-500"></i>
+        Highlight of the day
+    </h3>
+    <div hx-get="/highlights/ui/today" hx-trigger="load" hx-swap="outerHTML">
+        <div id="random-highlight-card"
+             class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
+            <p class="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── On-this-day: defer-loaded; strftime() filter cannot use any
+     index, so a 25k-row scan should not block the main page render. #}
+<div id="dashboard-on-this-day" class="mb-8"
+     hx-get="/dashboard/ui/on-this-day" hx-trigger="load once" hx-swap="innerHTML"></div>
+
 <!-- Review Activity Heatmap -->
-{% if review_heatmap_data %}
-<p class="text-gray-600 dark:text-gray-400 mb-6">
-    Overview of your review activity.
-</p>
 <div class="mb-10 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
     <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
         <i data-lucide="target" class="w-6 h-6 text-emerald-600 dark:text-emerald-400"></i>
         Review Activity
     </h3>
+    {% if review_heatmap_data %}
+    <p class="text-gray-600 dark:text-gray-400 mb-4 text-sm">
+        Overview of your review activity over the last few months.
+    </p>
     <div id="review-heatmap-container" class="overflow-x-auto">
         <div id="review-heatmap" style="display: flex; gap: 4px;"></div>
     </div>
@@ -105,6 +237,20 @@
             <span>Reviewed</span>
         </div>
     </div>
+    {% else %}
+    <div class="text-center py-8">
+        <i data-lucide="calendar-x" class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3"></i>
+        <p class="text-gray-600 dark:text-gray-400 mb-3">
+            No review activity yet.
+            Complete a review session and your streak will start showing up here.
+        </p>
+        <a href="/highlights/ui/review"
+           class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <i data-lucide="play" class="w-4 h-4"></i>
+            <span>Start a review session</span>
+        </a>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Streak Cards -->
@@ -141,7 +287,6 @@
         </div>
     </div>
 </div>
-{% endif %}
 
 <p class="text-gray-600 dark:text-gray-400 mb-6">
     Overview of your reading highlights and collection.
@@ -253,6 +398,17 @@
           Manage scraper cookie
         </a>
     </div>
+
+    {# On-demand scrape trigger (U99). Defer-loads the partial so the
+       dashboard returns instantly and only this card waits on the
+       state-file read + process probe. #}
+    <div class="mb-4"
+         hx-get="/dashboard/kindle/scrape-status"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="text-xs text-gray-400 dark:text-gray-500">Loading scrape status…</div>
+    </div>
+
 
     <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
         <div>

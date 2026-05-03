@@ -65,6 +65,139 @@ class TestLibraryPage:
         assert resp.status_code == 200
 
 
+# ── Author filter ─────────────────────────────────────────────────────────────
+
+
+class TestLibraryBookSearch:
+    """GET /library/ui?q=text — text search across title + author."""
+
+    def test_search_matches_title(self, client, make_book):
+        make_book(title="Antifragile")
+        make_book(title="Black Swan")
+        resp = client.get("/library/ui", params={"q": "Antifragile"})
+        assert resp.status_code == 200
+        assert "Antifragile" in resp.text
+        assert "Black Swan" not in resp.text
+
+    def test_search_matches_author(self, client, make_book):
+        make_book(title="X1", author="Nassim Taleb")
+        make_book(title="Y1", author="Daniel Kahneman")
+        resp = client.get("/library/ui", params={"q": "Taleb"})
+        assert resp.status_code == 200
+        assert "X1" in resp.text
+        assert "Y1" not in resp.text
+
+    def test_search_case_insensitive(self, client, make_book):
+        make_book(title="UpperCase Book")
+        resp = client.get("/library/ui", params={"q": "uppercase"})
+        # SQLite LIKE is case-insensitive for ASCII by default; matches.
+        assert "UpperCase Book" in resp.text
+
+    def test_search_escapes_wildcards(self, client, make_book):
+        """A ``%`` query should match a literal percent, not every row."""
+        make_book(title="50% off literal")
+        make_book(title="completely unrelated content")
+        resp = client.get("/library/ui", params={"q": "%"})
+        assert "50% off literal" in resp.text
+        assert "completely unrelated" not in resp.text
+
+    def test_search_combines_with_author_filter(self, client, make_book):
+        """Both author= and q= should narrow together."""
+        make_book(title="A1", author="Alice")
+        make_book(title="B1", author="Alice")
+        make_book(title="A2", author="Bob")
+        resp = client.get(
+            "/library/ui", params={"author": "Alice", "q": "A1"},
+        )
+        assert "A1" in resp.text
+        assert "B1" not in resp.text
+        assert "A2" not in resp.text
+
+    def test_search_banner_renders(self, client, make_book):
+        make_book(title="Book One")
+        resp = client.get("/library/ui", params={"q": "Book"})
+        assert "Filtering by query" in resp.text
+
+
+class TestAuthorSummaryCard:
+    """The author-filtered library page shows a stats summary card."""
+
+    def test_summary_card_rendered_when_author_filtered(self, client, make_book, make_highlight):
+        b1 = make_book(title="Book A", author="Alice")
+        b2 = make_book(title="Book B", author="Alice")
+        make_highlight(text="x", book=b1)
+        make_highlight(text="y", book=b1, is_favorited=True)
+        make_highlight(text="z", book=b2, is_mastered=True)
+        resp = client.get("/library/ui", params={"author": "Alice"})
+        assert resp.status_code == 200
+        # Card heading: author name appears in an h3
+        assert "<h3" in resp.text and "Alice" in resp.text
+        # Stats: 2 books, 3 active, 1 favorited, 1 mastered
+        assert ">2</span> book" in resp.text
+        assert ">3</span> active highlights" in resp.text
+        assert ">1</span> favorited" in resp.text
+        assert ">1</span> mastered" in resp.text
+
+    def test_no_summary_card_without_filter(self, client, make_book, make_highlight):
+        b = make_book(title="X", author="Alice")
+        make_highlight(text="x", book=b)
+        resp = client.get("/library/ui")
+        # Card uses an h3 with the author name; without filter it should NOT appear
+        assert ">Alice</h3>" not in resp.text
+
+    def test_summary_card_omits_zero_chips(self, client, make_book, make_highlight):
+        """Chips should only render for non-zero counts."""
+        b = make_book(title="A", author="Bob")
+        make_highlight(text="x", book=b)
+        resp = client.get("/library/ui", params={"author": "Bob"})
+        assert "active highlights" in resp.text
+        # No favorited/mastered/discarded chips since counts are zero.
+        assert "favorited" not in resp.text or "</span> favorited" not in resp.text
+        assert "</span> mastered" not in resp.text
+        assert "</span> discarded" not in resp.text
+
+
+class TestLibraryAuthorFilter:
+    """GET /library/ui?author=X — filter books by author."""
+
+    def test_no_filter_shows_all(self, client, make_book):
+        make_book(title="AlphaBook", author="Alice")
+        make_book(title="BetaBook", author="Bob")
+        resp = client.get("/library/ui")
+        assert resp.status_code == 200
+        assert "AlphaBook" in resp.text and "BetaBook" in resp.text
+
+    def test_filter_by_author(self, client, make_book):
+        make_book(title="AlphaBook", author="Alice")
+        make_book(title="BetaBook", author="Bob")
+        resp = client.get("/library/ui", params={"author": "Alice"})
+        assert resp.status_code == 200
+        assert "AlphaBook" in resp.text
+        assert "BetaBook" not in resp.text
+        # Filter banner should appear
+        assert "Filtering by author" in resp.text
+
+    def test_filter_by_unknown_author_returns_empty(self, client, make_book):
+        make_book(title="AlphaBook", author="Alice")
+        resp = client.get("/library/ui", params={"author": "Nobody"})
+        assert resp.status_code == 200
+        assert "AlphaBook" not in resp.text
+
+    def test_filter_empty_string_ignored(self, client, make_book):
+        """Empty author= should behave like no filter."""
+        make_book(title="AlphaBook", author="Alice")
+        resp = client.get("/library/ui", params={"author": "  "})
+        assert resp.status_code == 200
+        assert "AlphaBook" in resp.text
+        assert "Filtering by author" not in resp.text
+
+    def test_author_link_rendered_on_table_cell(self, client, make_book):
+        make_book(title="X", author="Some Author")
+        resp = client.get("/library/ui")
+        # The desktop table cell author should be a clickable filter link.
+        assert "/library/ui?author=Some%20Author" in resp.text
+
+
 # ── Book detail ───────────────────────────────────────────────────────────────
 
 class TestBookDetail:
@@ -81,6 +214,123 @@ class TestBookDetail:
     def test_detail_404(self, client):
         resp = client.get("/library/ui/book/9999")
         assert resp.status_code == 404
+
+    def test_detail_renders_engagement_stats(self, client, make_book, make_highlight):
+        """Stats line should split into active / favorited / mastered / discarded."""
+        b = make_book(title="Stats Book")
+        make_highlight(text="a", book=b)                    # active
+        make_highlight(text="b", book=b, is_favorited=True) # active + favorited
+        make_highlight(text="c", book=b, is_mastered=True)  # active + mastered
+        make_highlight(text="d", book=b, is_discarded=True) # discarded
+        resp = client.get(f"/library/ui/book/{b.id}")
+        assert resp.status_code == 200
+        # 3 active, 1 favorited, 1 mastered, 1 discarded
+        # Match the visible chips by their adjacent labels.
+        assert ">3</span> active" in resp.text
+        assert ">1</span> favorited" in resp.text
+        assert ">1</span> mastered" in resp.text
+        assert ">1</span> discarded" in resp.text
+
+    def test_detail_omits_zero_chips(self, client, make_book, make_highlight):
+        """Chips with zero count should not render (active is the only always-shown chip).
+
+        Match the engagement-stats chip markup specifically — the row
+        partial uses 'favorited' in tooltips so a bare substring check
+        is too broad.
+        """
+        b = make_book(title="Plain")
+        make_highlight(text="a", book=b)
+        resp = client.get(f"/library/ui/book/{b.id}")
+        # active chip present
+        assert ">1</span> active" in resp.text
+        # but no favorited/mastered/discarded chips
+        assert "</span> favorited" not in resp.text
+        assert "</span> mastered" not in resp.text
+        assert "</span> discarded" not in resp.text
+
+    def test_detail_renders_summarize_button(self, client, make_book, make_highlight):
+        """Book detail action bar should expose the new Summarize button."""
+        book = make_book(title="Test")
+        make_highlight(text="x", book=book)
+        resp = client.get(f"/library/ui/book/{book.id}")
+        assert resp.status_code == 200
+        # Button label + the HTMX endpoint it posts to
+        assert "Summarize" in resp.text
+        assert f"/library/ui/book/{book.id}/summarize" in resp.text
+
+
+class TestBookSummarizeUI:
+    """POST /library/ui/book/{id}/summarize — HTMX summary partial."""
+
+    def test_404_for_missing_book(self, client):
+        resp = client.post("/library/ui/book/9999/summarize")
+        assert resp.status_code == 404
+
+    def test_renders_answer_when_ollama_works(
+        self, client, db, make_book, make_highlight, monkeypatch,
+    ):
+        import httpx
+        from app.models import Embedding
+        from app.services import embeddings as emb_svc
+        from app.services.embeddings import pack_vector
+
+        b = make_book(title="Antifragile", author="Taleb")
+        h = make_highlight(text="What does not kill us makes us stronger.", book=b)
+        db.add(Embedding(
+            highlight_id=h.id, model_name="nomic-embed-text", dim=2,
+            vector=pack_vector([1.0, 0.0]),
+        ))
+        db.commit()
+
+        def handler(request):
+            if request.url.path == "/api/embeddings":
+                return httpx.Response(200, json={"embedding": [1.0, 0.0]})
+            if request.url.path == "/api/generate":
+                return httpx.Response(200, json={
+                    "response": f"Antifragility means systems that gain from disorder. [#{h.id}]",
+                })
+            return httpx.Response(404)
+
+        fake = emb_svc.OllamaClient(
+            base_url="http://x", model="nomic-embed-text",
+            http=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+
+        resp = client.post(f"/library/ui/book/{b.id}/summarize")
+        assert resp.status_code == 200
+        assert "Antifragility" in resp.text
+        assert "Antifragile" in resp.text  # book title in heading
+
+    def test_renders_inline_error_on_ollama_unavailable(
+        self, client, db, make_book, make_highlight, monkeypatch,
+    ):
+        import httpx
+        from app.models import Embedding
+        from app.services import embeddings as emb_svc
+        from app.services.embeddings import pack_vector
+
+        b = make_book(title="X")
+        h = make_highlight(text="x", book=b)
+        db.add(Embedding(
+            highlight_id=h.id, model_name="nomic-embed-text", dim=1,
+            vector=pack_vector([1.0]),
+        ))
+        db.commit()
+
+        def handler(request):
+            raise httpx.ConnectError("refused")
+
+        fake = emb_svc.OllamaClient(
+            base_url="http://x", model="nomic-embed-text",
+            http=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        monkeypatch.setattr(emb_svc, "OllamaClient", lambda *a, **kw: fake)
+
+        resp = client.post(f"/library/ui/book/{b.id}/summarize")
+        # Errors return the partial with an inline message, not 5xx.
+        assert resp.status_code == 200
+        assert "Ollama unreachable" in resp.text
 
 
 # ── Book edit ─────────────────────────────────────────────────────────────────
@@ -266,14 +516,14 @@ class TestLibraryPagination:
         assert r.status_code == 200
         # exactly 50 books on page 1
         assert r.text.count("Book 0") + r.text.count("Book 1") + r.text.count("Book 2") + r.text.count("Book 3") + r.text.count("Book 4") >= 50
-        assert "Page 1 of 2" in r.text
+        assert "of 2" in r.text and "value=\"1\"" in r.text
 
     def test_page_2_returns_remainder(self, client, make_book):
         for i in range(60):
             make_book(title=f"Book {i:02d}")
         r = client.get("/library/ui?page=2&page_size=50&sort=title&order=asc")
         assert r.status_code == 200
-        assert "Page 2 of 2" in r.text
+        assert "of 2" in r.text and "value=\"2\"" in r.text
 
     def test_page_size_clamps_to_max(self, client, make_book):
         for i in range(5):
@@ -289,7 +539,7 @@ class TestLibraryPagination:
         r = client.get("/library/ui?page=99&page_size=10")
         assert r.status_code == 200
         # only 1 page exists
-        assert "Page 1 of 1" in r.text
+        assert "of 1" in r.text and "value=\"1\"" in r.text
 
     def test_default_sort_is_highlight_count_desc(self, client, make_book, make_highlight):
         b_small = make_book(title="Small")
@@ -309,3 +559,58 @@ class TestLibraryPagination:
         # link to next page (if any) should preserve sort=author
         # (we only have 1 book so no next link, but the sort header should still reflect)
         assert "sort=author" in r.text or "current_sort" not in r.text  # sort applied
+
+
+class TestAuthorsIndex:
+    """GET /library/ui/authors — index of every author with stats."""
+
+    def test_empty_state(self, client):
+        r = client.get("/library/ui/authors")
+        assert r.status_code == 200
+        assert "No authors yet" in r.text
+
+    def test_lists_authors_with_counts(self, client, make_book, make_highlight):
+        a = make_book(title="A1", author="Alice")
+        b = make_book(title="A2", author="Alice")
+        c = make_book(title="B1", author="Bob")
+        for _ in range(3):
+            make_highlight(book=a, text="x")
+        make_highlight(book=b, text="y", is_favorited=True)
+        make_highlight(book=c, text="z")
+
+        r = client.get("/library/ui/authors")
+        assert r.status_code == 200
+        assert "Alice" in r.text
+        assert "Bob" in r.text
+        # Default sort = highlights desc → Alice (4) before Bob (1)
+        assert r.text.index("Alice") < r.text.index("Bob")
+        # Link to filtered library view
+        assert 'href="/library/ui?author=Alice"' in r.text
+
+    def test_books_with_no_author_excluded(self, client, make_book, make_highlight):
+        nobody = make_book(title="Anon", author=None)
+        make_highlight(book=nobody, text="x")
+        r = client.get("/library/ui/authors")
+        assert r.status_code == 200
+        assert "No authors yet" in r.text
+
+    def test_sort_by_name_alphabetical(self, client, make_book, make_highlight):
+        z = make_book(title="zz", author="Zoe")
+        a = make_book(title="aa", author="Anna")
+        make_highlight(book=z, text="x"); make_highlight(book=z, text="y")
+        make_highlight(book=a, text="z")
+        r = client.get("/library/ui/authors?sort=name")
+        assert r.status_code == 200
+        assert r.text.index("Anna") < r.text.index("Zoe")
+
+    def test_invalid_sort_falls_back_to_default(self, client, make_book, make_highlight):
+        a = make_book(title="A", author="Alice")
+        make_highlight(book=a, text="x")
+        r = client.get("/library/ui/authors?sort=INVALID")
+        assert r.status_code == 200
+        assert "Alice" in r.text
+
+    def test_link_from_library_header(self, client):
+        r = client.get("/library/ui")
+        assert r.status_code == 200
+        assert 'href="/library/ui/authors"' in r.text

@@ -5,7 +5,7 @@ Uses the real production endpoint GET /highlights/review/ via the TestClient
 so the algorithm is tested end-to-end against a real database.
 """
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from collections import Counter
 
 from sqlmodel import select
@@ -20,7 +20,7 @@ class TestTimeDecay:
         """A highlight reviewed moments ago should have score≈0 and be skipped
         when other candidates exist."""
         make_highlight(text="Old", created_at=datetime(2024, 1, 1))
-        make_highlight(text="Fresh", last_reviewed_at=datetime.utcnow())
+        make_highlight(text="Fresh", last_reviewed_at=datetime.now(UTC).replace(tzinfo=None))
 
         resp = client.get("/highlights/review/", params={"n": 1})
         assert resp.status_code == 200
@@ -44,7 +44,7 @@ class TestTimeDecay:
         make_highlight(
             text="Recent",
             created_at=datetime(2025, 12, 1),
-            last_reviewed_at=datetime.utcnow() - timedelta(hours=1),
+            last_reviewed_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1),
         )
         # Run 30 draws and count
         counts = Counter()
@@ -174,7 +174,7 @@ class TestRecencyBias:
         """recency=0 should strongly prefer older highlights."""
         self._set_recency(db, 0)
         make_highlight(text="Old", created_at=datetime(2023, 1, 1))
-        make_highlight(text="New", created_at=datetime.utcnow() - timedelta(days=2))
+        make_highlight(text="New", created_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2))
 
         counts = Counter()
         for _ in range(50):
@@ -187,7 +187,7 @@ class TestRecencyBias:
         """recency=10 should strongly prefer newer highlights."""
         self._set_recency(db, 10)
         make_highlight(text="Old", created_at=datetime(2023, 1, 1))
-        make_highlight(text="New", created_at=datetime.utcnow() - timedelta(days=2))
+        make_highlight(text="New", created_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2))
 
         counts = Counter()
         for _ in range(50):

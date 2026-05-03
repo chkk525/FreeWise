@@ -2,9 +2,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from app.template_filters import make_templates
 from sqlmodel import Session
 
 from app.db import (
@@ -162,8 +162,91 @@ async def inject_streak(request: Request, call_next):
     return await call_next(request)
 
 
+# Security HTTP headers (Phase 4 hardening — H9). Cheap defence-in-depth
+# layered above Cloudflare Access. Static asset paths get the headers too;
+# they're idempotent so caching is unaffected.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    # Conservative CSP: app uses inline <script> in api_tokens.html copy
+    # button + several htmx data attrs, so we permit 'unsafe-inline' for now.
+    # A future tightening pass should add per-script nonces.
+    "Content-Security-Policy": (
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'"
+    ),
+}
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for k, v in _SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    return response
+
+
+# Rate limiting on the API surface (H8). In-process token-bucket per
+# (client_ip, path-prefix). NOT a substitute for Cloudflare's edge rate
+# limit — this is the second layer for direct LAN access.
+_RATE_LIMIT_BUCKET: dict[tuple[str, str], list[float]] = {}
+_RATE_LIMIT_LOCK_API = "/api/v2/"
+_RATE_LIMIT_LOCK_BACKUP = "/api/v2/admin/backup"
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMIT_MAX_HITS = 60  # 60 req / IP / minute on /api/v2/*
+# Backup is amplification-heavy (whole DB → /tmp + bytes back). Cap per
+# IP to a handful per minute so a runaway script can't fill the disk.
+_RATE_LIMIT_MAX_HITS_BACKUP = 3
+
+
+@app.middleware("http")
+async def rate_limit_api(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith(_RATE_LIMIT_LOCK_API):
+        return await call_next(request)
+    import time
+    from fastapi.responses import JSONResponse
+    # Pick the tightest applicable bucket. The backup path matches both
+    # the general /api/v2/ rule and its own; we want each to count
+    # independently so backup hits also burn the general budget.
+    is_backup = path.startswith(_RATE_LIMIT_LOCK_BACKUP)
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    cutoff = now - _RATE_LIMIT_WINDOW_SECONDS
+
+    buckets: list[tuple[tuple[str, str], int]] = [
+        ((ip, _RATE_LIMIT_LOCK_API), _RATE_LIMIT_MAX_HITS),
+    ]
+    if is_backup:
+        buckets.append(((ip, _RATE_LIMIT_LOCK_BACKUP), _RATE_LIMIT_MAX_HITS_BACKUP))
+
+    for key, max_hits in buckets:
+        bucket = _RATE_LIMIT_BUCKET.setdefault(key, [])
+        while bucket and bucket[0] < cutoff:
+            bucket.pop(0)
+        if len(bucket) >= max_hits:
+            retry_after = max(1, int(_RATE_LIMIT_WINDOW_SECONDS - (now - bucket[0])))
+            return JSONResponse(
+                {"detail": "Rate limit exceeded"},
+                status_code=429,
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    # All buckets accepted — record the hit on each.
+    for key, _ in buckets:
+        _RATE_LIMIT_BUCKET[key].append(now)
+    return await call_next(request)
+
+
 # Setup templates and static files
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Include routers
@@ -176,6 +259,156 @@ app.include_router(export.router)
 app.include_router(api_tokens.router)
 app.include_router(kindle_cookie_router.router)
 app.include_router(api_v2_router.router)
+
+
+@app.get("/healthz")
+async def healthz():
+    """Lightweight liveness + readiness probe.
+
+    No auth — intended for an external monitor or `curl` smoke check.
+    Returns counts and a non-fatal Ollama reachability flag so a single
+    GET tells you:
+      - is the app alive (200 = yes)
+      - is the DB reachable (counts present = yes)
+      - is the embedding model populated (embedded_pct > 0)
+      - is Ollama reachable (ollama.reachable = true/false)
+
+    Never returns 5xx for transient Ollama issues — the daemon being
+    down is normal and shouldn't page anyone.
+    """
+    from sqlmodel import Session, select, func
+    from app.db import get_engine
+    from app.models import Highlight, Embedding
+    from app.services.embeddings import _env_url, _env_model
+
+    import logging as _logging
+    log = _logging.getLogger("freewise.healthz")
+    engine = get_engine()
+    out: dict = {"status": "ok"}
+    try:
+        with Session(engine) as s:
+            total_active = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_discarded == False)  # noqa: E712
+            ).one() or 0)
+            embed_model = _env_model()
+            embedded = int(s.exec(
+                select(func.count(func.distinct(Embedding.highlight_id)))
+                .where(Embedding.model_name == embed_model)
+            ).one() or 0)
+        out["highlights"] = {
+            "active": total_active,
+            "embedded": embedded,
+            "embedded_pct": round((embedded / total_active * 100) if total_active else 0.0, 1),
+        }
+        out["embed_model"] = embed_model
+    except Exception as e:  # noqa: BLE001
+        # Don't surface internal exception text to unauthenticated callers
+        # (could include connection strings, paths). Log full error
+        # server-side for the operator.
+        log.exception("healthz: db check failed")
+        out["status"] = "degraded"
+        out["db_error"] = "database unreachable"
+
+    # Best-effort Ollama check — short timeout so the probe stays cheap.
+    # Don't return the full URL: an internal hostname leaks network
+    # topology to anyone who can hit /healthz. Just report the host
+    # (no scheme, no port) so operators can still see WHERE we're
+    # pointing without exposing internal addressing.
+    ollama_url = _env_url()
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(ollama_url)
+        ollama_host = parsed.hostname or "?"
+    except Exception:  # noqa: BLE001
+        ollama_host = "?"
+    out["ollama"] = {"host": ollama_host, "reachable": False}
+    try:
+        import httpx
+        r = httpx.get(f"{ollama_url}/api/tags", timeout=2.0)
+        out["ollama"]["reachable"] = r.status_code < 500
+        out["ollama"]["status_code"] = r.status_code
+    except Exception:  # noqa: BLE001
+        # Ollama down is normal; don't surface a stack trace.
+        pass
+
+    return out
+
+
+@app.get("/metrics", response_class=Response)
+async def metrics():
+    """Prometheus exposition format. Plain text, no auth.
+
+    Same counts that /healthz returns, reformatted so a Grafana / Prom
+    scraper can chart them over time. Public for the same reason
+    /healthz is — counts are not PII and the operator wants the
+    scraper to work without credentials.
+
+    No new dependency: Prometheus text format is just lines of
+    `# HELP <metric> <text>\\n# TYPE <metric> <kind>\\n<metric> <value>\\n`.
+    """
+    from sqlmodel import Session, select, func
+    from app.db import get_engine
+    from app.models import Book, Embedding, Highlight
+    from app.services.embeddings import _env_model
+
+    engine = get_engine()
+    lines: list[str] = []
+
+    def _gauge(name: str, help_text: str, value: float, labels: str = "") -> None:
+        lines.append(f"# HELP {name} {help_text}")
+        lines.append(f"# TYPE {name} gauge")
+        lines.append(f"{name}{labels} {value}")
+
+    try:
+        with Session(engine) as s:
+            total = int(s.exec(select(func.count(Highlight.id))).one() or 0)
+            active = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_discarded == False)  # noqa: E712
+            ).one() or 0)
+            favorited = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_favorited == True)  # noqa: E712
+            ).one() or 0)
+            mastered = int(s.exec(
+                select(func.count(Highlight.id))
+                .where(Highlight.is_mastered == True)  # noqa: E712
+            ).one() or 0)
+            books = int(s.exec(select(func.count(Book.id))).one() or 0)
+            embed_model = _env_model()
+            embedded = int(s.exec(
+                select(func.count(func.distinct(Embedding.highlight_id)))
+                .where(Embedding.model_name == embed_model)
+            ).one() or 0)
+        _gauge("freewise_highlights_total", "Total highlights including discarded.", total)
+        _gauge("freewise_highlights_active", "Active (non-discarded) highlights.", active)
+        _gauge("freewise_highlights_favorited", "Highlights flagged is_favorited.", favorited)
+        _gauge("freewise_highlights_mastered", "Highlights flagged is_mastered.", mastered)
+        _gauge("freewise_books_total", "Books known to the library.", books)
+        _gauge(
+            "freewise_embeddings_count",
+            "Distinct highlights with an embedding for the configured model.",
+            embedded,
+            labels=f'{{model="{embed_model}"}}',
+        )
+        # Coverage as a fraction in [0, 1] for easy alerting.
+        coverage = (embedded / active) if active else 0.0
+        _gauge(
+            "freewise_embedding_coverage",
+            "Fraction of active highlights with an embedding (0..1).",
+            round(coverage, 4),
+            labels=f'{{model="{embed_model}"}}',
+        )
+        # Up = 1 if the DB read succeeded.
+        _gauge("freewise_up", "1 if the app is healthy and the DB is reachable.", 1)
+    except Exception:  # noqa: BLE001
+        # Surface the failure as an explicit gauge so a Prom alert can
+        # fire on freewise_up == 0 without needing extra bookkeeping.
+        _gauge("freewise_up", "1 if the app is healthy and the DB is reachable.", 0)
+
+    body = "\n".join(lines) + "\n"
+    return Response(content=body, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/sw.js")

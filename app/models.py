@@ -1,5 +1,6 @@
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 from typing import Optional
+from sqlalchemy import UniqueConstraint
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -20,12 +21,29 @@ class User(SQLModel, table=True):
 
 
 class ApiToken(SQLModel, table=True):
-    """API token for programmatic access (Readwise-compatible API)."""
+    """API token for programmatic access (Readwise-compatible API).
+
+    Storage model (Phase 4 hardening):
+      * The raw token is shown to the user EXACTLY ONCE at creation and
+        never persisted. It has the shape ``fw_<24-byte-hex-prefix><32-byte-hex-secret>``
+        so the prefix is human-recognisable and the secret part is the
+        cryptographically-relevant material.
+      * ``token_prefix`` is the public-display prefix (16 hex chars / 8 bytes).
+        Indexed for cheap lookup; safe to log.
+      * ``token_hash`` is a sha256 hash of the full raw token. Compared in
+        constant time. Never logged.
+      * ``token`` (legacy column) holds the plaintext token for any rows
+        created before the migration. New rows leave it NULL. Lookup falls
+        back to it only when token_hash misses, then opportunistically
+        upgrades the row to hash storage on first use.
+    """
     id: Optional[int] = Field(default=None, primary_key=True)
-    token: str = Field(index=True, unique=True)
+    token: Optional[str] = Field(default=None, index=True, unique=False)
+    token_prefix: Optional[str] = Field(default=None, index=True)
+    token_hash: Optional[str] = Field(default=None, index=True)
     name: str  # human label, e.g. "chrome-extension-laptop"
     user_id: int = Field(foreign_key="user.id", index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None), index=True)
     last_used_at: Optional[datetime] = Field(default=None, index=True)
     scopes: Optional[str] = Field(default=None)
 
@@ -64,13 +82,26 @@ class Highlight(SQLModel, table=True):
     location: Optional[int] = Field(default=None, index=True)  # Page number or order in book
     is_favorited: bool = Field(default=False, index=True)
     is_discarded: bool = Field(default=False, index=True)
+    # is_mastered = "I have internalized this; stop showing it in review."
+    # Distinct from is_discarded ("never want to see this again"):
+    # mastered rows still appear in library / search / exports.
+    is_mastered: bool = Field(default=False, index=True)
     next_review: Optional[datetime] = Field(default=None, index=True)
     last_reviewed_at: Optional[datetime] = Field(default=None, index=True)
     review_count: int = Field(default=0)
     highlight_weight: float = Field(default=1.0, index=True)  # 0.0 (Never) to 2.0 (More)
     user_id: int = Field(foreign_key="user.id", index=True)
     book: Optional["Book"] = Relationship(back_populates="highlights")
-    
+    # Tags attached to *this highlight* via the HighlightTag junction.
+    # ``selectin`` lazy-loading batches the IN-query so listing pages don't
+    # trigger N+1 even without explicit eager-loading.
+    tags: list["Tag"] = Relationship(
+        sa_relationship_kwargs={
+            "secondary": "highlighttag",
+            "lazy": "selectin",
+        },
+    )
+
     def __repr__(self) -> str:
         preview = self.text[:50] + "..." if len(self.text) > 50 else self.text
         return f"Highlight(id={self.id}, text='{preview}')"
@@ -90,6 +121,41 @@ class HighlightTag(SQLModel, table=True):
     """Many-to-many relationship between highlights and tags."""
     highlight_id: int = Field(foreign_key="highlight.id", primary_key=True)
     tag_id: int = Field(foreign_key="tag.id", primary_key=True)
+
+
+class Embedding(SQLModel, table=True):
+    """Per-highlight semantic-search embedding (C2 round 1).
+
+    One row per (highlight_id, model_name) — different models can coexist
+    so the user can A/B test without dropping older vectors. The vector
+    is stored as a binary BLOB of float32s in row-major order; ``dim``
+    records the length so a corrupt row can be detected at read time.
+
+    All Ollama calls live in ``app.services.embeddings``; this model
+    knows nothing about how the vector was produced.
+    """
+    # Composite unique constraint declared at the model level so
+    # SQLModel.metadata.create_all() picks it up on fresh installs (test
+    # DBs included). The matching CREATE UNIQUE INDEX in db.py covers
+    # legacy DBs where the table existed without this constraint.
+    __table_args__ = (
+        UniqueConstraint(
+            "highlight_id", "model_name", name="uq_embedding_hl_model",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    highlight_id: int = Field(foreign_key="highlight.id", index=True)
+    model_name: str = Field(index=True)
+    dim: int
+    vector: bytes  # float32[dim] packed little-endian
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        index=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"Embedding(id={self.id}, highlight_id={self.highlight_id}, model={self.model_name!r}, dim={self.dim})"
 
 
 class Settings(SQLModel, table=True):

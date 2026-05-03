@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Authors — FreeWise{% endblock %}
+
+{% block heading %}Authors{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        {{ total_authors }} author{{ 's' if total_authors != 1 else '' }} ·
+        {{ total_highlights }} highlight{{ 's' if total_highlights != 1 else '' }} total ·
+        <a href="/library/ui" class="underline hover:text-primary-600 dark:hover:text-primary-400">back to books</a>
+    </p>
+
+    {# Sort tabs #}
+    <div class="flex flex-wrap gap-2 mb-4">
+        {% for key, label in [('highlights','Most highlighted'), ('books','Most books'), ('name','Name A-Z'), ('recent','Recent activity')] %}
+        <a href="/library/ui/authors?sort={{ key }}"
+           class="px-3 py-1.5 text-sm rounded-lg {% if current_sort == key %}bg-primary-600 text-white{% else %}bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700{% endif %} transition-colors">
+            {{ label }}
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if not authors %}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+        <i data-lucide="user" class="w-10 h-10 mx-auto mb-3 text-gray-400"></i>
+        <p class="text-gray-700 dark:text-gray-200 font-medium">No authors yet.</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Import some highlights from <a href="/import/ui" class="underline">/import/ui</a> to populate this view.
+        </p>
+    </div>
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 text-xs uppercase tracking-wide">
+                <tr>
+                    <th class="text-left px-4 py-2 font-medium">Author</th>
+                    <th class="text-right px-4 py-2 font-medium">Books</th>
+                    <th class="text-right px-4 py-2 font-medium">Highlights</th>
+                    <th class="text-right px-4 py-2 font-medium">★</th>
+                    <th class="text-right px-4 py-2 font-medium">Last activity</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                {% for a in authors %}
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-900/40">
+                    <td class="px-4 py-2">
+                        <a href="/library/ui?author={{ a.name|urlencode }}"
+                           class="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium">
+                            {{ a.name }}
+                        </a>
+                    </td>
+                    <td class="text-right px-4 py-2 font-mono text-gray-700 dark:text-gray-300">{{ a.book_count }}</td>
+                    <td class="text-right px-4 py-2 font-mono text-gray-700 dark:text-gray-300">{{ a.highlight_count }}</td>
+                    <td class="text-right px-4 py-2 font-mono {% if a.favorited > 0 %}text-yellow-700 dark:text-yellow-400{% else %}text-gray-400 dark:text-gray-600{% endif %}">{{ a.favorited }}</td>
+                    <td class="text-right px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+                        {% if a.last_at %}
+                        <time data-iso="{{ a.last_at.isoformat() }}Z" data-format="date">{{ a.last_at.strftime('%b %d, %Y') }}</time>
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

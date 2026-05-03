@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}FreeWise{% endblock %}</title>
-    
+
+    {# Open Graph / Twitter Card meta. Empty by default; pages that benefit
+       from rich link previews (highlight_permalink.html) override this block. #}
+    {% block og_meta %}{% endblock %}
+
     <!-- Local CSS -->
     <link rel="stylesheet" href="/static/css/fonts.css">
     <link rel="stylesheet" href="/static/css/tailwind.css">
@@ -36,7 +40,7 @@
     <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <!-- Navigation Header -->
         <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
-            <nav class="flex items-center justify-between text-base">
+            <nav class="flex items-center justify-between text-base gap-3">
                 <!-- Nav links: icon-only on mobile, icon + label on sm+ -->
                 <div class="flex items-center gap-5 sm:gap-6">
                     <a href="/dashboard/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
@@ -56,6 +60,33 @@
                         <span class="hidden sm:inline">Settings</span>
                     </a>
                 </div>
+                <!-- Search box: full-text across all highlights. Press / to focus. -->
+                <form method="get" action="/highlights/ui/search" class="flex-1 max-w-xs hidden sm:block">
+                    <label class="relative block">
+                        <span class="sr-only">Search highlights</span>
+                        <i data-lucide="search" class="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                        <input id="global-search-input" type="search" name="q"
+                               placeholder="Search highlights…  (press /)"
+                               value="{{ (request.query_params.get('q', '') if request and request.query_params is defined else '') }}"
+                               class="w-full pl-8 pr-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500">
+                    </label>
+                </form>
+                <!-- Theme toggle: cycles light → dark → auto. -->
+                {% set _t = (settings.theme if settings and settings.theme else 'light') %}
+                <button type="button"
+                        hx-post="/settings/theme/toggle"
+                        hx-swap="none"
+                        title="Theme: {{ _t }} (click to cycle)"
+                        aria-label="Toggle theme (current: {{ _t }})"
+                        class="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    {% if _t == 'dark' %}
+                    <i data-lucide="moon" class="w-5 h-5"></i>
+                    {% elif _t == 'auto' %}
+                    <i data-lucide="monitor" class="w-5 h-5"></i>
+                    {% else %}
+                    <i data-lucide="sun" class="w-5 h-5"></i>
+                    {% endif %}
+                </button>
                 <!-- Streak indicator: always pinned to the far right -->
                 <div class="flex items-center gap-1.5 flex-shrink-0">
                     {% set streak = request.state.streak | default(0) %}
@@ -103,6 +134,86 @@
         {% endblock %}
     </div>
     
+    <!-- Global keyboard shortcuts help modal (Gmail-style) -->
+    <div id="kbd-help-modal" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+         onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Keyboard shortcuts</h2>
+                <button onclick="document.getElementById('kbd-help-modal').classList.add('hidden')"
+                        aria-label="Close" class="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Gmail-style: press <kbd class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-xs">g</kbd> then a letter to navigate.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                <div>
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Navigate</h3>
+                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">d</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Dashboard</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">l</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Library</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">r</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Review</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Favorites</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">x</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discarded</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">m</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Mastered</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">a</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Ask (RAG)</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">u</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Duplicates</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Import</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Settings</dd>
+                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">t</kbd></dt><dd class="text-gray-700 dark:text-gray-300">API tokens</dd>
+                        <dt><kbd class="kbd">u</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Up to dashboard</dd>
+                    </dl>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Review (on /highlights/ui/review)</h3>
+                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">e</kbd> / <kbd class="kbd">Space</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Done — next</dd>
+                        <dt><kbd class="kbd">s</kbd> / <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Star (toggle favorite)</dd>
+                        <dt><kbd class="kbd">x</kbd> / <kbd class="kbd">d</kbd> / <kbd class="kbd">#</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discard</dd>
+                        <dt><kbd class="kbd">Enter</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Edit highlight</dd>
+                    </dl>
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Anywhere</h3>
+                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">/</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Focus search box</dd>
+                        <dt><kbd class="kbd">?</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Toggle this help</dd>
+                        <dt><kbd class="kbd">Esc</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Close help / dismiss</dd>
+                    </dl>
+                </div>
+            </div>
+            <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                Shortcuts are ignored while typing in input fields.
+            </p>
+        </div>
+    </div>
+    <style>
+        .kbd { display:inline-block; padding:1px 6px; border:1px solid #d1d5db; background:#f9fafb; border-radius:4px; font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#374151; }
+        @media (prefers-color-scheme: dark) { .kbd { background:#111827; border-color:#4b5563; color:#e5e7eb; } }
+        /* Toast notifications: fixed bottom-right column, animated in/out. */
+        #toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
+        .toast { pointer-events: auto; min-width: 240px; max-width: 360px; padding: 0.625rem 0.875rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,.15), 0 4px 6px -4px rgba(0,0,0,.1); display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; opacity: 0; transform: translateY(8px); transition: opacity 180ms ease, transform 180ms ease; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+        .toast-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+        .toast-info    { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+        @media (prefers-color-scheme: dark) {
+            .toast-success { background: #064e3b; color: #d1fae5; border-color: #047857; }
+            .toast-error   { background: #7f1d1d; color: #fee2e2; border-color: #b91c1c; }
+            .toast-info    { background: #1e3a8a; color: #dbeafe; border-color: #2563eb; }
+        }
+    </style>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <!-- Global HTMX progress bar: animates while any HTMX request is in flight. -->
+    <div id="htmx-progress" aria-hidden="true"></div>
+    <style>
+        /* Top-of-page progress bar for in-flight HTMX requests. */
+        #htmx-progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: linear-gradient(90deg, #3b82f6, #22d3ee); z-index: 70; opacity: 0; transition: width 240ms ease, opacity 200ms ease; pointer-events: none; }
+        #htmx-progress.active { opacity: 1; width: 80%; transition: width 8s cubic-bezier(.05,.85,.2,.99), opacity 80ms ease; }
+        #htmx-progress.done   { width: 100%; opacity: 0; transition: width 200ms ease, opacity 320ms ease 180ms; }
+        /* Per-element in-flight feedback: dim + disable pointer + spinner. */
+        .htmx-request { opacity: 0.55; pointer-events: none; cursor: wait; }
+        .htmx-request.htmx-request { /* HTMX adds this twice when nested; keep specificity */ }
+    </style>
+
     <!-- Scripts at bottom for proper loading order -->
     <script>
         // Initialize Lucide icons - must come after library is loaded
@@ -111,17 +222,375 @@
                 lucide.createIcons();
             }
         }
-        
+
+        /**
+         * Convert any <time data-iso="ISO-8601"> or <span data-iso="..."> in
+         * the document to the browser's local time. The dataset value is
+         * the canonical machine-readable timestamp; the visible text gets
+         * replaced with a human-friendly local rendering and the original
+         * ISO is preserved in the title= attribute for hover.
+         *
+         * Re-runs after HTMX swaps so dynamically inserted content also
+         * gets formatted.
+         */
+        function formatIsoTimestamps(root) {
+            const scope = root || document;
+            scope.querySelectorAll('[data-iso]').forEach(function (el) {
+                const iso = el.getAttribute('data-iso');
+                if (!iso) return;
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return;
+                const opts = el.dataset.format === 'date'
+                    ? { year: 'numeric', month: 'short', day: 'numeric' }
+                    : { year: 'numeric', month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit' };
+                el.textContent = d.toLocaleString(undefined, opts);
+                if (!el.title) el.title = iso;
+            });
+        }
+
+        /**
+         * Gmail-style global keyboard shortcuts.
+         *
+         * Single keys: j/k navigate, s star, x discard, etc. Two-key sequences
+         * use a "g" prefix (g d → Dashboard, g l → Library, ...) with a 1.5s
+         * timeout — matches Gmail behaviour. Listening on the document so
+         * HTMX swaps inside #review-container don't disconnect the binding.
+         *
+         * Page-specific actions (the four review buttons) target elements by
+         * id; a shortcut whose target id is missing is silently ignored, so
+         * "x" on the dashboard doesn't fire.
+         */
+        const _NAV_TARGETS = {
+            d: '/dashboard/ui',
+            l: '/library/ui',
+            r: '/highlights/ui/review',
+            f: '/highlights/ui/favorites',
+            x: '/highlights/ui/discarded',
+            m: '/highlights/ui/mastered',
+            a: '/highlights/ui/ask',
+            u: '/highlights/ui/duplicates',
+            i: '/import/ui',
+            s: '/settings/ui',
+            t: '/import/api-token',
+        };
+        let _gPrefixActive = false;
+        let _gTimer = null;
+
+        function _kbd_isTextInput(t) {
+            if (!t) return false;
+            const tag = t.tagName || '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+            if (t.isContentEditable) return true;
+            return false;
+        }
+
+        function _kbd_clickIfPresent(id) {
+            const el = document.getElementById(id);
+            if (el) { el.click(); return true; }
+            return false;
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (_kbd_isTextInput(e.target)) return;
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+            const help = document.getElementById('kbd-help-modal');
+
+            // Esc closes any open modal-style overlay we control.
+            if (e.key === 'Escape') {
+                if (help && !help.classList.contains('hidden')) {
+                    help.classList.add('hidden');
+                    e.preventDefault();
+                }
+                _gPrefixActive = false;
+                return;
+            }
+
+            // ? opens / toggles the help.
+            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+                if (help) help.classList.toggle('hidden');
+                e.preventDefault();
+                return;
+            }
+
+            // u → up to dashboard.
+            if (e.key === 'u' && !_gPrefixActive) {
+                window.location.href = '/dashboard/ui';
+                e.preventDefault();
+                return;
+            }
+
+            // / → focus the global search box (Gmail / GitHub convention).
+            if (e.key === '/' && !_gPrefixActive) {
+                const search = document.getElementById('global-search-input');
+                if (search) {
+                    search.focus();
+                    search.select();
+                    e.preventDefault();
+                    return;
+                }
+            }
+
+            // Two-key g+letter navigation.
+            if (_gPrefixActive) {
+                const dest = _NAV_TARGETS[e.key.toLowerCase()];
+                _gPrefixActive = false;
+                if (_gTimer) { clearTimeout(_gTimer); _gTimer = null; }
+                if (dest) {
+                    window.location.href = dest;
+                    e.preventDefault();
+                }
+                return;
+            }
+            if (e.key === 'g') {
+                _gPrefixActive = true;
+                _gTimer = setTimeout(function () { _gPrefixActive = false; }, 1500);
+                e.preventDefault();
+                return;
+            }
+
+            // Page-specific action keys — these click an action button if
+            // it's on the current page; missing = no-op.
+            switch (e.key) {
+                case 'j':
+                case 'e':
+                case ' ':
+                    if (_kbd_clickIfPresent('review-done-btn')) e.preventDefault();
+                    break;
+                case 'k':
+                    // Best-effort "previous": currently no-op since the
+                    // review queue is forward-only. Reserved for future.
+                    break;
+                case 's':
+                case 'f':
+                    if (_kbd_clickIfPresent('review-fav-btn')) e.preventDefault();
+                    break;
+                case 'x':
+                case 'd':
+                case '#':
+                    if (_kbd_clickIfPresent('review-discard-btn')) e.preventDefault();
+                    break;
+                case 'Enter':
+                    if (_kbd_clickIfPresent('review-edit-btn')) e.preventDefault();
+                    break;
+            }
+        });
+
+        // Progressive-enhancement dropzone for any <input type="file" data-dropzone>.
+        // Wraps the input in an outer drop target, surfaces the chosen file name,
+        // and falls back to the native control when JS is off.
+        function wireDropzones() {
+            const inputs = document.querySelectorAll('input[type="file"][data-dropzone]:not([data-dz-wired])');
+            inputs.forEach(function (input) {
+                input.dataset.dzWired = '1';
+                const wrapper = document.createElement('div');
+                wrapper.className = 'dz-wrapper relative';
+                input.parentNode.insertBefore(wrapper, input);
+                wrapper.appendChild(input);
+
+                // Visual zone overlay (label is the click target so the input
+                // remains keyboard-focusable behind it).
+                const zone = document.createElement('label');
+                zone.className = 'dz-zone block w-full px-4 py-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200 text-center cursor-pointer hover:border-primary-500 dark:hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors';
+                zone.htmlFor = input.id || (input.id = 'dz-' + Math.random().toString(36).slice(2, 9));
+                zone.innerHTML = ''
+                    + '<div class="flex flex-col items-center gap-2 pointer-events-none">'
+                    + '  <i data-lucide="upload-cloud" class="w-8 h-8 text-gray-400 dark:text-gray-500"></i>'
+                    + '  <p class="dz-msg text-sm"><span class="font-medium text-primary-600 dark:text-primary-400">Click to choose a file</span> or drag &amp; drop here</p>'
+                    + '  <p class="dz-hint text-xs text-gray-500 dark:text-gray-400">' + (input.accept ? 'Accepts: ' + input.accept : 'Any file type') + '</p>'
+                    + '</div>';
+                wrapper.appendChild(zone);
+
+                // Hide the native input visually but keep it accessible.
+                input.classList.add('sr-only');
+
+                function setName(name) {
+                    const msg = zone.querySelector('.dz-msg');
+                    if (!msg) return;
+                    if (name) {
+                        msg.innerHTML = 'Selected: <span class="font-medium text-primary-600 dark:text-primary-400">' + name.replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + '</span>';
+                    }
+                }
+                input.addEventListener('change', function () {
+                    if (input.files && input.files.length > 0) setName(input.files[0].name);
+                });
+
+                ['dragenter', 'dragover'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                ['dragleave', 'drop'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                zone.addEventListener('drop', function (e) {
+                    e.preventDefault();
+                    if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+                    // DataTransfer assignment is supported in all evergreen browsers.
+                    try {
+                        input.files = e.dataTransfer.files;
+                    } catch (_) {
+                        // Fall back to opening the native picker if assignment is blocked.
+                        input.click();
+                        return;
+                    }
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            });
+
+            // Pass-through variant: input is hidden, but the surrounding visual
+            // zone (closest ancestor with class `border-dashed`) becomes a drop
+            // target. Used by templates that already have a styled drop area
+            // with a "Select File" button label.
+            const passthroughs = document.querySelectorAll('input[type="file"][data-dropzone-passthrough]:not([data-dz-pt-wired])');
+            passthroughs.forEach(function (input) {
+                input.dataset.dzPtWired = '1';
+                let zone = input.closest('.border-dashed') || input.parentElement;
+                if (!zone) return;
+                ['dragenter', 'dragover'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                ['dragleave', 'drop'].forEach(function (ev) {
+                    zone.addEventListener(ev, function (e) {
+                        e.preventDefault();
+                        zone.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-primary-900/20');
+                    });
+                });
+                zone.addEventListener('drop', function (e) {
+                    e.preventDefault();
+                    if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+                    try {
+                        input.files = e.dataTransfer.files;
+                    } catch (_) {
+                        input.click();
+                        return;
+                    }
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+            });
+        }
+
+        // Copy a highlight as a formatted quote. Buttons opt in by setting
+        // data-copy-quote and data-text / data-author / data-title.
+        // Format: "highlight text"\n— Author, Book Title (if present).
+        window.copyQuote = async function (btn) {
+            const text = (btn.dataset.text || '').trim();
+            if (!text) return;
+            const author = (btn.dataset.author || '').trim();
+            const title = (btn.dataset.title || '').trim();
+            let attribution = '';
+            if (author && title) attribution = '— ' + author + ', ' + title;
+            else if (title)      attribution = '— ' + title;
+            else if (author)     attribution = '— ' + author;
+            const out = attribution ? ('"' + text + '"\n' + attribution) : ('"' + text + '"');
+            try {
+                await navigator.clipboard.writeText(out);
+                if (window.showToast) window.showToast('Quote copied', 'success');
+            } catch (err) {
+                if (window.showToast) window.showToast('Copy blocked — check clipboard permissions', 'error');
+            }
+        };
+
+        // Toast notifications. Anyone can call window.showToast(msg, type, ms).
+        // HTMX requests auto-toast: success when the trigger has data-toast-success,
+        // error on any non-2xx response.
+        window.showToast = function (message, type, durationMs) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const t = document.createElement('div');
+            t.className = 'toast toast-' + (type || 'info');
+            t.setAttribute('role', type === 'error' ? 'alert' : 'status');
+            const icon = type === 'error' ? 'alert-circle' : (type === 'success' ? 'check-circle-2' : 'info');
+            t.innerHTML = '<i data-lucide="' + icon + '" class="w-4 h-4 flex-shrink-0"></i><span class="flex-1">' + String(message).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + '</span>';
+            container.appendChild(t);
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+            // Trigger CSS transition on next frame.
+            requestAnimationFrame(function () { t.classList.add('show'); });
+            const ttl = durationMs || (type === 'error' ? 6000 : 2500);
+            setTimeout(function () {
+                t.classList.remove('show');
+                setTimeout(function () { t.remove(); }, 220);
+            }, ttl);
+        };
+
+        document.body.addEventListener('htmx:afterRequest', function (evt) {
+            const xhr = evt.detail && evt.detail.xhr;
+            const elt = evt.detail && evt.detail.elt;
+            if (!xhr) return;
+            const ok = xhr.status >= 200 && xhr.status < 300;
+            if (ok) {
+                let msg = elt && elt.dataset && elt.dataset.toastSuccess;
+                if (msg) {
+                    // Cap template-author-supplied length so a forgotten long
+                    // string can't blow up the toast layout.
+                    if (msg.length > 200) msg = msg.slice(0, 197) + '…';
+                    window.showToast(msg, 'success');
+                }
+            } else if (xhr.status >= 400) {
+                // Server may return a plain-text error in body; trim long bodies.
+                let msg = (xhr.responseText || '').trim();
+                if (!msg || msg.length > 200) msg = 'Request failed (' + xhr.status + ')';
+                window.showToast(msg, 'error');
+            }
+        });
+
+        // Top-of-page progress bar — driven purely by HTMX request lifecycle.
+        // Reference-counted so overlapping requests don't end the bar early.
+        (function () {
+            const bar = document.getElementById('htmx-progress');
+            if (!bar) return;
+            let inflight = 0;
+            let resetTimer = null;
+            function start() {
+                inflight += 1;
+                if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+                bar.classList.remove('done');
+                // Force reflow so the width transition restarts.
+                bar.classList.remove('active');
+                void bar.offsetWidth;
+                bar.classList.add('active');
+            }
+            function end() {
+                inflight = Math.max(0, inflight - 1);
+                if (inflight > 0) return;
+                bar.classList.remove('active');
+                bar.classList.add('done');
+                resetTimer = setTimeout(function () {
+                    bar.classList.remove('done');
+                    bar.style.width = '0';
+                }, 520);
+            }
+            document.body.addEventListener('htmx:beforeRequest', start);
+            document.body.addEventListener('htmx:afterRequest', end);
+            // sendError fires without a matching afterRequest in some cases.
+            document.body.addEventListener('htmx:sendError', end);
+            document.body.addEventListener('htmx:responseError', end);
+        })();
+
+        function initAll() {
+            initLucideIcons();
+            formatIsoTimestamps();
+            wireDropzones();
+        }
+
         // Initialize on page load
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initLucideIcons);
+            document.addEventListener('DOMContentLoaded', initAll);
         } else {
-            initLucideIcons();
+            initAll();
         }
-        
+
         // Re-initialize after HTMX swaps content
-        document.addEventListener('htmx:afterSwap', initLucideIcons);
-        document.addEventListener('htmx:afterSettle', initLucideIcons);
+        document.addEventListener('htmx:afterSwap', initAll);
+        document.addEventListener('htmx:afterSettle', initAll);
     </script>
 </body>
 </html>

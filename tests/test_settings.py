@@ -21,6 +21,56 @@ class TestSettingsPage:
         assert resp.status_code == 200
         # The page should display "2" somewhere for the highlight count
 
+    def test_backup_db_returns_sqlite_snapshot(self, client, make_highlight, tmp_path):
+        """POST /settings/backup.db should stream a SQLite file containing the data."""
+        import sqlite3
+        make_highlight(text="snapshot me")
+        resp = client.post("/settings/backup.db")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/vnd.sqlite3")
+        cd = resp.headers.get("content-disposition", "")
+        assert "attachment" in cd
+        assert ".db" in cd
+        # The body should be a real SQLite database we can open and query.
+        snap = tmp_path / "snap.db"
+        snap.write_bytes(resp.content)
+        conn = sqlite3.connect(snap)
+        rows = conn.execute("SELECT text FROM highlight WHERE text='snapshot me'").fetchall()
+        conn.close()
+        assert rows == [("snapshot me",)]
+
+    def test_backup_db_get_is_rejected(self, client):
+        """GET must NOT trigger a snapshot — guards against prefetch / crawler hits."""
+        resp = client.get("/settings/backup.db")
+        assert resp.status_code in (404, 405)  # FastAPI returns 405 for wrong method
+
+    def test_theme_toggle_cycles_light_dark_auto(self, client, db):
+        """POST /settings/theme/toggle advances light → dark → auto → light."""
+        # Sanity: starting theme is 'light' from defaults.
+        from app.models import Settings
+        s = db.exec(select(Settings)).first()
+        assert s.theme == "light"
+
+        for expected in ("dark", "auto", "light"):
+            r = client.post("/settings/theme/toggle")
+            assert r.status_code == 204
+            assert r.headers.get("HX-Refresh") == "true"
+            assert r.headers.get("X-Theme") == expected
+            db.refresh(s)
+            assert s.theme == expected
+
+    def test_reset_modal_requires_typed_confirmation(self, client):
+        """Type-to-confirm guard for the destructive reset library button."""
+        resp = client.get("/settings/ui")
+        assert resp.status_code == 200
+        # The new modal must include the typed-confirm input + disabled button
+        # so that the reset cannot be triggered by accidental clicks.
+        assert 'id="reset-confirm-input"' in resp.text
+        assert 'id="reset-confirm-btn"' in resp.text
+        assert "Type RESET" in resp.text or "type RESET" in resp.text
+        # The submit button must start in the disabled state.
+        assert "disabled" in resp.text
+
 
 class TestUpdateSettings:
     """POST /settings/ui — update settings with clamping."""

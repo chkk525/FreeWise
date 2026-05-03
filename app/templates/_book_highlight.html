@@ -13,23 +13,59 @@
     
     <!-- Note Section -->
     {% if highlight.note %}
-    <div class="mt-3 text-sm italic text-gray-600 dark:text-gray-400 pl-3 border-l-2 border-gray-300 dark:border-gray-600">
-        {{ highlight.note }}
+    <div class="mt-3 text-sm italic text-gray-600 dark:text-gray-400 pl-3 border-l-2 border-gray-300 dark:border-gray-600 whitespace-pre-wrap break-words">
+        {{ highlight.note | autolink }}
     </div>
     {% endif %}
-    
+
+    {# ── Highlight tag chips + inline add (book context) ───────────────── #}
+    {% if not highlight.is_discarded %}
+    {% set _hl_tags = highlight.tags | rejectattr('name', 'in', ['favorite', 'discard']) | sort(attribute='name') | list %}
+    <div class="mt-3 flex flex-wrap items-center gap-1.5">
+        {% for tag in _hl_tags %}
+        <form hx-post="/highlights/{{ highlight.id }}/tags/remove"
+              hx-vals='{"context": "book"}'
+              hx-target="#highlights-sections-wrapper"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-full text-xs text-blue-800 dark:text-blue-200">
+            <i data-lucide="tag" class="w-3 h-3"></i>
+            <span>{{ tag.name }}</span>
+            <input type="hidden" name="tag" value="{{ tag.name }}">
+            <button type="submit"
+                    class="ml-0.5 text-blue-500 hover:text-red-600 dark:text-blue-300 dark:hover:text-red-400"
+                    title="Remove tag"
+                    data-toast-success="Tag removed">
+                <i data-lucide="x" class="w-3 h-3"></i>
+            </button>
+        </form>
+        {% endfor %}
+        <form hx-post="/highlights/{{ highlight.id }}/tags/add"
+              hx-vals='{"context": "book"}'
+              hx-target="#highlights-sections-wrapper"
+              hx-swap="innerHTML"
+              class="inline-flex items-center gap-1 px-2 py-0.5 bg-white dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 rounded-full text-xs text-gray-600 dark:text-gray-400 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+              data-toast-success="Tag added">
+            <i data-lucide="plus" class="w-3 h-3"></i>
+            <input type="text" name="new_tag" placeholder="Add tag"
+                   maxlength="64" autocomplete="off"
+                   class="bg-transparent focus:outline-none w-20 placeholder-gray-400 dark:placeholder-gray-500">
+        </form>
+    </div>
+    {% endif %}
+
     <!-- Actions Bar -->
     <div class="flex items-center justify-between mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex-wrap gap-3">
         <!-- Action Buttons -->
         <div class="flex items-center gap-2">
             <!-- Favorite Button (hidden if discarded) -->
             {% if not highlight.is_discarded %}
-            <button 
+            <button
                 class="p-2 rounded-lg transition-all {% if highlight.is_favorited %}text-yellow-600 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/30{% else %}text-gray-400 dark:text-gray-500 hover:text-yellow-500 dark:hover:text-yellow-400 hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
                 hx-post="/highlights/{{ highlight.id }}/favorite"
                 hx-vals='{"favorite": "{{ "false" if highlight.is_favorited else "true" }}", "context": "book"}'
                 hx-target="#highlights-sections-wrapper"
                 hx-swap="innerHTML"
+                data-toast-success="{{ 'Unfavorited' if highlight.is_favorited else 'Favorited' }}"
                 title="Toggle favorite">
                 <i data-lucide="star" class="w-4 h-4 {% if highlight.is_favorited %}fill-current{% endif %}"></i>
             </button>
@@ -49,13 +85,14 @@
             
             <!-- Discard/Restore Button (hidden if favorited) -->
             {% if not highlight.is_favorited %}
-            <button 
+            <button
                 class="p-2 rounded-lg {% if highlight.is_discarded %}text-green-600 dark:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20{% else %}text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20{% endif %} transition-all"
                 hx-post="/highlights/{{ highlight.id }}/discard"
                 hx-vals='{"context": "book"}'
                 hx-target="#highlights-sections-wrapper"
                 hx-swap="innerHTML"
                 hx-confirm="Are you sure you want to {{ 'restore' if highlight.is_discarded else 'discard' }} this highlight?"
+                data-toast-success="{{ 'Restored' if highlight.is_discarded else 'Discarded' }}"
                 title="{{ 'Restore' if highlight.is_discarded else 'Discard' }} highlight">
                 {% if highlight.is_discarded %}
                 <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
@@ -71,7 +108,7 @@
             <span class="text-xs text-gray-500 dark:text-gray-400">
                 {% if highlight.created_at %}
                     <i data-lucide="calendar" class="w-3 h-3 inline-block"></i>
-                    {{ highlight.created_at.strftime('%b %d, %Y') }}
+                    <time data-iso="{{ highlight.created_at.isoformat() }}Z" data-format="date">{{ highlight.created_at.strftime('%b %d, %Y') }}</time>
                 {% else %}
                     <em>Date unknown</em>
                 {% endif %}

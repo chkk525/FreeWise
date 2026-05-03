@@ -1,22 +1,22 @@
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 from typing import Optional, List, Dict
 from collections import defaultdict
 import math
 import random
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from app.db import get_session, get_settings
-from app.models import Highlight, ReviewSession
+from app.models import Embedding, Highlight, HighlightTag, ReviewSession, Tag
+from app.template_filters import make_templates
 
 
 router = APIRouter(prefix="/highlights", tags=["highlights"])
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 # In-memory session storage for review queues
 # Format: {session_id: {"highlight_ids": [int], "current_index": int, "timestamp": datetime}}
@@ -215,7 +215,7 @@ def get_review_highlights(
     if n is None:
         n = settings.daily_review_count if settings else 5
     
-    now = datetime.utcnow()
+    now = datetime.now(UTC).replace(tzinfo=None)
 
     # Fetch active highlights (exclude discarded, weight>0). Eager-load
     # Book via selectinload so the per-highlight `h.book.review_weight`
@@ -233,6 +233,9 @@ def get_review_highlights(
         select(Highlight)
         .options(selectinload(Highlight.book))
         .where(Highlight.is_discarded == False)
+        # Exclude mastered highlights — the user has internalized them and
+        # explicitly opted out of seeing them in review.
+        .where(Highlight.is_mastered == False)
         .where(Highlight.highlight_weight > 0.0)
         .order_by(func.random())
         .limit(sample_pool_size)
@@ -360,7 +363,7 @@ async def ui_review(
         reset == "true" or
         not review_session_id or
         review_session_id not in review_sessions or
-        (datetime.utcnow() - review_sessions[review_session_id]["timestamp"]).total_seconds() > 86400  # 24 hours
+        (datetime.now(UTC).replace(tzinfo=None) - review_sessions[review_session_id]["timestamp"]).total_seconds() > 86400  # 24 hours
     )
     
     if should_create_new:
@@ -370,7 +373,7 @@ async def ui_review(
         
         # Create new session
         new_session_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         review_sessions[new_session_id] = {
             "highlight_ids": highlight_ids,
             "current_index": 0,
@@ -418,9 +421,20 @@ async def ui_review(
         current = 0
         total = len(highlight_ids)
     
+    # Distinguish "no highlights anywhere" from "queue exhausted today" so
+    # the empty state in review.html can render an Import CTA instead of
+    # the false-positive "Great job staying on top of things!" message
+    # for users who haven't imported anything yet (CX item M11).
+    total_active_highlights = session.exec(
+        select(func.count(Highlight.id)).where(Highlight.is_discarded == False)  # noqa: E712
+    ).one()
+    if isinstance(total_active_highlights, tuple):
+        total_active_highlights = total_active_highlights[0]
+
     response = templates.TemplateResponse(request, "review.html", {"highlight": highlight,
         "current": current,
         "total": total,
+        "total_active_highlights": total_active_highlights,
         "settings": settings})
     
     # Set session cookie
@@ -446,7 +460,7 @@ async def ui_review_next(
     # Mark the current highlight as reviewed
     current_highlight = session.get(Highlight, current_id)
     if current_highlight:
-        current_highlight.last_reviewed_at = datetime.utcnow()
+        current_highlight.last_reviewed_at = datetime.now(UTC).replace(tzinfo=None)
         current_highlight.review_count = (current_highlight.review_count or 0) + 1
         session.add(current_highlight)
         session.commit()
@@ -473,7 +487,7 @@ async def ui_review_next(
             stmt = select(ReviewSession).where(ReviewSession.session_uuid == review_session_id)
             db_review_session = session.exec(stmt).first()
             if db_review_session:
-                db_review_session.completed_at = datetime.utcnow()
+                db_review_session.completed_at = datetime.now(UTC).replace(tzinfo=None)
                 db_review_session.is_completed = True
                 session.add(db_review_session)
                 session.commit()
@@ -534,46 +548,856 @@ async def ui_highlight_weight_update(
     return HTMLResponse(content="")
 
 
+DEFAULT_HIGHLIGHTS_PAGE_SIZE = 50
+MAX_HIGHLIGHTS_PAGE_SIZE = 200
+
+
+def _paginated_highlights(
+    session: Session,
+    base_filter,
+    *,
+    page: int,
+    page_size: int,
+):
+    """Resolve pagination parameters and return (rows, total, total_pages,
+    showing_first, showing_last)."""
+    from sqlmodel import select as _select
+    page = max(1, page)
+    page_size = max(1, min(MAX_HIGHLIGHTS_PAGE_SIZE, page_size))
+    total = session.exec(
+        _select(func.count(Highlight.id)).where(base_filter)
+    ).one()
+    if isinstance(total, tuple):
+        total = total[0]
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    rows = session.exec(
+        _select(Highlight)
+        .where(base_filter)
+        .order_by(Highlight.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    showing_first = 0 if total == 0 else (page - 1) * page_size + 1
+    showing_last = min(page * page_size, total)
+    return rows, total, total_pages, page, page_size, showing_first, showing_last
+
+
+@router.get("/ui/search", response_class=HTMLResponse)
+async def ui_search(
+    request: Request,
+    q: Optional[str] = None,
+    tag: Optional[str] = None,
+    favorited_only: bool = False,
+    has_note: bool = False,
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
+):
+    """Full-text search with optional facets (tag, favorites-only, has-note).
+
+    SQLite LIKE is fine at the current ~25k-row scale. If this hits a
+    perf wall later, swap to FTS5 — the query stays the same.
+
+    All filters are conjunctive. A search with only facets and no q is
+    valid: "favorited highlights with notes" needs no text query.
+    """
+    from sqlalchemy import and_
+
+    settings = get_settings(session)
+    q_clean = (q or "").strip()
+    tag_clean = (tag or "").strip()
+
+    has_any_filter = bool(q_clean or tag_clean or favorited_only or has_note)
+    active_filters = {
+        "q": q_clean or None,
+        "tag": tag_clean or None,
+        "favorited_only": favorited_only or None,
+        "has_note": has_note or None,
+    }
+
+    if not has_any_filter:
+        return templates.TemplateResponse(
+            request, "search.html",
+            {
+                "settings": settings,
+                "q": "",
+                "active_filters": active_filters,
+                "highlights": [],
+                "page": 1, "page_size": page_size,
+                "total": 0, "total_pages": 1,
+                "showing_first": 0, "showing_last": 0,
+            },
+        )
+
+    conditions = [Highlight.is_discarded == False]  # noqa: E712
+
+    if q_clean:
+        from app.db import FTS5_AVAILABLE
+        # Trigram FTS5 needs at least one full 3-char trigram; for shorter
+        # queries we fall back to LIKE so single-character / 2-char
+        # Japanese particle searches still work. The MATCH path is wrapped
+        # in double quotes + doubled internal quotes so the user's input
+        # is treated as a literal phrase, not an FTS5 expression.
+        if FTS5_AVAILABLE and len(q_clean) >= 3:
+            from sqlalchemy import text as sa_text
+            escaped = q_clean.replace('"', '""')
+            match_query = f'"{escaped}"'
+            conditions.append(
+                Highlight.id.in_(
+                    sa_text(
+                        "SELECT rowid FROM highlight_fts "
+                        "WHERE highlight_fts MATCH :match"
+                    ).bindparams(match=match_query)
+                )
+            )
+        else:
+            needle = q_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{needle}%"
+            conditions.append(
+                Highlight.text.like(pattern, escape="\\")
+                | Highlight.note.like(pattern, escape="\\")
+            )
+
+    if tag_clean:
+        conditions.append(
+            Highlight.id.in_(
+                select(HighlightTag.highlight_id)
+                .join(Tag, Tag.id == HighlightTag.tag_id)
+                .where(Tag.name == tag_clean)
+            )
+        )
+
+    if favorited_only:
+        conditions.append(Highlight.is_favorited == True)  # noqa: E712
+
+    if has_note:
+        conditions.append((Highlight.note.is_not(None)) & (Highlight.note != ""))
+
+    base_filter = and_(*conditions)
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, base_filter, page=page, page_size=page_size,
+        )
+    )
+    return templates.TemplateResponse(
+        request, "search.html",
+        {
+            "settings": settings,
+            "q": q_clean,
+            "active_filters": active_filters,
+            "highlights": rows,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
+
+
 @router.get("/ui/favorites", response_class=HTMLResponse)
 async def ui_favorites(
     request: Request,
-    session: Session = Depends(get_session)
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
 ):
-    """Render HTML page with all favorite highlights."""
-    # Get settings for theme
-    settings = get_settings(session)
+    """Render HTML page with paginated favorite highlights.
 
-    # Query all favorited highlights, ordered by most recent first
-    statement = (
-        select(Highlight)
-        .where(Highlight.is_favorited == True)
-        .order_by(Highlight.created_at.desc())
+    Pre-pagination: a user with thousands of favorites would render every
+    one in a single response. Now caps the response at page_size rows
+    (default 50, max 200) with prev/next + numeric jump.
+    """
+    settings = get_settings(session)
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, Highlight.is_favorited == True,  # noqa: E712
+            page=page, page_size=page_size,
+        )
     )
-    highlights = session.exec(statement).all()
-    
-    return templates.TemplateResponse(request, "favorites.html", {"highlights": highlights,
-        "settings": settings})
+    return templates.TemplateResponse(
+        request, "favorites.html",
+        {
+            "highlights": rows,
+            "settings": settings,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
 
 
 @router.get("/ui/discarded", response_class=HTMLResponse)
 async def ui_discarded(
     request: Request,
-    session: Session = Depends(get_session)
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
 ):
-    """Render HTML page with all discarded highlights."""
-    # Get settings for theme
+    """Render HTML page with paginated discarded highlights."""
+    settings = get_settings(session)
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, Highlight.is_discarded == True,  # noqa: E712
+            page=page, page_size=page_size,
+        )
+    )
+    return templates.TemplateResponse(
+        request, "discarded.html",
+        {
+            "highlights": rows,
+            "settings": settings,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
+
+
+@router.get("/ui/ask", response_class=HTMLResponse)
+async def ui_ask_page(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Render the standalone Ask page with an empty input.
+
+    Submitting the form posts to /highlights/ui/ask which returns a
+    rendered answer + citations partial (HTMX swap into the answer
+    container)."""
+    settings = get_settings(session)
+    return templates.TemplateResponse(
+        request, "ask.html", {"settings": settings},
+    )
+
+
+@router.post("/ui/ask", response_class=HTMLResponse)
+async def ui_ask_submit(
+    request: Request,
+    question: str = Form(...),
+    top_k: int = Form(8),
+    session: Session = Depends(get_session),
+):
+    """Run the ask flow and return an answer partial. Errors are turned
+    into the same partial with an `error` field set so HTMX can swap in
+    a useful message rather than a stack trace."""
+    from app.services.embeddings import OllamaUnavailable, ask_library
+
+    q = (question or "").strip()
+    if not q:
+        return templates.TemplateResponse(
+            request, "_ask_answer.html",
+            {"error": "Type a question first.", "result": None, "question": ""},
+        )
+    try:
+        result = ask_library(
+            session, question=q,
+            top_k=max(1, min(20, top_k)),
+            user_id=1,  # single-user mode default
+        )
+    except OllamaUnavailable as e:
+        return templates.TemplateResponse(
+            request, "_ask_answer.html",
+            {
+                "error": (
+                    f"Ollama unreachable: {e}. See docs/SEMANTIC_SETUP.md "
+                    "for setup."
+                ),
+                "result": None,
+                "question": q,
+            },
+        )
+    return templates.TemplateResponse(
+        request, "_ask_answer.html",
+        {"error": None, "result": result.as_dict(), "question": q},
+    )
+
+
+@router.get("/ui/h/{id}/related", response_class=HTMLResponse)
+async def ui_highlight_related(
+    request: Request,
+    id: int,
+    limit: int = 8,
+    session: Session = Depends(get_session),
+):
+    """HTMX partial: top-K semantically related highlights for one source.
+
+    Renders a compact list under the permalink page. Returns an empty-
+    state explanation when the source has no embedding yet (no Ollama
+    backfill run, or this row hasn't been embedded).
+    """
+    from app.models import Embedding
+    from app.services.embeddings import _env_model, top_k_similar
+
+    h = session.get(Highlight, id)
+    if h is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    model_name = _env_model()
+    target_emb = session.exec(
+        select(Embedding)
+        .where(Embedding.highlight_id == id)
+        .where(Embedding.model_name == model_name)
+    ).first()
+
+    related: List[Dict] = []
+    if target_emb is not None:
+        cand_rows = session.exec(
+            select(Embedding.highlight_id, Embedding.vector)
+            .join(Highlight, Highlight.id == Embedding.highlight_id)
+            .where(Embedding.model_name == model_name)
+            .where(Embedding.dim == target_emb.dim)
+            .where(Highlight.is_discarded == False)  # noqa: E712
+            .where(Highlight.id != id)
+        ).all()
+        candidates = [(hid, blob) for hid, blob in cand_rows]
+        top = top_k_similar(target_emb.vector, candidates, dim=target_emb.dim, k=limit)
+        if top:
+            ids = [hid for hid, _ in top]
+            hl_rows = session.exec(
+                select(Highlight)
+                .options(selectinload(Highlight.book))
+                .where(Highlight.id.in_(ids))
+            ).all()
+            by_id = {row.id: row for row in hl_rows}
+            for hid, score in top:
+                hl = by_id.get(hid)
+                if hl is None:
+                    continue
+                related.append({
+                    "id": hl.id,
+                    "text": hl.text,
+                    "book_title": hl.book.title if hl.book else None,
+                    "book_id": hl.book_id,
+                    "similarity": round(score, 3),
+                })
+
+    return templates.TemplateResponse(
+        request, "_related_highlights.html",
+        {
+            "highlight_id": id,
+            "related": related,
+            "has_embedding": target_emb is not None,
+        },
+    )
+
+
+@router.get("/ui/h/{id}", response_class=HTMLResponse)
+async def ui_highlight_permalink(
+    request: Request,
+    id: int,
+    session: Session = Depends(get_session),
+):
+    """Stable, shareable, single-highlight page.
+
+    Direct link of the form ``/highlights/ui/h/1234`` so users can
+    bookmark or share a specific highlight without navigating through
+    the book detail page. Renders the existing _highlight_row.html
+    partial inside the standard base.html chrome.
+    """
+    settings = get_settings(session)
+    h = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.id == id)
+    ).first()
+    if h is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    return templates.TemplateResponse(
+        request, "highlight_permalink.html",
+        {"highlight": h, "settings": settings},
+    )
+
+
+@router.get("/ui/h/{id}/quote.png")
+async def ui_highlight_quote_image(
+    id: int,
+    session: Session = Depends(get_session),
+):
+    """Render the highlight as a 1200×630 PNG quote card.
+
+    Used as og:image / twitter:image on the permalink page so a shared
+    URL expands with a designed image, not just a text preview. No auth:
+    same posture as /healthz / /metrics — anyone reaching the URL can
+    already see the highlight via the permalink HTML.
+
+    Cache aggressively: a highlight's text rarely changes, so the
+    rendered card is stable for the day. The Cache-Control header lets
+    Twitter/Slack image-fetchers reuse a single render across many
+    impressions.
+    """
+    import asyncio
+    from fastapi.responses import Response
+    from app.services.quote_card import render_quote_png
+
+    h = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.id == id)
+    ).first()
+    if h is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    title = h.book.title if h.book else None
+    author = h.book.author if h.book else None
+    # Pillow render is CPU-bound 50-200ms; off-load so the uvicorn event
+    # loop stays responsive when several social scrapers fetch in burst.
+    png = await asyncio.get_running_loop().run_in_executor(
+        None, render_quote_png, h.text or "", title, author,
+    )
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            # Tell CDNs and social-card scrapers to cache the rendered
+            # image for 24h. Stale-while-revalidate keeps the previous
+            # render online while a new one is computed in the background.
+            "Cache-Control": "public, max-age=86400, stale-while-revalidate=86400",
+        },
+    )
+
+
+_QUICK_CAPTURE_BOOK_TITLE = "Quick Notes"
+
+
+@router.post("/ui/quick-capture", response_class=HTMLResponse)
+async def ui_quick_capture(
+    request: Request,
+    text: str = Form(...),
+    note: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Save a free-form thought as a new highlight under "Quick Notes".
+
+    Used by the dashboard quick-capture widget. Returns a tiny success/error
+    partial that HTMX swaps into the form's response container. The auto-
+    managed "Quick Notes" book is created on first use; subsequent captures
+    append to the same book.
+    """
+    from app.routers.importer import get_or_create_book
+
+    body = (text or "").strip()
+    if not body:
+        return HTMLResponse(
+            '<div id="quick-capture-result" class="text-sm text-red-700 dark:text-red-300">Type something first.</div>',
+        )
+    if len(body) > 8191:
+        return HTMLResponse(
+            '<div id="quick-capture-result" class="text-sm text-red-700 dark:text-red-300">Too long (8191-char cap).</div>',
+        )
+
+    book = get_or_create_book(session=session, title=_QUICK_CAPTURE_BOOK_TITLE)
+    h = Highlight(
+        text=body,
+        note=(note or "").strip() or None,
+        book_id=book.id if book else None,
+        created_at=datetime.now(UTC).replace(tzinfo=None),
+        user_id=1,
+    )
+    session.add(h)
+    session.commit()
+    session.refresh(h)
+    return HTMLResponse(
+        f'<div id="quick-capture-result" class="text-sm text-emerald-700 dark:text-emerald-300">'
+        f'Saved as <a class="underline" href="/highlights/ui/h/{h.id}">#{h.id}</a> in "{_QUICK_CAPTURE_BOOK_TITLE}".'
+        f'</div>',
+    )
+
+
+@router.get("/ui/duplicates", response_class=HTMLResponse)
+async def ui_duplicates(
+    request: Request,
+    prefix_chars: int = 80,
+    min_group_size: int = 2,
+    limit: int = 50,
+    session: Session = Depends(get_session),
+):
+    """Render duplicate-highlight groups with per-group cleanup buttons.
+
+    Same logic as /api/v2/highlights/duplicates but rendered as a page.
+    User-scoped to the single-user-mode default (1) to match the rest
+    of the HTML routes.
+    """
+    settings = get_settings(session)
+    prefix_chars = max(20, min(500, prefix_chars))
+    min_group_size = max(2, min(20, min_group_size))
+    limit = max(1, min(500, limit))
+
+    prefix_col = func.substr(Highlight.text, 1, prefix_chars).label("prefix")
+    grp_stmt = (
+        select(prefix_col, func.count(Highlight.id).label("cnt"))
+        .where(Highlight.user_id == 1)  # single-user mode
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(prefix_col)
+        .having(func.count(Highlight.id) >= min_group_size)
+        .order_by(func.count(Highlight.id).desc())
+        .limit(limit)
+    )
+    grouped = session.exec(grp_stmt).all()
+
+    groups: list[dict] = []
+    if grouped:
+        prefixes = [p for p, _ in grouped]
+        member_rows = session.exec(
+            select(Highlight)
+            .options(selectinload(Highlight.book))
+            .where(Highlight.user_id == 1)
+            .where(Highlight.is_discarded == False)  # noqa: E712
+            .where(prefix_col.in_(prefixes))
+            .order_by(Highlight.id.asc())
+        ).all()
+        members_by_prefix: dict[str, list[Highlight]] = {}
+        for h in member_rows:
+            key = (h.text or "")[:prefix_chars]
+            members_by_prefix.setdefault(key, []).append(h)
+        for prefix, cnt in grouped:
+            members = members_by_prefix.get(prefix, [])
+            # IDs to discard if the user clicks "Keep oldest, discard rest":
+            # everything except the first member (lowest id, oldest).
+            discard_ids = [m.id for m in members[1:]]
+            groups.append({
+                "prefix": prefix,
+                "count": int(cnt),
+                "members": members,
+                "discard_ids": ",".join(str(i) for i in discard_ids),
+            })
+
+    total_redundant = sum(len(g["members"]) - 1 for g in groups)
+    return templates.TemplateResponse(
+        request, "duplicates.html",
+        {
+            "settings": settings,
+            "groups": groups,
+            "prefix_chars": prefix_chars,
+            "min_group_size": min_group_size,
+            "limit": limit,
+            "total_redundant": total_redundant,
+        },
+    )
+
+
+_SEMDUP_RUNNING = False  # cheap process-local mutex; one matmul at a time
+
+
+@router.get("/ui/duplicates/semantic", response_class=HTMLResponse)
+async def ui_duplicates_semantic(
+    request: Request,
+    threshold: float = 0.92,
+    limit: int = 100,
+    session: Session = Depends(get_session),
+):
+    """Render semantic-near-duplicate pairs with per-highlight discard.
+
+    Wraps ``app.services.embeddings.find_semantic_duplicates`` for the UI.
+    Catches paraphrases / re-worded repeats that the prefix-based
+    /ui/duplicates page misses. Requires embeddings to be backfilled —
+    surfaces a backfill prompt when coverage is below 10%.
+    """
+    from app.services.embeddings import (
+        SEMANTIC_COVERAGE_THRESHOLD,
+        _env_model,
+        find_semantic_duplicates,
+    )
+
+    settings = get_settings(session)
+    threshold = max(0.5, min(1.0, float(threshold)))
+    limit = max(1, min(500, int(limit)))
+
+    model_name = _env_model()
+    candidate_count = session.exec(
+        select(func.count(Highlight.id))
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one()
+    embedded_count = session.exec(
+        select(func.count(func.distinct(Embedding.highlight_id)))
+        .join(Highlight, Highlight.id == Embedding.highlight_id)
+        .where(Embedding.model_name == model_name)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    ).one()
+
+    coverage = (embedded_count / candidate_count) if candidate_count else 0.0
+    pairs: list[dict] = []
+    busy = False
+    if candidate_count and coverage >= SEMANTIC_COVERAGE_THRESHOLD:
+        global _SEMDUP_RUNNING
+        if _SEMDUP_RUNNING:
+            # Already computing for someone else — bail with a friendly
+            # banner instead of pinning a second vCPU on the matmul.
+            busy = True
+        else:
+            _SEMDUP_RUNNING = True
+            try:
+                pairs = find_semantic_duplicates(
+                    session, threshold=threshold, limit=limit, user_id=1,
+                )
+            finally:
+                _SEMDUP_RUNNING = False
+
+    return templates.TemplateResponse(
+        request, "semantic_duplicates.html",
+        {
+            "settings": settings,
+            "pairs": pairs,
+            "threshold": threshold,
+            "limit": limit,
+            "model_name": model_name,
+            "candidate_count": candidate_count,
+            "embedded_count": embedded_count,
+            "coverage": coverage,
+            "busy": busy,
+        },
+    )
+
+
+@router.get("/ui/random", response_class=HTMLResponse)
+async def ui_random(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Return the markup for one random non-discarded highlight.
+
+    Used by the dashboard "highlight of the moment" widget. Mastered
+    highlights are *included* — mastery means "stop quizzing me", not
+    "hide forever"; serendipitous re-exposure is fine.
+    """
+    h = session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(func.random())
+        .limit(1)
+    ).first()
+    if h is None:
+        # Empty-state HTML so the widget can swap in something useful.
+        return HTMLResponse(
+            '<p class="text-sm text-gray-500 dark:text-gray-400">No highlights yet.</p>',
+        )
+    return templates.TemplateResponse(
+        request, "_random_highlight.html", {"highlight": h, "is_today": False},
+    )
+
+
+@router.get("/ui/today", response_class=HTMLResponse)
+async def ui_today(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Render today's deterministic highlight pick (stable all day).
+
+    Used by the dashboard. Same algorithm as /api/v2/highlights/today
+    but scoped to single-user mode (user_id=1) since this is an HTML
+    route. The render uses the same partial as /ui/random with a
+    ``is_today=True`` flag so the template can label it.
+    """
+    import hashlib
+
+    ids = [
+        i for i in session.exec(
+            select(Highlight.id)
+            .where(Highlight.user_id == 1)
+            .where(Highlight.is_discarded == False)  # noqa: E712
+            .order_by(Highlight.id.asc())
+        ).all()
+    ]
+    if not ids:
+        return HTMLResponse(
+            '<p class="text-sm text-gray-500 dark:text-gray-400">No highlights yet.</p>',
+        )
+    seed = date.today().isoformat().encode()
+    digest = int.from_bytes(hashlib.sha256(seed).digest()[:8], "big")
+    chosen_id = ids[digest % len(ids)]
+    h = session.exec(
+        select(Highlight).options(selectinload(Highlight.book)).where(Highlight.id == chosen_id)
+    ).first()
+    return templates.TemplateResponse(
+        request, "_random_highlight.html", {"highlight": h, "is_today": True},
+    )
+
+
+@router.get("/ui/tags/insights", response_class=HTMLResponse)
+async def ui_tags_insights(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Per-tag highlight counts + top tag-pair co-occurrences.
+
+    Two queries:
+      - Tags by usage: COUNT(*) per non-system tag, sorted desc, top 50.
+      - Co-occurrences: self-join on highlight_tag, count distinct
+        highlight_ids that carry both tags. Top 30 pairs.
+
+    Both queries scoped to active (non-discarded) highlights, user_id=1.
+    Defer-loadable but small enough to render inline at current scale.
+    """
     settings = get_settings(session)
 
-    # Query all discarded highlights, ordered by most recent first
-    statement = (
-        select(Highlight)
-        .where(Highlight.is_discarded == True)
-        .order_by(Highlight.created_at.desc())
+    # Tag usage distribution.
+    tag_counts = session.exec(
+        select(Tag.name, func.count(HighlightTag.highlight_id).label("c"))
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(~Tag.name.in_(["favorite", "discard"]))
+        .group_by(Tag.name)
+        .order_by(func.count(HighlightTag.highlight_id).desc())
+        .limit(50)
+    ).all()
+
+    # Co-occurrence: self-join HighlightTag a, b on a.highlight_id ==
+    # b.highlight_id and a.tag_id < b.tag_id (so each pair counted once).
+    from sqlalchemy.orm import aliased
+    ht_a = aliased(HighlightTag)
+    ht_b = aliased(HighlightTag)
+    tag_a = aliased(Tag)
+    tag_b = aliased(Tag)
+    pairs_stmt = (
+        select(
+            tag_a.name.label("name_a"),
+            tag_b.name.label("name_b"),
+            func.count(func.distinct(ht_a.highlight_id)).label("c"),
+        )
+        .join(ht_b, (ht_b.highlight_id == ht_a.highlight_id) & (ht_b.tag_id > ht_a.tag_id))
+        .join(tag_a, tag_a.id == ht_a.tag_id)
+        .join(tag_b, tag_b.id == ht_b.tag_id)
+        .join(Highlight, Highlight.id == ht_a.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .where(~tag_a.name.in_(["favorite", "discard"]))
+        .where(~tag_b.name.in_(["favorite", "discard"]))
+        .group_by(tag_a.name, tag_b.name)
+        .having(func.count(func.distinct(ht_a.highlight_id)) >= 2)
+        .order_by(func.count(func.distinct(ht_a.highlight_id)).desc())
+        .limit(30)
     )
-    highlights = session.exec(statement).all()
-    
-    return templates.TemplateResponse(request, "discarded.html", {"highlights": highlights,
-        "settings": settings})
+    pairs = session.exec(pairs_stmt).all()
+
+    return templates.TemplateResponse(
+        request, "tag_insights.html",
+        {
+            "settings": settings,
+            "tag_counts": [
+                {"name": name, "count": int(count)} for name, count in tag_counts
+            ],
+            "pairs": [
+                {"a": a, "b": b, "count": int(c)} for a, b, c in pairs
+            ],
+        },
+    )
+
+
+@router.get("/ui/tag/{name:path}", response_class=HTMLResponse)
+async def ui_tag_detail(
+    request: Request,
+    name: str,
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
+):
+    """Render all highlights carrying one tag, paginated.
+
+    Tag name comes via path param so URL-encoded names with spaces /
+    multibyte chars round-trip safely. Single-user mode (user_id=1).
+    Reserved pseudo-tags (favorite/discard) explicitly handled — they
+    have dedicated dashboard pages, so we redirect there rather than
+    showing a confusing duplicate listing.
+    """
+    settings = get_settings(session)
+    name_norm = " ".join((name or "").strip().split()).lower()
+    if not name_norm:
+        raise HTTPException(status_code=404, detail="Tag name required.")
+    if name_norm == "favorite":
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/highlights/ui/favorites", status_code=302)
+    if name_norm == "discard":
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/highlights/ui/discarded", status_code=302)
+
+    tag_row = session.exec(select(Tag).where(Tag.name == name_norm)).first()
+    if tag_row is None:
+        # Empty page rather than 404 — gives the user a helpful "no
+        # highlights with this tag yet" state instead of a hard error.
+        return templates.TemplateResponse(
+            request, "tag_detail.html",
+            {
+                "settings": settings,
+                "tag_name": name_norm,
+                "highlights": [],
+                "page": 1, "page_size": page_size,
+                "total": 0, "total_pages": 1,
+                "showing_first": 0, "showing_last": 0,
+            },
+        )
+
+    base_filter = (
+        (Highlight.user_id == 1)
+        & (Highlight.is_discarded == False)  # noqa: E712
+        & Highlight.id.in_(
+            select(HighlightTag.highlight_id).where(HighlightTag.tag_id == tag_row.id)
+        )
+    )
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(session, base_filter, page=page, page_size=page_size)
+    )
+    return templates.TemplateResponse(
+        request, "tag_detail.html",
+        {
+            "settings": settings,
+            "tag_name": name_norm,
+            "highlights": rows,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
+
+
+@router.get("/ui/mastered", response_class=HTMLResponse)
+async def ui_mastered(
+    request: Request,
+    page: int = 1,
+    page_size: int = DEFAULT_HIGHLIGHTS_PAGE_SIZE,
+    session: Session = Depends(get_session),
+):
+    """Render HTML page with paginated mastered highlights.
+
+    Mirrors /favorites and /discarded. Mastered = excluded from review
+    queue but still surfaced in library/search/exports — this page is
+    the explicit "what have I marked as mastered?" inventory.
+    """
+    settings = get_settings(session)
+    rows, total, total_pages, page, page_size, showing_first, showing_last = (
+        _paginated_highlights(
+            session, Highlight.is_mastered == True,  # noqa: E712
+            page=page, page_size=page_size,
+        )
+    )
+    return templates.TemplateResponse(
+        request, "mastered.html",
+        {
+            "highlights": rows,
+            "settings": settings,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
+        },
+    )
 
 
 @router.get("/{id}/view", response_class=HTMLResponse)
@@ -793,7 +1617,7 @@ async def discard_highlight_html(
             stmt = select(ReviewSession).where(ReviewSession.session_uuid == review_session_id)
             db_review_session = session.exec(stmt).first()
             if db_review_session:
-                db_review_session.completed_at = datetime.utcnow()
+                db_review_session.completed_at = datetime.now(UTC).replace(tzinfo=None)
                 db_review_session.is_completed = True
                 session.add(db_review_session)
                 session.commit()
@@ -813,7 +1637,350 @@ async def discard_highlight_html(
     
     # Otherwise return just the single highlight
     template_name = "_book_highlight.html" if context == "book" else "_highlight_row.html"
-    
+
     # Return updated highlight with badge
     return templates.TemplateResponse(request, template_name, {"highlight": highlight})
+
+
+# ── Highlight tag UI endpoints ──────────────────────────────────────────────
+
+
+def _highlight_tag_names(session: Session, highlight_id: int) -> List[str]:
+    """Return alphabetized tag names for a highlight, filtering legacy
+    pseudo-tags ("favorite"/"discard") that the importer once used as flags."""
+    rows = session.exec(
+        select(Tag.name)
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .where(HighlightTag.highlight_id == highlight_id)
+    ).all()
+    return sorted(n for n in rows if n and n.lower() not in ("favorite", "discard"))
+
+
+def _normalize_tag_name(name: str) -> str:
+    return " ".join(name.strip().split()).lower()
+
+
+def _render_highlight_after_tag_change(
+    request: Request,
+    highlight: Highlight,
+    session: Session,
+    context: Optional[str],
+):
+    """Re-render the highlight row partial after a tag mutation.
+
+    Mirrors the favorite/discard handlers: in 'book' context we re-render
+    the whole highlights wrapper so any cross-section moves take effect;
+    otherwise just swap the single row in place.
+    """
+    if context == "book":
+        return render_book_highlights_sections(request, highlight.book_id, session)
+    template_name = "_highlight_row.html"
+    return templates.TemplateResponse(
+        request, template_name,
+        {
+            "highlight": highlight,
+            "highlight_tags": _highlight_tag_names(session, highlight.id),
+        },
+    )
+
+
+@router.post("/{id}/tags/add", response_class=HTMLResponse)
+async def add_highlight_tag_html(
+    request: Request,
+    id: int,
+    new_tag: str = Form(...),
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Attach a tag to a highlight. Idempotent — re-adding is a no-op.
+
+    Reserved names ("favorite"/"discard") are silently ignored so a typo
+    can't poison the legacy pseudo-tag namespace.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    name = _normalize_tag_name(new_tag)
+    if name and name not in ("favorite", "discard"):
+        tag = session.exec(select(Tag).where(Tag.name == name)).first()
+        if tag is None:
+            tag = Tag(name=name)
+            session.add(tag); session.commit(); session.refresh(tag)
+
+        existing = session.exec(
+            select(HighlightTag)
+            .where(HighlightTag.highlight_id == highlight.id)
+            .where(HighlightTag.tag_id == tag.id)
+        ).first()
+        if existing is None:
+            session.add(HighlightTag(highlight_id=highlight.id, tag_id=tag.id))
+            session.commit()
+
+    return _render_highlight_after_tag_change(request, highlight, session, context)
+
+
+@router.post("/{id}/tags/remove", response_class=HTMLResponse)
+async def remove_highlight_tag_html(
+    request: Request,
+    id: int,
+    tag: str = Form(...),
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Remove a tag from a highlight. Idempotent."""
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+
+    name = _normalize_tag_name(tag)
+    tag_row = session.exec(select(Tag).where(Tag.name == name)).first()
+    if tag_row is not None:
+        link = session.exec(
+            select(HighlightTag)
+            .where(HighlightTag.highlight_id == highlight.id)
+            .where(HighlightTag.tag_id == tag_row.id)
+        ).first()
+        if link is not None:
+            session.delete(link)
+            session.commit()
+
+    return _render_highlight_after_tag_change(request, highlight, session, context)
+
+
+# ── Mastery toggle ──────────────────────────────────────────────────────────
+
+
+@router.post("/{id}/master", response_class=HTMLResponse)
+async def toggle_master_html(
+    request: Request,
+    id: int,
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Toggle is_mastered. Mastered highlights are excluded from review.
+
+    Distinct from discard: mastered rows still appear in library / search /
+    exports — they're just marked "I know this, stop quizzing me."
+    Mastering a discarded highlight is a no-op (400) since it makes no sense.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    if highlight.is_discarded and not highlight.is_mastered:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot master a discarded highlight. Restore it first.",
+        )
+    highlight.is_mastered = not highlight.is_mastered
+    session.add(highlight)
+    session.commit()
+    session.refresh(highlight)
+
+    if context == "book":
+        return render_book_highlights_sections(request, highlight.book_id, session)
+    return templates.TemplateResponse(
+        request, "_highlight_row.html", {"highlight": highlight},
+    )
+
+
+# ── Bulk operations ─────────────────────────────────────────────────────────
+
+
+_ALLOWED_BULK_ACTIONS = {
+    "favorite", "unfavorite", "discard", "restore",
+    "master", "unmaster", "tag", "untag",
+}
+
+
+def _parse_bulk_ids(raw: str) -> list[int]:
+    """Parse a comma-separated list of integer IDs from form input.
+
+    The bulk-action UI sends ids as a single comma-joined string in a
+    hidden field rather than a repeated form key — that survives long
+    selections without bumping into per-key form-data limits.
+    """
+    if not raw:
+        return []
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    out: list[int] = []
+    for p in parts:
+        try:
+            out.append(int(p))
+        except ValueError:
+            # Skip garbage rather than 400ing — the UI controls input but
+            # an extension or stale page state shouldn't crash the round-trip.
+            continue
+    return out
+
+
+@router.post("/bulk", response_class=HTMLResponse)
+async def bulk_action(
+    request: Request,
+    action: str = Form(...),
+    ids: str = Form(...),
+    tag: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Apply one action to many highlights. Returns a status banner partial.
+
+    Supported actions:
+      favorite   set is_favorited=True (skips already-discarded rows)
+      unfavorite clear is_favorited
+      discard    set is_discarded=True (also clears is_favorited)
+      restore    clear is_discarded
+      tag        attach `tag` to every id (idempotent)
+      untag      remove `tag` from every id (idempotent)
+
+    Response is a tiny HTML banner so the HTMX caller can swap it in and
+    show the user how many rows changed. The list page itself is reloaded
+    via HX-Refresh because a list-wide swap would otherwise need every
+    target endpoint to know about every list shape.
+    """
+    if action not in _ALLOWED_BULK_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action!r}")
+    if action in ("tag", "untag") and not (tag and tag.strip()):
+        raise HTTPException(status_code=400, detail="`tag` is required for tag/untag.")
+
+    id_list = _parse_bulk_ids(ids)
+    if not id_list:
+        raise HTTPException(status_code=400, detail="No highlight ids supplied.")
+    # Cap the per-request blast radius. The UI tops out at ~50 selections
+    # per page; legitimate bulk ops stay well under 1000. Anything above
+    # is almost certainly an attempt to sweep the whole table.
+    if len(id_list) > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many ids ({len(id_list)}); cap is 1000 per request.",
+        )
+
+    # Pull all targeted highlights in one IN query — N=1 round-trip even
+    # for thousand-row selections. Scoped to the single-user-mode user_id
+    # (1) so a malicious caller can't sweep across owners by enumerating
+    # IDs. The HTML route runs behind Cloudflare Access in production;
+    # this is defense-in-depth at the data layer.
+    highlights = session.exec(
+        select(Highlight)
+        .where(Highlight.id.in_(id_list))
+        .where(Highlight.user_id == 1)
+    ).all()
+
+    changed = 0
+    skipped = 0
+
+    if action == "favorite":
+        for h in highlights:
+            if h.is_discarded:
+                skipped += 1; continue
+            if not h.is_favorited:
+                h.is_favorited = True; session.add(h); changed += 1
+    elif action == "unfavorite":
+        for h in highlights:
+            if h.is_favorited:
+                h.is_favorited = False; session.add(h); changed += 1
+    elif action == "discard":
+        for h in highlights:
+            if not h.is_discarded:
+                h.is_discarded = True
+                # Mirror discard endpoint: discarding auto-unfavorites.
+                h.is_favorited = False
+                session.add(h); changed += 1
+    elif action == "restore":
+        for h in highlights:
+            if h.is_discarded:
+                h.is_discarded = False; session.add(h); changed += 1
+    elif action == "master":
+        for h in highlights:
+            if h.is_discarded:
+                skipped += 1; continue
+            if not h.is_mastered:
+                h.is_mastered = True; session.add(h); changed += 1
+    elif action == "unmaster":
+        for h in highlights:
+            if h.is_mastered:
+                h.is_mastered = False; session.add(h); changed += 1
+    elif action == "tag":
+        name = _normalize_tag_name(tag)
+        if not name or name in ("favorite", "discard"):
+            raise HTTPException(status_code=400, detail="Invalid or reserved tag name.")
+        # Find or create the tag once.
+        tag_row = session.exec(select(Tag).where(Tag.name == name)).first()
+        if tag_row is None:
+            tag_row = Tag(name=name)
+            session.add(tag_row); session.commit(); session.refresh(tag_row)
+        # Skip rows that already have it.
+        existing_links = {
+            l.highlight_id for l in session.exec(
+                select(HighlightTag)
+                .where(HighlightTag.highlight_id.in_(id_list))
+                .where(HighlightTag.tag_id == tag_row.id)
+            ).all()
+        }
+        for h in highlights:
+            if h.id in existing_links:
+                skipped += 1; continue
+            session.add(HighlightTag(highlight_id=h.id, tag_id=tag_row.id))
+            changed += 1
+    elif action == "untag":
+        name = _normalize_tag_name(tag)
+        tag_row = session.exec(select(Tag).where(Tag.name == name)).first()
+        if tag_row is not None:
+            links = session.exec(
+                select(HighlightTag)
+                .where(HighlightTag.highlight_id.in_(id_list))
+                .where(HighlightTag.tag_id == tag_row.id)
+            ).all()
+            for l in links:
+                session.delete(l); changed += 1
+            skipped = len(highlights) - len(links)
+        else:
+            skipped = len(highlights)
+
+    session.commit()
+
+    # Build a tiny banner HTML response. HX-Refresh forces a full reload of
+    # the underlying list page so the UI reflects the changed rows without
+    # us needing per-list re-render logic.
+    msg = f"{changed} highlight{'s' if changed != 1 else ''} {action}d"
+    if skipped:
+        msg += f" — {skipped} skipped"
+    response = HTMLResponse(
+        f'<div class="text-sm text-green-700 dark:text-green-300">{msg}</div>',
+    )
+    response.headers["HX-Refresh"] = "true"
+    return response
+
+
+# ── Tag autocomplete ────────────────────────────────────────────────────────
+
+_TAG_AUTOCOMPLETE_LIMIT = 30
+# Tags reserved for legacy favorite/discard pseudo-flags. Excluded from
+# autocomplete because the bulk-tag UI is for *user* tags — favoriting and
+# discarding have their own dedicated buttons.
+_TAG_AUTOCOMPLETE_EXCLUDED = ("favorite", "discard")
+
+
+@router.get("/tags/autocomplete", response_class=PlainTextResponse)
+async def tags_autocomplete(session: Session = Depends(get_session)) -> PlainTextResponse:
+    """Return the user's most-used tag names as plain text, one per line.
+
+    Powers the bulk-tag input's <datalist> autocomplete in the action bar.
+    Cache-friendly plain-text response (no JSON envelope) so a browser/CDN
+    can revalidate cheaply. Excludes the legacy 'favorite'/'discard'
+    pseudo-tags and caps the list at 30 to keep the dropdown tight.
+    Scoped to user_id=1 for single-user mode, matching every other HTML
+    route in this module.
+    """
+    rows = session.exec(
+        select(Tag.name, func.count(HighlightTag.highlight_id).label("c"))
+        .join(HighlightTag, HighlightTag.tag_id == Tag.id)
+        .join(Highlight, Highlight.id == HighlightTag.highlight_id)
+        .where(Highlight.user_id == 1)
+        .where(Tag.name.notin_(_TAG_AUTOCOMPLETE_EXCLUDED))
+        .group_by(Tag.name)
+        .order_by(func.count(HighlightTag.highlight_id).desc())
+        .limit(_TAG_AUTOCOMPLETE_LIMIT)
+    ).all()
+    body = "\n".join(name for name, _ in rows)
+    return PlainTextResponse(content=body)
 

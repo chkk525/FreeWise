@@ -81,11 +81,12 @@
                 <i data-lucide="tablet-smartphone" class="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4"></i>
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Upload Haoqing HTML Export</h3>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Drop your .html file here or click to browse</p>
-                <input 
-                    type="file" 
-                    id="file" 
-                    name="file" 
+                <input
+                    type="file"
+                    id="file"
+                    name="file"
                     accept=".html,.htm"
+                    data-dropzone-passthrough
                     required
                     onchange="this.form.submit()"
                     class="hidden">

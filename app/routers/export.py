@@ -1,9 +1,13 @@
 import csv
 import io
+import re
+import zipfile
+from collections import defaultdict
 from datetime import datetime
-from typing import List
-from fastapi import APIRouter, Depends, Response, HTTPException
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import Integer
+from sqlmodel import Session, func, select
 
 from app.db import get_session
 from app.models import Highlight, Book, Tag, HighlightTag
@@ -14,38 +18,84 @@ router = APIRouter(prefix="/export", tags=["export"])
 
 @router.get("/csv")
 async def export_highlights_csv(
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    tag: str | None = Query(default=None, description="Restrict to highlights with this exact tag name."),
+    book_id: int | None = Query(default=None, description="Restrict to highlights from this book."),
+    author: str | None = Query(default=None, description="Restrict to highlights from books by this exact author."),
+    favorited_only: bool = Query(default=False, description="Only include is_favorited=True rows."),
+    active_only: bool = Query(default=False, description="Exclude is_discarded=True rows."),
 ):
     """
-    Export all highlights to CSV with Readwise-compatible schema.
-    
+    Export highlights to CSV with Readwise-compatible schema.
+
     The export follows the official Readwise CSV format for the first 11 columns,
     allowing direct re-import into Readwise or FreeWise. Additional FreeWise-specific
     metadata columns are appended after the Readwise-compatible block.
-    
+
+    All filter params are conjunctive. With no params the response is the
+    full library (matches the historical behavior so existing scripts
+    keep working). The exact-match semantics on ``tag`` / ``author`` mirror
+    /highlights/ui/search facets.
+
     Readwise columns (1-11):
     - Highlight, Book Title, Book Author, Amazon Book ID, Note, Color,
       Tags, Location Type, Location, Highlighted at, Document tags
-    
+
     Extended columns (12-13):
     - is_favorited, is_discarded
     """
-    # Query all highlights with their associated books
     statement = (
         select(Highlight, Book)
         .outerjoin(Book, Highlight.book_id == Book.id)
-        .order_by(Highlight.created_at.desc())
     )
+
+    tag_clean = (tag or "").strip()
+    author_clean = (author or "").strip()
+    has_filter = bool(tag_clean or book_id or author_clean or favorited_only or active_only)
+
+    if tag_clean:
+        statement = statement.where(
+            Highlight.id.in_(
+                select(HighlightTag.highlight_id)
+                .join(Tag, Tag.id == HighlightTag.tag_id)
+                .where(Tag.name == tag_clean)
+            )
+        )
+    if book_id is not None:
+        statement = statement.where(Highlight.book_id == book_id)
+    if author_clean:
+        statement = statement.where(Book.author == author_clean)
+    if favorited_only:
+        statement = statement.where(Highlight.is_favorited == True)  # noqa: E712
+    if active_only:
+        statement = statement.where(Highlight.is_discarded == False)  # noqa: E712
+
+    statement = statement.order_by(Highlight.created_at.desc())
     results = session.exec(statement).all()
-    
+
     if not results:
+        # Stay consistent with the historical 400 when truly empty, but
+        # call out the common case (filters too narrow) in the message.
+        if has_filter:
+            raise HTTPException(
+                status_code=400,
+                detail="No highlights match the supplied filters.",
+            )
         raise HTTPException(status_code=400, detail="No highlights available to export.")
 
-    # Create CSV in memory
-    output = io.StringIO()
-    writer = csv.writer(output, quoting=csv.QUOTE_ALL)
-    
-    # Write header row - Readwise columns first, then extended columns
+    # Pre-load every (highlight_id, tag_name) pair in ONE query, replacing
+    # the previous N+1 (one query per highlight). For 25k highlights with
+    # tags that's a 25,000× round-trip reduction.
+    tag_pairs = session.exec(
+        select(HighlightTag.highlight_id, Tag.name)
+        .join(Tag, HighlightTag.tag_id == Tag.id)
+    ).all()
+    tags_by_highlight: dict[int, list[str]] = defaultdict(list)
+    for hl_id, tag_name in tag_pairs:
+        # Filter system tags here so the per-row loop stays cheap.
+        if tag_name and tag_name.lower() not in ("favorite", "discard"):
+            tags_by_highlight[hl_id].append(tag_name)
+
     headers = [
         # Readwise-compatible columns (exact naming and order)
         'Highlight',
@@ -63,54 +113,641 @@ async def export_highlights_csv(
         'is_favorited',
         'is_discarded',
     ]
-    writer.writerow(headers)
-    
-    # Write data rows
-    for highlight, book in results:
-        # Get highlight-specific tags (excluding special tags like favorite/discard)
-        highlight_tags_stmt = (
-            select(Tag.name)
-            .join(HighlightTag, HighlightTag.tag_id == Tag.id)
-            .where(HighlightTag.highlight_id == highlight.id)
-        )
-        tag_results = session.exec(highlight_tags_stmt).all()
-        # Filter out system tags and join with comma-space separator
-        regular_tags = [tag for tag in tag_results if tag.lower() not in ['favorite', 'discard']]
-        tags_str = ', '.join(regular_tags) if regular_tags else ''
-        
-        is_favorited = highlight.is_favorited
-        
-        # Format timestamps in ISO format for consistency
-        highlighted_at = highlight.created_at.isoformat() if highlight.created_at else ''
-        
-        row = [
-            # Readwise-compatible columns
-            highlight.text or '',                                           # Highlight
-            book.title if book else '',              # Book Title
-            book.author if book else '',              # Book Author
-            '',                                                             # Amazon Book ID (not used)
-            highlight.note or '',                                           # Note
-            '',                                                             # Color (not used)
-            tags_str,                                                       # Tags (highlight-level)
-            highlight.location_type or '',                                  # Location Type (page or order)
-            str(highlight.location) if highlight.location else '',          # Location (page number or order)
-            highlighted_at,                                                 # Highlighted at (ISO format)
-            book.document_tags if book and book.document_tags else '',     # Document tags (book-level)
-            # Extended FreeWise columns
-            'true' if is_favorited else 'false',                           # is_favorited
-            'true' if highlight.is_discarded else 'false',                 # is_discarded
-        ]
-        writer.writerow(row)
-    
-    # Generate filename with current date
+
+    def _gen():
+        # Stream the CSV instead of buffering the whole library in memory —
+        # at 25k+ highlights the previous Response(content=...) approach
+        # held the entire file in RAM and delayed TTFB until generation
+        # finished.
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_ALL)
+        writer.writerow(headers)
+        yield buf.getvalue()
+        buf.seek(0); buf.truncate(0)
+
+        for highlight, book in results:
+            tags_str = ', '.join(tags_by_highlight.get(highlight.id, []))
+            highlighted_at = highlight.created_at.isoformat() if highlight.created_at else ''
+            writer.writerow([
+                highlight.text or '',                                           # Highlight
+                book.title if book else '',                                     # Book Title
+                book.author if book else '',                                    # Book Author
+                '',                                                             # Amazon Book ID (not used)
+                highlight.note or '',                                           # Note
+                '',                                                             # Color (not used)
+                tags_str,                                                       # Tags (highlight-level)
+                highlight.location_type or '',                                  # Location Type (page or order)
+                str(highlight.location) if highlight.location else '',          # Location (page number or order)
+                highlighted_at,                                                 # Highlighted at (ISO format)
+                book.document_tags if book and book.document_tags else '',      # Document tags (book-level)
+                'true' if highlight.is_favorited else 'false',                  # is_favorited
+                'true' if highlight.is_discarded else 'false',                  # is_discarded
+            ])
+            yield buf.getvalue()
+            buf.seek(0); buf.truncate(0)
+
     filename = f"freewise_export_{datetime.now().strftime('%Y%m%d')}.csv"
-    
-    # Return CSV as downloadable file
-    csv_content = output.getvalue()
-    return Response(
-        content=csv_content,
+    return StreamingResponse(
+        _gen(),
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+        headers={"Content-Disposition": _content_disposition(filename)},
+    )
+
+
+# ── Markdown export (Obsidian / Logseq compatible) ──────────────────────────
+
+
+# Filesystem-safe filename: strip characters that break on FAT/NTFS/HFS, keep
+# unicode letters intact so Japanese/Chinese book titles round-trip cleanly.
+_FILENAME_BAD = re.compile(r'[\\/:*?"<>|\r\n\t]+')
+
+
+def _safe_filename(s: str, fallback: str = "untitled") -> str:
+    cleaned = _FILENAME_BAD.sub("_", s).strip().strip(".")
+    cleaned = cleaned[:120]  # keep well under FAT32 255-byte limit incl. unicode
+    return cleaned or fallback
+
+
+def _content_disposition(filename: str) -> str:
+    """Build a Content-Disposition value that survives non-ASCII filenames.
+
+    HTTP headers are latin-1 by default; a raw Japanese title in the
+    ``filename=`` field crashes uvicorn with UnicodeEncodeError. RFC 5987
+    defines the ``filename*=UTF-8''<percent-encoded>`` form that every
+    modern browser understands. We emit BOTH a latin-1 fallback and the
+    UTF-8 form so dumb clients still get a sensible name.
+    """
+    from urllib.parse import quote
+    # Latin-1 fallback: replace any non-encodable char with underscore.
+    fallback = filename.encode("ascii", errors="replace").decode("ascii").replace("?", "_")
+    encoded = quote(filename, safe="")
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{encoded}'
+
+
+def _yaml_escape(s: str | None) -> str:
+    """Quote a YAML scalar value safely. We use double-quoted form throughout."""
+    if s is None:
+        return '""'
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _render_book_markdown(book: Book, highlights: list[Highlight]) -> str:
+    """Render a single .md file: YAML frontmatter + blockquoted highlights.
+
+    Compatible with Obsidian and Logseq vaults (both parse YAML frontmatter
+    and standard Markdown blockquotes). Tags from ``Book.document_tags`` are
+    surfaced as YAML frontmatter ``tags:`` so vault search picks them up.
+    """
+    tags: list[str] = []
+    if book.document_tags:
+        for raw in book.document_tags.split(","):
+            t = raw.strip()
+            if t:
+                tags.append(t)
+
+    lines: list[str] = ["---"]
+    lines.append(f"title: {_yaml_escape(book.title)}")
+    if book.author:
+        lines.append(f"author: {_yaml_escape(book.author)}")
+    lines.append(f"highlight_count: {len(highlights)}")
+    lines.append(f"exported_at: {_yaml_escape(datetime.now().isoformat(timespec='seconds'))}")
+    lines.append("source: freewise")
+    if tags:
+        lines.append("tags:")
+        for t in tags:
+            lines.append(f"  - {_yaml_escape(t)}")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"# {book.title}")
+    if book.author:
+        lines.append(f"*{book.author}*")
+    lines.append("")
+
+    if not highlights:
+        lines.append("_No highlights yet._")
+    else:
+        for h in highlights:
+            # Blockquote the highlight text — every line of the quote needs a
+            # leading "> " or Obsidian/Logseq breaks the block.
+            for ln in (h.text or "").splitlines() or [""]:
+                lines.append(f"> {ln}")
+            # Metadata footer: location + flags.
+            meta_bits: list[str] = []
+            if h.location is not None:
+                meta_bits.append(
+                    f"location {h.location}" + (f" ({h.location_type})" if h.location_type else "")
+                )
+            if h.is_favorited:
+                meta_bits.append("★ favorited")
+            if meta_bits:
+                lines.append(">")
+                lines.append(f"> *{' · '.join(meta_bits)}*")
+            # Note as a regular paragraph beneath the quote.
+            if h.note:
+                lines.append("")
+                lines.append(h.note)
+            lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@router.get("/markdown.zip")
+async def export_markdown_zip(
+    session: Session = Depends(get_session),
+    tag: str | None = Query(default=None, description="Restrict to highlights with this exact tag name."),
+    book_id: int | None = Query(default=None, description="Restrict to highlights from this book."),
+    author: str | None = Query(default=None, description="Restrict to highlights from books by this exact author."),
+    favorited_only: bool = Query(default=False, description="Only include is_favorited=True rows."),
+    active_only: bool = Query(default=False, description="Exclude is_discarded=True rows."),
+):
+    """Stream a ZIP of one Markdown file per book (Obsidian/Logseq friendly).
+
+    Excludes discarded highlights — the Markdown export is meant to populate
+    a knowledge vault, not preserve trash. Re-running the export overwrites
+    files in the destination vault.
+
+    Supports the same conjunctive filter params as ``/export/csv`` (U88) so a
+    user can export "just my favorites" or "just one tag" as Obsidian-friendly
+    markdown without first re-importing the CSV. Only books that have at
+    least one matching highlight after filtering produce a ``.md`` file.
+    """
+    statement = (
+        select(Highlight, Book)
+        .outerjoin(Book, Highlight.book_id == Book.id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    )
+
+    tag_clean = (tag or "").strip()
+    author_clean = (author or "").strip()
+    has_filter = bool(tag_clean or book_id or author_clean or favorited_only or active_only)
+
+    if tag_clean:
+        statement = statement.where(
+            Highlight.id.in_(
+                select(HighlightTag.highlight_id)
+                .join(Tag, Tag.id == HighlightTag.tag_id)
+                .where(Tag.name == tag_clean)
+            )
+        )
+    if book_id is not None:
+        statement = statement.where(Highlight.book_id == book_id)
+    if author_clean:
+        statement = statement.where(Book.author == author_clean)
+    if favorited_only:
+        statement = statement.where(Highlight.is_favorited == True)  # noqa: E712
+    if active_only:
+        statement = statement.where(Highlight.is_discarded == False)  # noqa: E712
+
+    statement = statement.order_by(
+        Highlight.book_id.asc().nullslast(),
+        Highlight.location.asc().nullslast(),
+        Highlight.created_at.asc().nullslast(),
+        Highlight.id.asc(),
+    )
+    rows = session.exec(statement).all()
+
+    if not rows:
+        # Mirror the CSV endpoint: distinguish "filters too narrow" from the
+        # historical empty-library 400 so callers can react appropriately.
+        if has_filter:
+            raise HTTPException(
+                status_code=400,
+                detail="No highlights match the supplied filters.",
+            )
+        raise HTTPException(status_code=400, detail="No active highlights to export.")
+
+    by_book: dict[int | None, list[Highlight]] = defaultdict(list)
+    book_lookup: dict[int | None, Book | None] = {}
+    for h, b in rows:
+        by_book[h.book_id].append(h)
+        book_lookup[h.book_id] = b
+
+    # Disambiguate filename collisions when two books have the same title.
+    seen: dict[str, int] = {}
+
+    def _gen():
+        # Build the ZIP in memory and yield it. SQLite databases at this
+        # app's expected scale (low-tens of MB) fit comfortably; if a future
+        # user has 500MB of highlights we can switch to chunked zipfile
+        # writing. For now this stays simple.
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for book_id, hl_list in by_book.items():
+                book = book_lookup.get(book_id)
+                if book is None:
+                    book = Book(title="Unbound highlights", author=None)
+                # Guard against a Book row with NULL title — _safe_filename
+                # calls re.sub which would TypeError on None and crash the
+                # generator mid-stream (silent truncation to client).
+                title_safe = _safe_filename(book.title or "")
+                key = title_safe.lower()
+                if key in seen:
+                    seen[key] += 1
+                    fname = f"{title_safe} ({seen[key]}).md"
+                else:
+                    seen[key] = 0
+                    fname = f"{title_safe}.md"
+                zf.writestr(fname, _render_book_markdown(book, hl_list))
+        buf.seek(0)
+        # Single-shot yield — keeps the in-memory ZIP intact.
+        yield buf.getvalue()
+
+    fname = f"freewise-vault-{datetime.now().strftime('%Y%m%d')}.zip"
+    return StreamingResponse(
+        _gen(),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition(fname)},
+    )
+
+
+# ── Atomic-note Markdown export (Zettelkasten-style: one .md per highlight) ──
+
+
+def _slug(text: str, max_len: int = 40) -> str:
+    """Filesystem-safe slug from arbitrary text (UTF-8 letters preserved).
+
+    Used to build human-readable atomic-note filenames like
+    ``hl-1234-the-quick-brown-fox.md``. Collapses whitespace + bad chars
+    to single hyphens, trims to ``max_len`` chars.
+    """
+    cleaned = _FILENAME_BAD.sub(" ", text or "")
+    cleaned = re.sub(r"\s+", "-", cleaned).strip("-").strip(".")
+    return cleaned[:max_len] or "untitled"
+
+
+def _yaml_list(items: list[str]) -> str:
+    """Render a YAML list inline if short, block-style otherwise. Always quotes items."""
+    if not items:
+        return "[]"
+    return "[" + ", ".join(_yaml_escape(t) for t in items) + "]"
+
+
+def _render_atomic_note(
+    h: Highlight,
+    book: Book | None,
+    tags: list[str],
+) -> str:
+    """One Zettelkasten-style atomic Markdown note for a single highlight.
+
+    Frontmatter exposes everything a PKM tool would want to filter on; the
+    body keeps the highlight + note clearly separated. A `[[Book Title]]`
+    wikilink at the bottom hooks the note into the book's note (if the user
+    also imports the per-book Markdown export into the same vault).
+    """
+    title_text = (h.text or "").strip().splitlines()[0] if h.text else ""
+    if len(title_text) > 80:
+        title_text = title_text[:77] + "…"
+
+    book_title = book.title if book else None
+    book_author = book.author if book else None
+    book_doc_tags: list[str] = []
+    if book and book.document_tags:
+        book_doc_tags = [t.strip() for t in book.document_tags.split(",") if t.strip()]
+    # Merge highlight tags + book document tags, dedup but preserve order.
+    all_tags: list[str] = []
+    seen: set[str] = set()
+    for t in (tags or []) + book_doc_tags:
+        key = t.lower()
+        if key not in seen:
+            seen.add(key)
+            all_tags.append(t)
+
+    lines: list[str] = ["---"]
+    lines.append(f"id: freewise-{h.id}")
+    lines.append(f"title: {_yaml_escape(title_text or f'Highlight #{h.id}')}")
+    if book_title:
+        lines.append(f"book: {_yaml_escape(book_title)}")
+    if book_author:
+        lines.append(f"author: {_yaml_escape(book_author)}")
+    if h.location is not None:
+        lines.append(f"location: {h.location}")
+    if h.location_type:
+        lines.append(f"location_type: {_yaml_escape(h.location_type)}")
+    if h.created_at:
+        lines.append(f"highlighted_at: {_yaml_escape(h.created_at.isoformat(timespec='seconds'))}")
+    lines.append(f"exported_at: {_yaml_escape(datetime.now().isoformat(timespec='seconds'))}")
+    lines.append(f"is_favorited: {'true' if h.is_favorited else 'false'}")
+    lines.append("source: freewise")
+    if all_tags:
+        lines.append(f"tags: {_yaml_list(all_tags)}")
+    lines.append("---")
+    lines.append("")
+
+    # Body: the highlight as a blockquote so the .md still reads as a quote
+    # if rendered, but is also the canonical "atom" of the note.
+    for ln in (h.text or "").splitlines() or [""]:
+        lines.append(f"> {ln}")
+    lines.append("")
+
+    if h.note:
+        lines.append("## Note")
+        lines.append("")
+        lines.append(h.note)
+        lines.append("")
+
+    # Backlink to the book's vault note if the user also exported per-book MD.
+    if book_title:
+        lines.append("---")
+        lines.append(f"From [[{book_title}]]")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@router.get("/atomic-notes.zip")
+async def export_atomic_notes_zip(
+    book_id: int | None = Query(default=None, description="Limit to highlights from one book."),
+    session: Session = Depends(get_session),
+):
+    """Stream a ZIP of one Markdown file per highlight (atomic notes).
+
+    Each file is shaped for Zettelkasten / PKM workflows: rich YAML frontmatter
+    (id, title, book, author, location, tags, flags), the highlight as the
+    body, an optional ``## Note`` section, and a ``[[Book Title]]`` backlink.
+    Excludes discarded highlights. Optional ``book_id`` scopes to one book.
+    """
+    stmt = select(Highlight).where(Highlight.is_discarded == False)  # noqa: E712
+    if book_id is not None:
+        stmt = stmt.where(Highlight.book_id == book_id)
+    stmt = stmt.order_by(Highlight.id.asc())
+    highlights = session.exec(stmt).all()
+
+    if not highlights:
+        raise HTTPException(status_code=400, detail="No active highlights to export.")
+
+    # Bulk-load related books in one query.
+    book_ids = {h.book_id for h in highlights if h.book_id is not None}
+    books_by_id: dict[int, Book] = {}
+    if book_ids:
+        books = session.exec(select(Book).where(Book.id.in_(book_ids))).all()
+        books_by_id = {b.id: b for b in books}
+
+    # Bulk-load all (highlight_id, tag_name) pairs in one query — no N+1.
+    tag_pairs = session.exec(
+        select(HighlightTag.highlight_id, Tag.name)
+        .join(Tag, HighlightTag.tag_id == Tag.id)
+        .where(HighlightTag.highlight_id.in_([h.id for h in highlights] or [None]))
+    ).all()
+    tags_by_hl: dict[int, list[str]] = defaultdict(list)
+    for hl_id, name in tag_pairs:
+        if name and name.lower() not in ("favorite", "discard"):
+            tags_by_hl[hl_id].append(name)
+    for k in tags_by_hl:
+        tags_by_hl[k].sort()
+
+    def _gen():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for h in highlights:
+                book = books_by_id.get(h.book_id) if h.book_id is not None else None
+                slug = _slug(h.text or "", max_len=40)
+                fname = f"hl-{h.id}-{slug}.md"
+                zf.writestr(
+                    fname,
+                    _render_atomic_note(h, book, tags_by_hl.get(h.id, [])),
+                )
+        buf.seek(0)
+        yield buf.getvalue()
+
+    suffix = f"-book{book_id}" if book_id is not None else ""
+    fname = f"freewise-atomic-notes{suffix}-{datetime.now().strftime('%Y%m%d')}.zip"
+    return StreamingResponse(
+        _gen(),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition(fname)},
+    )
+
+
+# ── Notion-flavored Markdown export ──────────────────────────────────────────
+#
+# Notion renders Markdown on import but interprets it differently from
+# Obsidian/Logseq:
+#   - Blockquotes (`> ...`) become Quote blocks (one per blank-separated
+#     run), which is fine but loses individuality across many highlights.
+#   - Bulleted lists become Toggle/Bullet blocks — easier to skim when
+#     there are dozens of highlights per book.
+#   - Notion ignores YAML frontmatter (it's pasted as text). We omit it
+#     and put title/author/tags in a header block instead.
+#   - Notion has a callout shorthand (`> 💡 ...`) which it parses as a
+#     Quote with an emoji marker — lighter than nested headings.
+
+
+def _render_book_markdown_notion(book: Book, highlights: list[Highlight]) -> str:
+    """Notion-friendly variant of _render_book_markdown.
+
+    Differences from the Obsidian variant:
+    - No YAML frontmatter (Notion would render it as plain text).
+    - Title + metadata via H1 + Quote block at the top.
+    - Each highlight rendered as a top-level bullet so Notion makes them
+      individually-collapsible blocks. The note (if any) becomes a
+      sub-bullet so it's visually attached to its highlight.
+    """
+    lines: list[str] = []
+    lines.append(f"# {book.title}")
+    meta_bits: list[str] = []
+    if book.author:
+        meta_bits.append(book.author)
+    meta_bits.append(f"{len(highlights)} highlight{'s' if len(highlights) != 1 else ''}")
+    if book.document_tags:
+        for raw in book.document_tags.split(","):
+            t = raw.strip()
+            if t:
+                meta_bits.append(f"#{t.replace(' ', '-')}")
+    lines.append(f"> 💡 {' · '.join(meta_bits)}")
+    lines.append("")
+
+    if not highlights:
+        lines.append("_No highlights yet._")
+    else:
+        for h in highlights:
+            # Bulleted highlight. Multi-line highlights need each
+            # subsequent line indented under the bullet so Notion keeps
+            # them inside the same block.
+            text_lines = (h.text or "").splitlines() or [""]
+            lines.append(f"- {text_lines[0]}")
+            for ln in text_lines[1:]:
+                lines.append(f"  {ln}")
+            footer_bits: list[str] = []
+            if h.location is not None:
+                footer_bits.append(
+                    f"loc {h.location}" + (f" ({h.location_type})" if h.location_type else "")
+                )
+            if h.is_favorited:
+                footer_bits.append("⭐")
+            if footer_bits:
+                lines.append(f"  _{' · '.join(footer_bits)}_")
+            if h.note:
+                # Sub-bullet so Notion nests the note under the highlight.
+                for nl in h.note.splitlines() or [""]:
+                    lines.append(f"  - {nl}")
+            lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@router.get("/notion.zip")
+async def export_notion_zip(session: Session = Depends(get_session)):
+    """Stream a Notion-friendly ZIP — one .md per book, no YAML frontmatter,
+    bulleted highlights so Notion makes each one a collapsible block.
+
+    Excludes discarded highlights. Same SQL pattern as /export/markdown.zip
+    (one query for highlights, one for books) — no N+1.
+    """
+    rows = session.exec(
+        select(Highlight, Book)
+        .outerjoin(Book, Highlight.book_id == Book.id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(
+            Highlight.book_id.asc().nullslast(),
+            Highlight.location.asc().nullslast(),
+            Highlight.created_at.asc().nullslast(),
+            Highlight.id.asc(),
+        )
+    ).all()
+    if not rows:
+        raise HTTPException(status_code=400, detail="No active highlights to export.")
+
+    by_book: dict[int | None, list[Highlight]] = defaultdict(list)
+    book_lookup: dict[int | None, Book | None] = {}
+    for h, b in rows:
+        by_book[h.book_id].append(h)
+        book_lookup[h.book_id] = b
+
+    seen: dict[str, int] = {}
+
+    def _gen():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for book_id, hl_list in by_book.items():
+                book = book_lookup.get(book_id)
+                if book is None:
+                    book = Book(title="Unbound highlights", author=None)
+                title_safe = _safe_filename(book.title or "")
+                key = title_safe.lower()
+                if key in seen:
+                    seen[key] += 1
+                    fname = f"{title_safe} ({seen[key]}).md"
+                else:
+                    seen[key] = 0
+                    fname = f"{title_safe}.md"
+                zf.writestr(fname, _render_book_markdown_notion(book, hl_list))
+        buf.seek(0)
+        yield buf.getvalue()
+
+    fname = f"freewise-notion-{datetime.now().strftime('%Y%m%d')}.zip"
+    return StreamingResponse(
+        _gen(),
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition(fname)},
+    )
+
+
+# ── Per-book single-file Markdown download (no ZIP, no archive) ─────────────
+
+
+@router.get("/book/{book_id}.md")
+async def export_single_book_markdown(
+    book_id: int,
+    flavor: str = "obsidian",
+    session: Session = Depends(get_session),
+):
+    """Download one book's highlights as a single .md file (no ZIP).
+
+    Linked from the book detail page so users can grab one book without
+    waiting for a full-vault export. ``flavor=obsidian`` (default) or
+    ``flavor=notion`` selects between the two renderers.
+    """
+    book = session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    highlights = session.exec(
+        select(Highlight)
+        .where(Highlight.book_id == book_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(
+            Highlight.location.asc().nullslast(),
+            Highlight.created_at.asc().nullslast(),
+            Highlight.id.asc(),
+        )
+    ).all()
+
+    if flavor == "notion":
+        body = _render_book_markdown_notion(book, list(highlights))
+    elif flavor in ("obsidian", "markdown", "md"):
+        body = _render_book_markdown(book, list(highlights))
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown flavor: {flavor!r}")
+
+    safe_title = _safe_filename(book.title or "untitled")
+    from fastapi.responses import Response
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": _content_disposition(f"{safe_title}.md")},
+    )
+
+
+# ── Books inventory CSV ─────────────────────────────────────────────────────
+
+
+@router.get("/books.csv")
+async def export_books_csv(
+    session: Session = Depends(get_session),
+):
+    """Stream a CSV inventory of books with highlight counts.
+
+    Useful for spreadsheet review of the library, picking books to import
+    elsewhere, or dumping into a citation manager. One join + one GROUP BY,
+    no N+1.
+    """
+    counts_subq = (
+        select(Highlight.book_id, func.count(Highlight.id).label("cnt"),
+               func.sum(
+                   # SQLite stores booleans as 0/1; sum gives the count.
+                   Highlight.is_favorited.cast(Integer)
+               ).label("fav_cnt"))
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .group_by(Highlight.book_id)
+    ).subquery()
+
+    rows = session.exec(
+        select(Book, counts_subq.c.cnt, counts_subq.c.fav_cnt)
+        .outerjoin(counts_subq, Book.id == counts_subq.c.book_id)
+        .order_by(Book.title.asc())
+    ).all()
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No books to export.")
+
+    headers = [
+        "id", "title", "author", "kindle_asin",
+        "highlight_count", "favorited_count", "document_tags",
+        "cover_image_url",
+    ]
+
+    def _gen():
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(headers)
+        yield buf.getvalue()
+        buf.seek(0); buf.truncate(0)
+        for book, cnt, fav_cnt in rows:
+            writer.writerow([
+                book.id,
+                book.title or "",
+                book.author or "",
+                book.kindle_asin or "",
+                int(cnt) if cnt is not None else 0,
+                int(fav_cnt) if fav_cnt is not None else 0,
+                book.document_tags or "",
+                book.cover_image_url or "",
+            ])
+            yield buf.getvalue()
+            buf.seek(0); buf.truncate(0)
+
+    fname = f"freewise_books_{datetime.now().strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        _gen(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": _content_disposition(fname)},
     )

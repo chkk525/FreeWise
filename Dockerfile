@@ -29,10 +29,26 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /srv/freewise
 
-# System deps – curl is used by the HEALTHCHECK
+# System deps – curl is used by the HEALTHCHECK; docker CLI + compose
+# plugin are needed by the U99 "Scrape now" button which shells out to
+# `docker compose run` against the host's docker.sock (mounted in via
+# docker-compose.qnap.yml). The static CLI binary works against any
+# daemon — no wrapper-script gymnastics needed.
+ARG TARGETARCH=amd64
+ARG DOCKER_CLI_VERSION=27.5.1
+ARG DOCKER_COMPOSE_VERSION=2.32.4
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
+        -o /tmp/docker.tgz \
+    && tar -xzf /tmp/docker.tgz -C /tmp docker/docker \
+    && install -m 0755 /tmp/docker/docker /usr/local/bin/docker \
+    && rm -rf /tmp/docker /tmp/docker.tgz \
+    && mkdir -p /usr/libexec/docker/cli-plugins \
+    && curl -fsSL "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+        -o /usr/libexec/docker/cli-plugins/docker-compose \
+    && chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 
 # Create a non-root user
 RUN groupadd -r freewise && useradd -r -g freewise -d /srv/freewise freewise

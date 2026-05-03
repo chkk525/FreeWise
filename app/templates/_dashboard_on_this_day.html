@@ -1,0 +1,27 @@
+{# On-this-day partial — past-year highlights for today's MM-DD.
+
+   Defer-loaded by /dashboard/ui because the strftime() filter cannot
+   use any index, and at 25k rows it's a full table scan. Hidden
+   entirely when no past matches exist. #}
+{% if on_this_day and on_this_day|length > 0 %}
+<h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+    <i data-lucide="calendar-days" class="w-5 h-5 text-blue-600 dark:text-blue-400"></i>
+    On this day
+    <span class="text-sm font-normal text-gray-500 dark:text-gray-400 ml-1">— captured on {{ today_mmdd }} in past years</span>
+</h3>
+<div class="space-y-3">
+    {% for h in on_this_day %}
+    <a href="/highlights/ui/h/{{ h.id }}" class="block no-underline group">
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
+            <div class="flex items-start justify-between gap-3 mb-2">
+                <p class="text-xs text-blue-700 dark:text-blue-300 font-mono shrink-0">{{ h.created_at.year }}</p>
+                {% if h.book %}
+                <p class="text-xs text-gray-500 dark:text-gray-400 truncate text-right">{{ h.book.title }}{% if h.book.author %} · {{ h.book.author }}{% endif %}</p>
+                {% endif %}
+            </div>
+            <p class="font-serif text-sm text-gray-900 dark:text-gray-100 line-clamp-3">{{ h.text }}</p>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}

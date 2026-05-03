@@ -77,3 +77,65 @@ class PaginatedResponse(BaseModel):
     next: Optional[str] = None
     previous: Optional[str] = None
     results: List[dict] = Field(default_factory=list)
+
+
+class HighlightDetail(BaseModel):
+    """Single highlight, returned by ``GET /api/v2/highlights/{id}``."""
+
+    id: int
+    text: str
+    title: Optional[str] = None
+    author: Optional[str] = None
+    note: Optional[str] = None
+    location: Optional[int] = None
+    location_type: Optional[str] = None
+    highlighted_at: Optional[datetime] = None
+    book_id: Optional[int] = None
+    is_favorited: bool = False
+    is_discarded: bool = False
+    is_mastered: bool = False
+    tags: List[str] = Field(default_factory=list)
+
+
+class TagAddPayload(BaseModel):
+    """Body for ``POST /api/v2/highlights/{id}/tags`` — single tag string."""
+
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+class TagListResponse(BaseModel):
+    """Body for ``GET /api/v2/highlights/{id}/tags``."""
+
+    tags: List[str]
+
+
+class HighlightUpdatePayload(BaseModel):
+    """Partial update body for ``PATCH /api/v2/highlights/{id}``."""
+
+    note: Optional[str] = None
+    is_favorited: Optional[bool] = None
+    is_discarded: Optional[bool] = None
+    is_mastered: Optional[bool] = None
+
+
+class AuthorListItem(BaseModel):
+    name: str
+    book_count: int
+    highlight_count: int
+
+
+class TagSummaryItem(BaseModel):
+    name: str
+    highlight_count: int
+
+
+class StatsResponse(BaseModel):
+    """Counts + streak summary for ``GET /api/v2/stats``."""
+
+    highlights_total: int
+    highlights_active: int
+    highlights_discarded: int
+    highlights_favorited: int
+    highlights_mastered: int
+    books_total: int
+    review_due_today: int

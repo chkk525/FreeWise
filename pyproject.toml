@@ -5,6 +5,12 @@ requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
+# Only collect the main app's tests by default. cli/ and mcp/ have their own
+# conftest.py files that can't coexist in a single pytest collection because
+# they each set up an in-process FastAPI app. Run them individually:
+#   uv run pytest cli/tests/
+#   uv run pytest mcp/tests/
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
@@ -15,7 +21,20 @@ dev = [
     "fastapi>=0.136.0",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
+    # Validate /api/v2/imports/kindle envelopes against
+    # shared/kindle-export-v1.schema.json (Draft 2020-12).
     "jsonschema>=4.23.0",
+    # MCP SDK is a runtime dep of the freewise-mcp sibling package; keep
+    # it pinned at the workspace root so `uv sync` doesn't prune it when
+    # nothing else here references it directly.
+    "mcp>=1.6.0",
+    # numpy is used by app/services/embeddings.py to compute cosine
+    # similarity over thousands of vectors. Pure-Python is ~10s/query at
+    # 25k highlights × 768 dims; numpy matmul drops that to <50ms.
+    "numpy>=2.0",
+    # Pure-Python image generation for the quote-card OG image (U98).
+    # No system deps — wheels ship for every platform.
+    "pillow>=11.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "python-multipart>=0.0.26",

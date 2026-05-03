@@ -5,16 +5,16 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
 from app.db import get_session, get_settings
 from app.models import Highlight, Tag, HighlightTag, Settings, Book
+from app.template_filters import make_templates
 from app.utils.tags import parse_tags
 
 
 router = APIRouter(prefix="/import", tags=["import"])
-templates = Jinja2Templates(directory="app/templates")
+templates = make_templates()
 
 
 def parse_readwise_datetime(dt_str: str) -> Optional[datetime]:
@@ -38,34 +38,75 @@ def parse_readwise_datetime(dt_str: str) -> Optional[datetime]:
     for fmt in formats:
         try:
             parsed = datetime.strptime(dt_str.strip(), fmt)
-            # Convert timezone-aware datetime to UTC naive datetime
+            # If the source had a timezone, convert to UTC FIRST and then
+            # strip tzinfo so the stored value matches the rest of the
+            # codebase's naive-UTC convention. The previous version stripped
+            # tzinfo without converting, so a "14:18+09:00" string was
+            # silently stored as if it were 14:18 UTC — a 9-hour error.
             if parsed.tzinfo is not None:
-                parsed = parsed.replace(tzinfo=None)
+                from datetime import timezone as _tz
+                parsed = parsed.astimezone(_tz.utc).replace(tzinfo=None)
             return parsed
         except ValueError:
             continue
-    
+
     # If all formats fail, return None
     return None
 
 
-def get_or_create_tag(session: Session, tag_name: str) -> Tag:
-    """Get existing tag or create new one."""
+def get_or_create_tag(session: Session, tag_name: str) -> Optional[Tag]:
+    """Get existing tag or create new one. Returns ``None`` for empty input."""
     tag_name = tag_name.strip()
     if not tag_name:
         return None
-    
+
     # Check if tag exists
     statement = select(Tag).where(Tag.name == tag_name)
     tag = session.exec(statement).first()
-    
+
     if not tag:
         tag = Tag(name=tag_name)
         session.add(tag)
         session.commit()
         session.refresh(tag)
-    
+
     return tag
+
+
+def batch_get_or_create_tags(
+    session: Session, tag_names: list[str]
+) -> dict[str, Tag]:
+    """Resolve multiple tag names in two SQL round-trips total.
+
+    Used by the Readwise / Meebook CSV importers, each of which previously
+    issued one SELECT + (worst-case) one INSERT per tag per row. For a
+    10k-row CSV with 5 tags per row that was 50k+ extra round-trips on the
+    SQLite single-writer. This batches:
+
+      1. SELECT WHERE name IN (...) → existing tags
+      2. INSERT new ones in a single transaction
+
+    Returns a dict keyed by stripped tag name. Empty / blank inputs are
+    silently dropped.
+    """
+    cleaned = [n.strip() for n in tag_names if n and n.strip()]
+    deduped = list(dict.fromkeys(cleaned))  # preserve order, drop dupes
+    if not deduped:
+        return {}
+    existing = list(
+        session.exec(select(Tag).where(Tag.name.in_(deduped))).all()
+    )
+    by_name = {t.name: t for t in existing}
+    missing = [n for n in deduped if n not in by_name]
+    if missing:
+        new_rows = [Tag(name=n) for n in missing]
+        for t in new_rows:
+            session.add(t)
+        session.commit()
+        for t in new_rows:
+            session.refresh(t)
+            by_name[t.name] = t
+    return by_name
 
 
 def get_or_create_book(session: Session, title: str, author: Optional[str] = None, document_tags: Optional[str] = None) -> Optional[Book]:

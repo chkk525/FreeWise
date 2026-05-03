@@ -133,6 +133,33 @@
     </div>
 </form>
 
+<!-- API & Integrations Section -->
+<div class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
+    <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">API &amp; Integrations</h3>
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-start gap-4">
+            <div class="pt-1">
+                <i data-lucide="key" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+            </div>
+            <div class="flex-1">
+                <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                    API Tokens
+                </h4>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Create + revoke bearer tokens for the Readwise-compatible
+                    <code>/api/v2</code> endpoints. Use these to wire up the
+                    Chrome extension or any third-party highlight client.
+                </p>
+                <a href="/import/api-token"
+                   class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                    <span>Manage API tokens</span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Export Data Section -->
 <div class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
     <h3 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Export Data</h3>
@@ -169,13 +196,33 @@
                 </div>
 
                 {% if highlights_count and highlights_count > 0 %}
-                <a href="/export/csv" 
-                   id="export-btn"
-                   onclick="showExportProgress(event)"
-                   class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
-                    <i data-lucide="download" class="w-5 h-5"></i>
-                    <span>Download CSV Export</span>
-                </a>
+                <div class="flex flex-wrap gap-3">
+                    <a href="/export/csv"
+                       id="export-btn"
+                       onclick="showExportProgress(event)"
+                       class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                        <span>Download CSV Export</span>
+                    </a>
+                    <a href="/export/markdown.zip"
+                       title="One Markdown file per book, zipped — Obsidian / Logseq friendly."
+                       class="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                        <span>Download Markdown ZIP</span>
+                    </a>
+                    <a href="/export/atomic-notes.zip"
+                       title="One .md per highlight (Zettelkasten-style atomic notes) with rich frontmatter."
+                       class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                        <i data-lucide="notebook-pen" class="w-5 h-5"></i>
+                        <span>Download Atomic Notes ZIP</span>
+                    </a>
+                    <a href="/export/notion.zip"
+                       title="Notion-flavored Markdown ZIP — bulleted highlights, no YAML frontmatter."
+                       class="inline-flex items-center gap-2 bg-slate-700 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                        <i data-lucide="file-text" class="w-5 h-5"></i>
+                        <span>Download Notion ZIP</span>
+                    </a>
+                </div>
                 {% else %}
                 <button type="button"
                         class="inline-flex items-center gap-2 bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-6 py-3 rounded-lg font-semibold cursor-not-allowed">
@@ -192,6 +239,23 @@
                         <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
                         <span><strong>Note:</strong> The exported CSV can be imported back into FreeWise or used with other tools. File format is compatible with standard spreadsheet applications.</span>
                     </p>
+                </div>
+
+                <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        <i data-lucide="database-backup" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+                        Database Backup
+                    </h4>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                        Download a consistent SQLite snapshot of the entire FreeWise database — useful before risky operations or to keep an off-site backup.
+                    </p>
+                    <form method="post" action="/settings/backup.db" class="inline">
+                        <button type="submit"
+                                class="inline-flex items-center gap-2 bg-gray-700 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            <span>Download .db snapshot</span>
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -245,80 +309,97 @@
             </div>
             <div>
                 <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Are you absolutely sure?</h4>
-                <p class="text-sm text-gray-600 dark:text-gray-400">
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
                     This will permanently delete <strong>all highlights, books, tags, and review history</strong>.
                     There is no going back and no way to recover your data.
                 </p>
+                <p class="text-sm text-gray-700 dark:text-gray-300">
+                    Type <code class="font-mono text-red-700 dark:text-red-300">RESET</code> below to enable the destroy button.
+                </p>
             </div>
         </div>
-        <div class="flex gap-3 justify-end">
-            <button type="button"
-                onclick="document.getElementById('reset-modal').classList.add('hidden')"
-                class="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium text-sm transition-colors">
-                Cancel
-            </button>
-            <form method="post" action="/settings/reset-library" class="inline">
+        <form method="post" action="/settings/reset-library" id="reset-library-form">
+            <input type="text"
+                id="reset-confirm-input"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Type RESET to confirm"
+                aria-label="Type RESET to confirm"
+                class="w-full px-3 py-2 mb-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent">
+            <div class="flex gap-3 justify-end">
+                <button type="button"
+                    onclick="document.getElementById('reset-modal').classList.add('hidden'); var i=document.getElementById('reset-confirm-input'); if(i){i.value=''; i.dispatchEvent(new Event('input'));}"
+                    class="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium text-sm transition-colors">
+                    Cancel
+                </button>
                 <button type="submit"
-                    class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium text-sm transition-colors">
+                    id="reset-confirm-btn"
+                    disabled
+                    class="px-4 py-2 rounded-lg bg-red-600 text-white font-medium text-sm transition-colors disabled:bg-gray-300 disabled:dark:bg-gray-600 disabled:text-gray-500 disabled:dark:text-gray-400 disabled:cursor-not-allowed enabled:hover:bg-red-700">
                     Yes, delete everything
                 </button>
-            </form>
-        </div>
+            </div>
+        </form>
+        <script>
+            (function () {
+                const input = document.getElementById('reset-confirm-input');
+                const btn = document.getElementById('reset-confirm-btn');
+                if (!input || !btn) return;
+                input.addEventListener('input', function () {
+                    btn.disabled = input.value.trim() !== 'RESET';
+                });
+                document.getElementById('reset-library-form').addEventListener('submit', function (e) {
+                    if (input.value.trim() !== 'RESET') { e.preventDefault(); }
+                });
+            })();
+        </script>
     </div>
 </div>
 
+<style>
+    @keyframes sb-stripes {
+        0% { background-position: 0 0; }
+        100% { background-position: 34px 0; }
+    }
+</style>
+
 <script>
+    /**
+     * Honest export indicator. The browser drives the actual /export/csv
+     * download — we have no server-side progress signal — so we just show
+     * an indeterminate "Preparing your CSV…" message + spinner and then
+     * hide it after a short delay. Replaces the previous fake-progress bar
+     * that ticked Math.random() and lied about percentages.
+     */
     function showExportProgress(event) {
-        // Don't prevent default - let the download happen
-        
-        // Disable button temporarily
         const exportBtn = document.getElementById('export-btn');
         exportBtn.style.opacity = '0.5';
         exportBtn.style.pointerEvents = 'none';
-        
-        // Show progress container
-        document.getElementById('export-progress-container').style.display = 'block';
-        
-        // Simulate progress
-        let progress = 0;
-        const progressBar = document.getElementById('export-progress-bar');
-        const progressText = document.getElementById('export-progress-text');
-        
-        const messages = [
-            'Querying database...',
-            'Collecting highlights...',
-            'Processing book metadata...',
-            'Formatting tags...',
-            'Generating CSV...',
-            'Download starting...'
-        ];
-        
-        let messageIndex = 0;
-        progressText.textContent = messages[0];
-        
-        const interval = setInterval(() => {
-            progress += Math.random() * 20;
-            if (progress > 100) progress = 100;
-            
-            progressBar.style.width = progress + '%';
-            
-            // Update message periodically
-            if (progress > (messageIndex + 1) * 16 && messageIndex < messages.length - 1) {
-                messageIndex++;
-                progressText.textContent = messages[messageIndex];
-            }
-            
-            // Complete and hide after reaching 100%
-            if (progress >= 100) {
-                clearInterval(interval);
-                setTimeout(() => {
-                    document.getElementById('export-progress-container').style.display = 'none';
-                    progressBar.style.width = '0%';
-                    exportBtn.style.opacity = '1';
-                    exportBtn.style.pointerEvents = 'auto';
-                }, 1000);
-            }
-        }, 200);
+        const container = document.getElementById('export-progress-container');
+        const bar = document.getElementById('export-progress-bar');
+        const text = document.getElementById('export-progress-text');
+        container.style.display = 'block';
+        // Indeterminate: full-width animated stripe instead of a 0→100 lie.
+        bar.style.width = '100%';
+        bar.style.background =
+            'repeating-linear-gradient(45deg, #6366f1, #6366f1 12px, #818cf8 12px, #818cf8 24px)';
+        bar.style.backgroundSize = '34px 34px';
+        bar.style.animation = 'sb-stripes 1s linear infinite';
+        text.textContent = 'Preparing your CSV…';
+        // Re-enable + hide after the browser has had time to start the
+        // download. The actual download progress is in the browser's
+        // download manager; we don't need to mirror it.
+        setTimeout(() => {
+            text.textContent = 'Download started — check your browser downloads.';
+        }, 1200);
+        setTimeout(() => {
+            container.style.display = 'none';
+            bar.style.animation = '';
+            bar.style.background = '';
+            bar.style.width = '0%';
+            exportBtn.style.opacity = '1';
+            exportBtn.style.pointerEvents = 'auto';
+        }, 3500);
     }
 
     // Initialize Lucide icons

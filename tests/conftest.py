@@ -6,7 +6,7 @@ and convenience factories for creating test data.
 """
 import sys
 from pathlib import Path
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -30,7 +30,7 @@ _db._engine = _test_engine
 
 # Now import the app (model registration happens at import time)
 from app.main import app  # noqa: E402
-from app.models import User, Book, Highlight, Settings, Tag, HighlightTag, ReviewSession  # noqa: E402
+from app.models import User, Book, Highlight, Settings, Tag, HighlightTag, ReviewSession, Embedding  # noqa: E402,F401
 
 
 def _override_get_session():
@@ -50,11 +50,33 @@ def _reset_db():
     SQLModel.metadata.drop_all(_test_engine)
     SQLModel.metadata.create_all(_test_engine)
 
+    # Apply forward-only migrations (FTS5 virtual table + triggers, etc.).
+    # The lifespan hook normally does this on app startup; with TestClient
+    # we have to call it ourselves so search/* tests have a working index.
+    from app.db import ensure_schema_migrations
+    ensure_schema_migrations(_test_engine)
+
     # Seed minimal required data
     with Session(_test_engine) as s:
         s.add(User(id=1, email="test@test.com", password_hash="x"))
         s.add(Settings(daily_review_count=5, highlight_recency=5, theme="light"))
         s.commit()
+
+    # Clear in-process state shared across tests so they don't bleed:
+    #  - rate limit bucket (else /api/v2/* tests after the rate-limit test
+    #    inherit a saturated bucket and start failing with 429)
+    #  - last_used_at debounce cache
+    #  - review_sessions in-memory dict
+    try:
+        from app.main import _RATE_LIMIT_BUCKET
+        _RATE_LIMIT_BUCKET.clear()
+    except Exception:
+        pass
+    try:
+        from app.api_v2.auth import _last_used_at_cache
+        _last_used_at_cache.clear()
+    except Exception:
+        pass
 
     yield  # test runs here
 
@@ -172,7 +194,7 @@ def make_review_session(db):
         is_completed=True,
     ):
         import uuid as _uuid
-        now = datetime.utcnow()
+        now = datetime.now(UTC).replace(tzinfo=None)
         rs = ReviewSession(
             user_id=user_id,
             session_uuid=session_uuid or str(_uuid.uuid4()),

@@ -1,0 +1,42 @@
+{# Related-highlights HTMX partial.
+
+   Renders inside an outer wrapper on the permalink page. Empty state
+   teaches the user about backfill if no embeddings exist yet. #}
+<div id="related-highlights-card"
+     class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
+    <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+        <i data-lucide="git-branch" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+        Related highlights
+    </h3>
+
+    {% if not has_embedding %}
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+        This highlight hasn't been embedded yet.
+        Run <code class="font-mono bg-gray-100 dark:bg-gray-900 px-1 py-0.5 rounded">freewise embed-backfill</code>
+        with a configured Ollama instance, then reload this page.
+    </p>
+    {% elif not related %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+        No similar highlights found in your library.
+    </p>
+    {% else %}
+    <ul class="space-y-2">
+        {% for r in related %}
+        <li class="flex items-start gap-3 text-sm">
+            <span class="inline-block px-1.5 py-0.5 bg-purple-50 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200 rounded text-xs font-mono shrink-0"
+                  title="cosine similarity">{{ "%.3f"|format(r.similarity) }}</span>
+            <a href="/highlights/ui/h/{{ r.id }}"
+               class="flex-1 text-gray-800 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400 line-clamp-2"
+               title="Open this related highlight">
+                {{ r.text }}
+                {% if r.book_title %}
+                <span class="block text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    — {{ r.book_title }}
+                </span>
+                {% endif %}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>

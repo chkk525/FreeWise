@@ -1,0 +1,444 @@
+"""Test the CLI argv handling end-to-end with stdout capture."""
+
+from __future__ import annotations
+
+import json
+from unittest.mock import patch
+
+from sqlmodel import Session
+
+from conftest import _test_engine
+from app.models import Highlight, Book
+
+from freewise_cli import main as cli_main
+
+
+def _add_highlight(text: str, **kwargs) -> int:
+    with Session(_test_engine) as s:
+        b = s.get(Book, 1)
+        if b is None:
+            b = Book(id=1, title="T", author="A")
+            s.add(b); s.commit()
+        h = Highlight(book_id=1, user_id=1, text=text, **kwargs)
+        s.add(h); s.commit(); s.refresh(h)
+        return h.id
+
+
+def _run(argv, http_client, auth_token, capsys):
+    """Drive the CLI argv handler with the in-process TestClient injected."""
+    from freewise_cli import main as m
+
+    real_client_factory = m._client_from_args
+
+    def patched(args):
+        c = real_client_factory(args)
+        c.http = http_client
+        c.token = auth_token
+        c.url = "http://testserver"
+        return c
+
+    with patch.object(m, "_client_from_args", patched):
+        rc = cli_main.main(argv)
+    captured = capsys.readouterr()
+    return rc, captured.out, captured.err
+
+
+# ── search / recent / show / stats ─────────────────────────────────────────
+
+
+def test_search_text_output(http_client, auth_token, capsys):
+    _add_highlight("the brown fox jumps")
+    _add_highlight("nothing related")
+    rc, out, _ = _run(["search", "brown"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "1 match" in out
+    assert "brown fox" in out
+
+
+def test_search_json_output(http_client, auth_token, capsys):
+    _add_highlight("alpha")
+    rc, out, _ = _run(["--json", "search", "alpha"], http_client, auth_token, capsys)
+    assert rc == 0
+    body = json.loads(out)
+    assert body["count"] == 1
+
+
+def test_recent_output(http_client, auth_token, capsys):
+    _add_highlight("first")
+    _add_highlight("second")
+    rc, out, _ = _run(["recent", "--limit", "10"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "first" in out
+    assert "second" in out
+
+
+def test_show_full_detail(http_client, auth_token, capsys):
+    hid = _add_highlight("show me", note="my note")
+    rc, out, _ = _run(["show", str(hid)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "show me" in out
+    assert "my note" in out
+
+
+def test_random_picks_one(http_client, auth_token, capsys):
+    _add_highlight("alpha")
+    _add_highlight("beta")
+    rc, out, _ = _run(["random"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert ("alpha" in out) or ("beta" in out)
+
+
+def test_tags_lists_with_counts(http_client, auth_token, capsys):
+    """`freewise tags` lists distinct tags with usage counts."""
+    h = _add_highlight("x")
+    _run(["tag", "add", str(h), "python"], http_client, auth_token, capsys)
+    _run(["tag", "add", str(h), "ml"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tags"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "python" in out
+    assert "ml" in out
+
+
+def test_authors_lists_with_counts(http_client, auth_token, capsys):
+    """`freewise authors` should list distinct authors with counts."""
+    from app.models import Book
+    with Session(_test_engine) as s:
+        a = Book(title="A1", author="Alice")
+        b = Book(title="B1", author="Bob")
+        s.add(a); s.add(b); s.commit(); s.refresh(a); s.refresh(b)
+        s.add(Highlight(book_id=a.id, user_id=1, text="x"))
+        s.add(Highlight(book_id=b.id, user_id=1, text="y"))
+        s.commit()
+    rc, out, _ = _run(["authors"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "Alice" in out
+    assert "Bob" in out
+
+
+def test_book_highlights_lists_book_only(http_client, auth_token, capsys):
+    """`freewise book-highlights <id>` should return only that book's highlights."""
+    from app.models import Book
+    with Session(_test_engine) as s:
+        b1 = Book(title="A1")
+        b2 = Book(title="A2")
+        s.add(b1); s.add(b2); s.commit(); s.refresh(b1); s.refresh(b2)
+        s.add(Highlight(book_id=b1.id, user_id=1, text="from-a1"))
+        s.add(Highlight(book_id=b2.id, user_id=1, text="from-a2"))
+        s.commit()
+        bid = b1.id
+    rc, out, _ = _run(
+        ["book-highlights", str(bid)], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "from-a1" in out
+    assert "from-a2" not in out
+
+
+def test_import_csv_uploads_and_creates_highlights(
+    http_client, auth_token, capsys, tmp_path,
+):
+    """`freewise import path/to.csv` should POST to /import/ui/readwise
+    and report new-highlight delta from before/after stats."""
+    csv_path = tmp_path / "tiny.csv"
+    csv_path.write_text(
+        "Highlight,Book Title,Book Author,Amazon Book ID,Note,Color,Tags,"
+        "Location Type,Location,Highlighted at,Document tags\n"
+        '"a fresh imported quote","Imported Book","Author A",,,,,,,,\n',
+        encoding="utf-8",
+    )
+    rc, out, _ = _run(["import", str(csv_path)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "uploading" in out
+    assert "import succeeded" in out
+    # Highlight should land in DB.
+    with Session(_test_engine) as s:
+        rows = s.exec(
+            __import__("sqlmodel").select(Highlight)
+            .where(Highlight.text == "a fresh imported quote")
+        ).all()
+        assert len(rows) == 1
+
+
+def test_import_missing_file_returns_2(http_client, auth_token, capsys, tmp_path):
+    rc, _, err = _run(
+        ["import", str(tmp_path / "nope.csv")], http_client, auth_token, capsys,
+    )
+    assert rc == 2
+    assert "not found" in err
+
+
+def test_import_unsupported_extension(http_client, auth_token, capsys, tmp_path):
+    bad = tmp_path / "thing.xyz"
+    bad.write_text("garbage")
+    rc, _, err = _run(["import", str(bad)], http_client, auth_token, capsys)
+    # FreewiseError wraps as a non-zero exit via main()'s catch.
+    assert rc == 1
+    assert "unsupported" in err
+
+
+def test_health_output(http_client, auth_token, capsys):
+    """`freewise health` should pretty-print the /healthz response."""
+    rc, out, _ = _run(["health"], http_client, auth_token, capsys)
+    # status:ok in test env; reachable false (no Ollama in test).
+    assert rc == 0
+    assert "status:" in out
+    assert "active:" in out
+    assert "ollama:" in out
+
+
+def test_stats_output(http_client, auth_token, capsys):
+    _add_highlight("a"); _add_highlight("b", is_favorited=True)
+    rc, out, _ = _run(["stats"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "highlights total:" in out
+
+
+# ── note / favorite / unfavorite / discard / restore ──────────────────────
+
+
+def test_note_append_preserves_existing(http_client, auth_token, capsys):
+    """`freewise note <id> --append` should add text without losing prior."""
+    hid = _add_highlight("x", note="original")
+    rc, out, _ = _run(
+        ["note", str(hid), "follow-up", "--append"],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "appended" in out
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).note == "original\n\nfollow-up"
+
+
+def test_note_sets_text(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    rc, out, _ = _run(["note", str(hid), "fresh"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "note updated" in out
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).note == "fresh"
+
+
+def test_favorite_then_unfavorite(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    _run(["favorite", str(hid)], http_client, auth_token, capsys)
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_favorited is True
+    _run(["unfavorite", str(hid)], http_client, auth_token, capsys)
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_favorited is False
+
+
+def test_master_and_unmaster(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    rc, out, _ = _run(["master", str(hid)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "mastered" in out.lower()
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_mastered is True
+    _run(["unmaster", str(hid)], http_client, auth_token, capsys)
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_mastered is False
+
+
+def test_discard_and_restore(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    _run(["discard", str(hid)], http_client, auth_token, capsys)
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_discarded is True
+    _run(["restore", str(hid)], http_client, auth_token, capsys)
+    with Session(_test_engine) as s:
+        assert s.get(Highlight, hid).is_discarded is False
+
+
+# ── tag ──────────────────────────────────────────────────────────────────
+
+
+def test_tag_rename(http_client, auth_token, capsys):
+    """`freewise tag rename old new` should rename a tag globally."""
+    h = _add_highlight("x")
+    _run(["tag", "add", str(h), "ml"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tag", "rename", "ml", "Machine Learning"],
+                      http_client, auth_token, capsys)
+    assert rc == 0
+    assert "machine learning" in out
+
+
+def test_tag_merge(http_client, auth_token, capsys):
+    """`freewise tag merge a b` combines a's links into b and removes a."""
+    h = _add_highlight("x")
+    _run(["tag", "add", str(h), "a"], http_client, auth_token, capsys)
+    _run(["tag", "add", str(h), "b"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tag", "merge", "a", "b"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "merged" in out
+
+
+def test_author_rename_cli(http_client, auth_token, capsys):
+    """`freewise author rename old new` updates every book's author column."""
+    from app.models import Book
+    with Session(_test_engine) as s:
+        b = Book(title="X", author="Old Author")
+        s.add(b); s.commit()
+    rc, out, _ = _run(["author", "rename", "Old Author", "New Author"],
+                      http_client, auth_token, capsys)
+    assert rc == 0
+    assert "New Author" in out
+
+
+def test_tag_add_then_list(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    rc, out, _ = _run(["tag", "add", str(hid), "Python"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "python" in out
+    rc, out, _ = _run(["tag", "list", str(hid)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "python" in out
+
+
+def test_tag_remove(http_client, auth_token, capsys):
+    hid = _add_highlight("x")
+    _run(["tag", "add", str(hid), "a"], http_client, auth_token, capsys)
+    _run(["tag", "add", str(hid), "b"], http_client, auth_token, capsys)
+    rc, out, _ = _run(["tag", "remove", str(hid), "a"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "b" in out
+    assert ", a" not in out
+
+
+def test_search_with_tag_filter(http_client, auth_token, capsys):
+    h1 = _add_highlight("alpha quote")
+    _add_highlight("alpha other")
+    _run(["tag", "add", str(h1), "important"], http_client, auth_token, capsys)
+    rc, out, _ = _run(
+        ["search", "alpha", "--tag", "important"], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "alpha quote" in out
+    assert "alpha other" not in out
+
+
+# ── export ───────────────────────────────────────────────────────────────
+
+
+def test_export_csv_to_file(http_client, auth_token, capsys, tmp_path):
+    _add_highlight("export me")
+    out = tmp_path / "snap.csv"
+    rc, msg, _ = _run(["export", "csv", "-o", str(out)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert out.exists()
+    content = out.read_text(encoding="utf-8")
+    assert "export me" in content
+    assert "wrote" in msg and str(out) in msg
+
+
+def test_export_csv_stdout(http_client, auth_token, capsys):
+    _add_highlight("stdout me")
+    rc, out, _ = _run(["export", "csv"], http_client, auth_token, capsys)
+    assert rc == 0
+    assert "stdout me" in out
+
+
+def test_export_markdown_to_file(http_client, auth_token, capsys, tmp_path):
+    import zipfile
+    _add_highlight("md content")
+    out = tmp_path / "vault.zip"
+    rc, _, _ = _run(["export", "markdown", "-o", str(out)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert zipfile.is_zipfile(out)
+    names = zipfile.ZipFile(out).namelist()
+    assert any(n.endswith(".md") for n in names)
+
+
+def test_export_atomic_notes_to_file(http_client, auth_token, capsys, tmp_path):
+    import zipfile
+    hid = _add_highlight("atomic note content")
+    out = tmp_path / "atomic.zip"
+    rc, _, _ = _run(["export", "atomic", "-o", str(out)], http_client, auth_token, capsys)
+    assert rc == 0
+    assert zipfile.is_zipfile(out)
+    names = zipfile.ZipFile(out).namelist()
+    # Atomic export uses hl-{id}-{slug}.md naming.
+    assert any(n.startswith(f"hl-{hid}-") and n.endswith(".md") for n in names)
+
+
+# ── add (manual capture) ──────────────────────────────────────────────────
+
+
+def test_add_creates_highlight(http_client, auth_token, capsys):
+    rc, out, _ = _run(
+        ["add", "--text", "captured from CLI", "--book", "From CLI", "--author", "Me"],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "created 1 highlight" in out
+    with Session(_test_engine) as s:
+        rows = s.exec(__import__("sqlmodel").select(Highlight)).all()
+        assert any(h.text == "captured from CLI" for h in rows)
+
+
+# ── backup --to-dir / --retain rotation (U90) ──────────────────────────────
+
+
+def test_backup_to_dir_writes_timestamped_file(tmp_path, http_client, auth_token, capsys):
+    _add_highlight("snapshot me")
+    rc, out, _ = _run(
+        ["backup", "--to-dir", str(tmp_path)], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    files = list(tmp_path.glob("freewise-*.sqlite"))
+    assert len(files) == 1
+    assert files[0].name.startswith("freewise-")
+    assert files[0].name.endswith(".sqlite")
+    # Real SQLite blob.
+    assert files[0].read_bytes()[:16] == b"SQLite format 3\x00"
+
+
+def test_backup_retain_prunes_oldest(tmp_path, http_client, auth_token, capsys):
+    _add_highlight("snapshot me")
+    # Pre-seed three older snapshots so the rotation has something to prune.
+    import os
+    import time
+    older = []
+    for i in range(3):
+        p = tmp_path / f"freewise-OLD{i}.sqlite"
+        p.write_bytes(b"SQLite format 3\x00stub")
+        # Stagger mtimes so the prune picks the oldest, not arbitrary order.
+        os.utime(p, (time.time() - (10 - i), time.time() - (10 - i)))
+        older.append(p)
+
+    rc, _, _ = _run(
+        ["backup", "--to-dir", str(tmp_path), "--retain", "2"],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    # 2 should remain: the new write + the most-recent of the old ones.
+    remaining = sorted(tmp_path.glob("freewise-*.sqlite"))
+    assert len(remaining) == 2
+
+
+def test_backup_to_dir_and_out_mutually_exclusive(tmp_path, http_client, auth_token, capsys):
+    rc, _, err = _run(
+        ["backup", "--to-dir", str(tmp_path), "--out", str(tmp_path / "x.sqlite")],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 2
+    assert "mutually exclusive" in err
+
+
+def test_backup_json_includes_pruned_list(tmp_path, http_client, auth_token, capsys):
+    _add_highlight("hi")
+    # Two older files so retain=1 prunes one of them.
+    import os, time
+    for i in range(2):
+        p = tmp_path / f"freewise-OLD{i}.sqlite"
+        p.write_bytes(b"x")
+        os.utime(p, (time.time() - (10 - i), time.time() - (10 - i)))
+    rc, out, _ = _run(
+        ["--json", "backup", "--to-dir", str(tmp_path), "--retain", "1"],
+        http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    body = json.loads(out)
+    assert "path" in body and body["bytes"] > 0
+    assert isinstance(body["pruned"], list)
+    assert len(body["pruned"]) == 2  # both OLD files dropped

@@ -1,0 +1,49 @@
+{# Library-health partial — dup hygiene + tagging coverage.
+
+   Defer-loaded by /dashboard/ui to keep the main page snappy under
+   25k+ rows. Renders nothing when both signals are zero so a clean
+   library doesn't see an empty wrapper. #}
+{% if library_health and (library_health.dup_groups > 0 or library_health.untagged_count > 0) %}
+<div class="space-y-2">
+    {% if library_health.dup_groups > 0 %}
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 flex items-center gap-3 flex-wrap">
+        <i data-lucide="copy" class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0"></i>
+        <div class="flex-1 text-sm min-w-0">
+            <p class="font-medium text-gray-900 dark:text-white">
+                Library health:
+                <span class="font-mono">{{ library_health.dup_groups }}</span>
+                duplicate group{{ 's' if library_health.dup_groups != 1 else '' }}
+                <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                    ({{ library_health.dup_redundant }} redundant row{{ 's' if library_health.dup_redundant != 1 else '' }} could be discarded)
+                </span>
+            </p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                <a href="/highlights/ui/duplicates" class="underline hover:text-amber-700 dark:hover:text-amber-300">Review exact duplicates</a>
+                {% if library_health.semantic_ready %}
+                · <a href="/highlights/ui/duplicates/semantic" class="underline hover:text-amber-700 dark:hover:text-amber-300">semantic near-duplicates</a>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    {% endif %}
+    {% if library_health.untagged_count > 0 %}
+    <div class="bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl p-4 flex items-center gap-3 flex-wrap">
+        <i data-lucide="tags" class="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0"></i>
+        <div class="flex-1 text-sm min-w-0">
+            <p class="font-medium text-gray-900 dark:text-white">
+                Tagging coverage:
+                <span class="font-mono">{{ library_health.untagged_count }}</span>
+                untagged highlight{{ 's' if library_health.untagged_count != 1 else '' }}
+                <span class="text-xs text-gray-500 dark:text-gray-400 ml-1">({{ library_health.untagged_pct }}% of active)</span>
+            </p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
+                <a href="/highlights/ui/search" class="underline hover:text-sky-700 dark:hover:text-sky-300">Open search</a>
+                and bulk-tag from the action bar, or run
+                <code class="font-mono bg-white dark:bg-gray-900 px-1 py-0.5 rounded">freewise suggest-tags</code>
+                from the CLI.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
