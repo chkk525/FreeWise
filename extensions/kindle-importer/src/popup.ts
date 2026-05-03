@@ -15,7 +15,18 @@ type SyncResult = {
   highlights_created?: number;
   highlights_skipped_duplicates?: number;
   errors?: unknown[];
+  _status?: string;
 };
+
+// Listener registered exactly once at module load. Earlier versions added
+// it inside renderMain(), so every "Edit settings → Save" cycle stacked an
+// additional listener and the popup eventually rendered each progress event
+// N times. Module-scope handler is safe because renderMain rewrites
+// document.getElementById('status') etc. — they're looked up fresh on each
+// dispatch.
+chrome.runtime.onMessage.addListener((msg: SyncMessage) => {
+  handlePopupMessage(msg);
+});
 
 async function render(): Promise<void> {
   const settings = await loadSettings();
@@ -71,10 +82,6 @@ function renderMain(): void {
     btn.disabled = true;
     chrome.runtime.sendMessage({ type: 'sync_now' });
   });
-
-  chrome.runtime.onMessage.addListener((msg: SyncMessage) => {
-    handlePopupMessage(msg);
-  });
 }
 
 function handlePopupMessage(msg: SyncMessage): void {
@@ -125,10 +132,16 @@ function handlePopupMessage(msg: SyncMessage): void {
 function formatResult(r: SyncResult): string {
   const created = r.highlights_created ?? 0;
   const dup = r.highlights_skipped_duplicates ?? 0;
-  if (created > 0 && dup === 0) return `✓ Synced ${created} highlights`;
-  if (created > 0) return `✓ Added ${created} new · ${dup} already in your library`;
-  if (dup > 0) return `✓ Library up to date (${dup} highlights, no changes)`;
-  return `⚠ No highlights found.`;
+  const errCount = Array.isArray(r.errors) ? r.errors.length : 0;
+  // Server tags the response `_status: "partial"` when one or more books
+  // failed mid-import. Surface that distinctly so the user knows there's
+  // something to retry.
+  const partial = r._status === 'partial' || errCount > 0;
+  const suffix = partial ? ` (${errCount} book${errCount === 1 ? '' : 's'} failed)` : '';
+  if (created > 0 && dup === 0) return `${partial ? '⚠' : '✓'} Synced ${created} highlights${suffix}`;
+  if (created > 0) return `${partial ? '⚠' : '✓'} Added ${created} new · ${dup} already in your library${suffix}`;
+  if (dup > 0) return `${partial ? '⚠' : '✓'} Library up to date (${dup} highlights, no changes)${suffix}`;
+  return `⚠ No highlights found${suffix}.`;
 }
 
 render();

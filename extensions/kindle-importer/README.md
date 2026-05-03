@@ -21,8 +21,17 @@ npm run dev        # watch mode
 ## Test
 
 ```sh
-npm run test
+npm run test       # vitest unit tests
+npm run typecheck  # tsc --noEmit
 ```
+
+## Pointing at your own server
+
+`manifest.json:host_permissions` includes `https://freewiseapi.chikaki.com/*`
+because that's where the maintainer's instance lives. **If you self-host on a
+different domain, edit that line before `npm run build`** — Chrome will block
+fetches to any origin not listed there. (`server_url` in the popup must of
+course also match.)
 
 ## Architecture
 

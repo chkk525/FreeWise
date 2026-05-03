@@ -3,8 +3,15 @@ import { loadSettings } from './lib/storage';
 const NOTEBOOK_URL = 'https://read.amazon.com/kp/notebook';
 const TAB_LOAD_TIMEOUT_MS = 60_000;
 
+// -1 is a "claim" sentinel held while chrome.tabs.create is awaiting; once
+// the tab id is known it gets replaced by the real id. Without the sentinel,
+// two `sync_now` messages racing each other both pass the null check before
+// either await resolves and we end up with two background tabs.
+const SYNC_PENDING = -1;
+
 let currentSyncTab: number | null = null;
 let currentPort: chrome.runtime.Port | null = null;
+let tabUpdateHandler: Parameters<typeof chrome.tabs.onUpdated.addListener>[0] | null = null;
 let collectedErrors: { book_title: string; reason: string }[] = [];
 
 chrome.runtime.onMessage.addListener((msg) => {
@@ -15,6 +22,18 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'kindle-sync') return;
+  // Handshake gate: the content script connects on every page load, but we
+  // only want to drive a scrape if `startSync` opened the tab. Otherwise a
+  // user who happens to have read.amazon.com/kp/notebook open in a
+  // different tab would trigger an unrequested scrape.
+  if (currentSyncTab === null || currentSyncTab === SYNC_PENDING) {
+    port.disconnect();
+    return;
+  }
+  if (port.sender?.tab?.id !== currentSyncTab) {
+    port.disconnect();
+    return;
+  }
   currentPort = port;
 
   port.onMessage.addListener((msg) => {
@@ -47,7 +66,9 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 async function startSync(): Promise<void> {
-  // Reject re-entry: if a sync is already in flight, ignore the new request.
+  // Reject re-entry: if a sync is already in flight (pending tab create or
+  // active sync), ignore the new request. The SYNC_PENDING sentinel closes
+  // the TOCTOU window between the null check and chrome.tabs.create resolving.
   if (currentSyncTab !== null) {
     void chrome.runtime.sendMessage({
       type: 'error',
@@ -55,12 +76,24 @@ async function startSync(): Promise<void> {
     });
     return;
   }
+  currentSyncTab = SYNC_PENDING;
 
   collectedErrors = [];
   void chrome.runtime.sendMessage({ type: 'tab_opening' });
 
-  const tab = await chrome.tabs.create({ url: NOTEBOOK_URL, active: false });
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.create({ url: NOTEBOOK_URL, active: false });
+  } catch (err) {
+    currentSyncTab = null;
+    void chrome.runtime.sendMessage({
+      type: 'error',
+      reason: `tab.create failed: ${String(err)}`,
+    });
+    return;
+  }
   if (!tab.id) {
+    currentSyncTab = null;
     void chrome.runtime.sendMessage({
       type: 'error',
       reason: 'tab.create returned no id',
@@ -79,17 +112,16 @@ async function startSync(): Promise<void> {
     if (updatedId !== tabId) return;
     if (info.status === 'complete' && t.url) {
       if (!t.url.startsWith('https://read.amazon.com/kp/notebook')) {
-        chrome.tabs.onUpdated.removeListener(handler);
         void chrome.runtime.sendMessage({ type: 'login_required' });
         cleanup();
       }
     }
   };
+  tabUpdateHandler = handler;
   chrome.tabs.onUpdated.addListener(handler);
 
   setTimeout(() => {
     if (currentSyncTab !== null && Date.now() - start > TAB_LOAD_TIMEOUT_MS) {
-      chrome.tabs.onUpdated.removeListener(handler);
       void chrome.runtime.sendMessage({
         type: 'error',
         reason: 'Tab did not finish loading within 60s',
@@ -176,18 +208,25 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
   cleanup();
 }
 
-async function gzipString(s: string): Promise<Uint8Array> {
+// Return ArrayBuffer (not Uint8Array): TypeScript's strict DOM lib types
+// reject `Uint8Array<ArrayBufferLike>` for `BodyInit` because the typed-array
+// view type isn't part of the BodyInit union. ArrayBuffer is.
+async function gzipString(s: string): Promise<ArrayBuffer> {
   const stream = new Response(
     new Blob([s]).stream().pipeThrough(new CompressionStream('gzip'))
   );
-  return new Uint8Array(await stream.arrayBuffer());
+  return await stream.arrayBuffer();
 }
 
 function cleanup(): void {
-  if (currentSyncTab !== null) {
-    void chrome.tabs.remove(currentSyncTab).catch(() => {});
-    currentSyncTab = null;
+  if (tabUpdateHandler) {
+    chrome.tabs.onUpdated.removeListener(tabUpdateHandler);
+    tabUpdateHandler = null;
   }
+  if (currentSyncTab !== null && currentSyncTab !== SYNC_PENDING) {
+    void chrome.tabs.remove(currentSyncTab).catch(() => {});
+  }
+  currentSyncTab = null;
   currentPort = null;
 }
 
