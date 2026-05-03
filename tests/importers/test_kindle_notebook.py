@@ -486,3 +486,38 @@ def test_importer_partial_failure_returns_structured_errors(db, monkeypatch):
     assert isinstance(err, dict)
     assert err["book_title"] == "Bad Book"
     assert "simulated dedup failure" in err["reason"]
+
+
+# ── Lazy schema loading ──────────────────────────────────────────────────────
+
+
+def test_missing_schema_file_surfaces_at_call_not_import(db, monkeypatch, tmp_path):
+    """Importing the module must not crash when shared/kindle-export-v1.schema.json
+    is missing. We hit exactly this regression on the QNAP deploy when the
+    Docker image didn't COPY shared/ — the whole FastAPI process refused to
+    boot because module-level eager schema loading tripped FileNotFoundError.
+
+    Lazy loading scopes the failure to the import endpoint itself.
+    """
+    import app.importers.kindle_notebook as mod
+
+    # Force re-import of the module from scratch with a non-existent schema
+    # path. We cannot actually delete the real file — that would break every
+    # other test in the suite. Instead, point _SCHEMA_PATH at a missing file
+    # AND invalidate the cached validator, then re-trigger _get_validator.
+    monkeypatch.setattr(mod, "_SCHEMA_PATH", tmp_path / "does-not-exist.json")
+    monkeypatch.setattr(mod, "_VALIDATOR", None)
+
+    # The module is already imported (we just touched it); the deploy-time
+    # failure mode is "module import works but the first call raises".
+    # That's what we verify here.
+    bad_envelope = {
+        "schema_version": "1.0",
+        "exported_at": "2026-04-29T00:00:00Z",
+        "source": "kindle_notebook",
+        "books": [],
+    }
+    with pytest.raises(FileNotFoundError):
+        import_kindle_notebook_json(
+            io.BytesIO(json.dumps(bad_envelope).encode()), db, user_id=1
+        )

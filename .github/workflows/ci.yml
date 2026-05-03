@@ -27,3 +27,35 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
+
+  extension:
+    name: Kindle extension (typecheck + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extensions/kindle-importer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: extensions/kindle-importer/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Strict TypeScript check. The Vite production build is deliberately
+      # transpile-only (esbuild), so without this step a regression like the
+      # `Promise<Uint8Array>` → fetch BodyInit type error caught by the
+      # post-merge review would slip through.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build

@@ -67,3 +67,32 @@ def test_token_with_multiple_scopes_passes_when_any_match(client, db):
         headers={"Authorization": "Token tok-multi"},
     )
     assert r.status_code == 200, r.text
+
+
+def test_token_with_empty_string_scopes_fails_closed(client, db):
+    """Empty scopes column means "no scopes granted" — must NOT act like NULL.
+
+    The require_scope dependency previously used `if not token.scopes`,
+    which treated `""` and `None` identically and granted full access to
+    a token that explicitly had every scope revoked. The fix
+    distinguishes `is None` (legacy / pre-scopes column) from `""`
+    (explicitly empty, fail-closed).
+    """
+    _seed_token(db, value="tok-empty", scopes="")
+    r = client.post(
+        "/api/v2/imports/kindle",
+        json=_envelope(),
+        headers={"Authorization": "Token tok-empty"},
+    )
+    assert r.status_code == 403
+    assert "kindle:import" in r.json()["detail"]
+
+
+def test_token_with_whitespace_only_scopes_fails_closed(client, db):
+    _seed_token(db, value="tok-ws", scopes="  ,  ")
+    r = client.post(
+        "/api/v2/imports/kindle",
+        json=_envelope(),
+        headers={"Authorization": "Token tok-ws"},
+    )
+    assert r.status_code == 403
