@@ -65,13 +65,23 @@ def _prefix_of(raw: str) -> str:
 
 
 def _maybe_touch_last_used_at(session: Session, row: ApiToken) -> None:
-    """Refresh ``last_used_at`` at most once per token per debounce window."""
+    """Refresh ``last_used_at`` at most once per token per debounce window.
+
+    Uses ``None`` as the "never touched in this process" sentinel rather
+    than ``0.0``: ``time.monotonic()`` is documented as an arbitrary
+    reference point, so the difference ``now - 0.0`` is meaningful only
+    when monotonic happens to be large (e.g. macOS, where it's seconds
+    since boot). On Linux CI runners monotonic can start near zero, in
+    which case the first authenticated call after a cache clear was
+    erroneously debounced — exactly the symptom that surfaced in CI for
+    test_auth_updates_last_used_at.
+    """
     if row.id is None:
         return
     now_monotonic = time.monotonic()
     with _last_used_at_lock:
-        previous = _last_used_at_cache.get(row.id, 0.0)
-        if now_monotonic - previous < _LAST_USED_DEBOUNCE_SECONDS:
+        previous = _last_used_at_cache.get(row.id)
+        if previous is not None and now_monotonic - previous < _LAST_USED_DEBOUNCE_SECONDS:
             return
         _last_used_at_cache[row.id] = now_monotonic
     row.last_used_at = datetime.now(UTC).replace(tzinfo=None)
