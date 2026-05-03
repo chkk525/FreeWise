@@ -112,8 +112,8 @@ The toolbar shows a placeholder icon. Click it once to open the popup.
 2. Enter:
    - Server URL: `https://freewiseapi.chikaki.com`
    - API Token: paste a token created at
-     `https://freewise.chikaki.com/settings/api-tokens` with the
-     `kindle:import` scope.
+     `https://freewise.chikaki.com/import/api-token` (the new tokens
+     ship with `kindle:import` already in their scope set).
 3. Save. The popup switches to the Sync view.
 4. Click **Sync now**. The extension opens a hidden tab on
    `read.amazon.com/kp/notebook`, the content script scrapes book by
@@ -123,6 +123,20 @@ If you are not logged into Amazon, the hidden tab will redirect to the
 sign-in page. The extension detects this via
 `chrome.tabs.onUpdated` watching the final URL and surfaces
 "Please log in to read.amazon.com first" in the popup.
+
+### Pre-flight smoke test (skip Chrome)
+
+To verify the server side is healthy *before* the manual Chrome run,
+hit the endpoint directly with `tools/smoke_kindle_import.sh`. It POSTs
+both a raw and a gzipped envelope and confirms the round-trip:
+
+```sh
+FW_URL=https://freewiseapi.chikaki.com FW_TOKEN=fw_xxx \
+  ./tools/smoke_kindle_import.sh
+```
+
+The smoke book/highlight is created with ASIN `BSMOKE1` so it's easy
+to spot and clean up later.
 
 ## Test
 
