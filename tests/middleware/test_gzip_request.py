@@ -49,3 +49,46 @@ def test_gzipped_body_with_invalid_compression_returns_400():
         headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
     )
     assert r.status_code == 400
+
+
+def test_oversized_compressed_body_returns_413(monkeypatch):
+    """Adversarially-large compressed body is rejected before decompression."""
+    from app.middleware import gzip_request as mod
+
+    monkeypatch.setattr(mod, "MAX_COMPRESSED_BYTES", 100)
+    client = _build_app()
+    # Random non-compressible data so the compressed payload genuinely
+    # exceeds the 100-byte cap (zeros gzip down to 40 bytes regardless
+    # of length).
+    import secrets
+
+    big = gzip.compress(secrets.token_bytes(2000))
+    assert len(big) > 100
+    r = client.post(
+        "/echo",
+        content=big,
+        headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+    )
+    assert r.status_code == 413
+    assert "Compressed body exceeds" in r.json()["detail"]
+
+
+def test_gzip_bomb_decompression_is_capped(monkeypatch):
+    """A small compressed payload that expands past the decompression cap is
+    rejected with 413, NOT silently allowed to OOM the worker."""
+    from app.middleware import gzip_request as mod
+
+    # Force a low decompression ceiling so the test runs in milliseconds.
+    monkeypatch.setattr(mod, "MAX_DECOMPRESSED_BYTES", 10_000)
+
+    # 1 MB of zeros gzips down to ~1 KB but expands past the 10 KB cap.
+    bomb = gzip.compress(b"\x00" * 1_000_000)
+    assert len(bomb) < 10_000  # compressed payload itself fits
+    client = _build_app()
+    r = client.post(
+        "/echo",
+        content=bomb,
+        headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+    )
+    assert r.status_code == 413
+    assert "Decompressed body exceeds" in r.json()["detail"]
