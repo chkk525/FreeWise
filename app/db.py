@@ -140,6 +140,102 @@ def ensure_schema_migrations(engine=None) -> None:
                     backfilled_scopes,
                 )
 
+        # ── Drop NOT NULL on apitoken.token (legacy schema) ──────────────
+        # The original schema declared ``token VARCHAR NOT NULL`` because the
+        # SQLModel field was required at the time. After Phase 4 hardening
+        # the field is ``Optional[str]`` and new tokens are stored only as
+        # ``token_hash`` + ``token_prefix`` — with ``token`` left NULL. On a
+        # legacy DB that constraint causes ``IntegrityError: NOT NULL
+        # constraint failed: apitoken.token`` on every fresh INSERT.
+        #
+        # SQLite has no DROP NOT NULL, so we rebuild the table.
+        # Idempotent: on a freshly-created (already-nullable) DB the PRAGMA
+        # check below sees notnull=0 and skips the rebuild.
+        if token_cols:
+            token_col = next(
+                (
+                    r for r in conn.execute(
+                        text("PRAGMA table_info(apitoken)")
+                    ).all()
+                    if r[1] == "token"
+                ),
+                None,
+            )
+            # PRAGMA tuple layout: (cid, name, type, notnull, dflt_value, pk)
+            if token_col is not None and token_col[3] == 1:
+                _log.info(
+                    "migration: rebuilding apitoken to make token column nullable"
+                )
+                conn.execute(text("DROP INDEX IF EXISTS ix_apitoken_token"))
+                conn.execute(text("DROP INDEX IF EXISTS ix_apitoken_token_prefix"))
+                conn.execute(text("DROP INDEX IF EXISTS ix_apitoken_token_hash"))
+                conn.execute(text("DROP INDEX IF EXISTS ix_apitoken_created_at"))
+                conn.execute(text("DROP INDEX IF EXISTS ix_apitoken_last_used_at"))
+                conn.execute(text("DROP INDEX IF EXISTS ix_apitoken_user_id"))
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE apitoken_new (
+                            id INTEGER NOT NULL,
+                            token VARCHAR,
+                            name VARCHAR NOT NULL,
+                            user_id INTEGER NOT NULL,
+                            created_at DATETIME NOT NULL,
+                            last_used_at DATETIME,
+                            token_prefix VARCHAR,
+                            token_hash VARCHAR,
+                            scopes VARCHAR,
+                            PRIMARY KEY (id),
+                            FOREIGN KEY (user_id) REFERENCES user (id)
+                        )
+                        """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO apitoken_new "
+                        "(id, token, name, user_id, created_at, last_used_at, "
+                        "token_prefix, token_hash, scopes) "
+                        "SELECT id, token, name, user_id, created_at, last_used_at, "
+                        "token_prefix, token_hash, scopes FROM apitoken"
+                    )
+                )
+                conn.execute(text("DROP TABLE apitoken"))
+                conn.execute(text("ALTER TABLE apitoken_new RENAME TO apitoken"))
+                # Recreate indexes. ix_apitoken_token is now non-unique to
+                # match the model (multiple new rows have token=NULL).
+                conn.execute(
+                    text(
+                        "CREATE INDEX ix_apitoken_created_at ON apitoken (created_at)"
+                    )
+                )
+                conn.execute(
+                    text("CREATE INDEX ix_apitoken_token ON apitoken (token)")
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX ix_apitoken_user_id ON apitoken (user_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX ix_apitoken_last_used_at "
+                        "ON apitoken (last_used_at)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX ix_apitoken_token_prefix "
+                        "ON apitoken (token_prefix)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX ix_apitoken_token_hash "
+                        "ON apitoken (token_hash)"
+                    )
+                )
+
         # ── Composite index for the review-pool hot query (perf H6) ──────
         # The query
         #   WHERE is_discarded = FALSE AND highlight_weight > 0
