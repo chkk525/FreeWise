@@ -29,8 +29,21 @@ SUPPORTED_SCHEMA_MAJOR = "1"
 SUPPORTED_SOURCE = "kindle_notebook"
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[2] / "shared" / "kindle-export-v1.schema.json"
-_SCHEMA = json.loads(_SCHEMA_PATH.read_text())
-_VALIDATOR = jsonschema.Draft202012Validator(_SCHEMA)
+# Loaded lazily on first import call. Eager `read_text()` at module-import
+# time meant a missing `shared/` directory (e.g. an incomplete Docker layer)
+# crashed the *whole* FastAPI process at startup, including endpoints that
+# don't touch Kindle at all. We hit exactly this regression on the QNAP
+# deploy when shared/ wasn't COPY'd in. Lazy loading isolates the failure
+# to the import endpoint and surfaces it as a 500 instead of a boot loop.
+_VALIDATOR: Optional[jsonschema.Draft202012Validator] = None
+
+
+def _get_validator() -> jsonschema.Draft202012Validator:
+    global _VALIDATOR
+    if _VALIDATOR is None:
+        schema = json.loads(_SCHEMA_PATH.read_text())
+        _VALIDATOR = jsonschema.Draft202012Validator(schema)
+    return _VALIDATOR
 
 
 @dataclass(frozen=True)
@@ -55,8 +68,14 @@ def _read_payload(file_obj: Union[IO[bytes], IO[str]]) -> dict[str, Any]:
 
 
 def _validate_envelope(payload: dict[str, Any]) -> None:
-    """Raise ValueError if schema_version major or source is unsupported, OR
-    if the envelope fails the strict shared JSON Schema."""
+    """Raise ValueError if the envelope is malformed.
+
+    The version + source checks intentionally run BEFORE the strict JSON
+    Schema. Both checks are also enforced by the schema, but the friendly
+    messages are useful when a producer is on the wrong major version
+    (the schema would otherwise complain about ``pattern "^1\\.[0-9]+$"``,
+    which is less actionable than ``Unsupported schema_version major: '2'``).
+    """
     schema_version = payload.get("schema_version", "")
     if not isinstance(schema_version, str) or "." not in schema_version:
         raise ValueError(
@@ -76,7 +95,9 @@ def _validate_envelope(payload: dict[str, Any]) -> None:
             f"Unsupported source: {source!r} (expected {SUPPORTED_SOURCE!r})"
         )
 
-    schema_errors = sorted(_VALIDATOR.iter_errors(payload), key=lambda e: list(e.absolute_path))
+    schema_errors = sorted(
+        _get_validator().iter_errors(payload), key=lambda e: list(e.absolute_path)
+    )
     if schema_errors:
         first = schema_errors[0]
         path = ".".join(str(p) for p in first.absolute_path) or "(root)"
