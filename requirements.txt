@@ -12,3 +12,4 @@ pytest-asyncio
 apscheduler
 numpy>=2.0
 jsonschema>=4.26
+pillow>=11.0
