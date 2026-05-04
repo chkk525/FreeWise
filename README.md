@@ -1,5 +1,7 @@
 # FreeWise
 
+🌐 **English** · [日本語](README.ja.md)
+
 [![Tests: 885 / 50 / 31 passing](https://img.shields.io/badge/tests-966%20passing-brightgreen)](#testing)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 ![License: CC0](https://img.shields.io/badge/license-CC0-green)
