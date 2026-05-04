@@ -47,11 +47,11 @@ chrome.runtime.onConnect.addListener((port) => {
       collectedErrors.push({ book_title: msg.book_title, reason: msg.reason });
     } else if (msg?.type === 'done') {
       void onScrapeComplete(msg.payload).catch((e) => {
-        void chrome.runtime.sendMessage({ type: 'error', reason: String(e) });
+        void broadcastTerminal({ type: 'error', reason: String(e) });
         cleanup();
       });
     } else if (msg?.type === 'error') {
-      void chrome.runtime.sendMessage({ type: 'error', reason: msg.reason });
+      void broadcastTerminal({ type: 'error', reason: msg.reason });
       cleanup();
     } else if (msg?.type === 'aborted') {
       cleanup();
@@ -70,10 +70,7 @@ async function startSync(): Promise<void> {
   // active sync), ignore the new request. The SYNC_PENDING sentinel closes
   // the TOCTOU window between the null check and chrome.tabs.create resolving.
   if (currentSyncTab !== null) {
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'Sync already in progress.',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'Sync already in progress.' });
     return;
   }
   currentSyncTab = SYNC_PENDING;
@@ -83,10 +80,14 @@ async function startSync(): Promise<void> {
 
   let tab: chrome.tabs.Tab;
   try {
-    tab = await chrome.tabs.create({ url: NOTEBOOK_URL, active: false });
+    // Foreground tab. Amazon's notebook lazy-loads the book list with an
+    // IntersectionObserver gated on real visibility; a background tab leaves
+    // the list empty and the scrape comes back with zero books. The tab
+    // auto-closes on cleanup, so the user only sees a flash.
+    tab = await chrome.tabs.create({ url: NOTEBOOK_URL, active: true });
   } catch (err) {
     currentSyncTab = null;
-    void chrome.runtime.sendMessage({
+    void broadcastTerminal({
       type: 'error',
       reason: `tab.create failed: ${String(err)}`,
     });
@@ -94,10 +95,7 @@ async function startSync(): Promise<void> {
   }
   if (!tab.id) {
     currentSyncTab = null;
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'tab.create returned no id',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'tab.create returned no id' });
     return;
   }
   currentSyncTab = tab.id;
@@ -112,7 +110,7 @@ async function startSync(): Promise<void> {
     if (updatedId !== tabId) return;
     if (info.status === 'complete' && t.url) {
       if (!t.url.startsWith('https://read.amazon.com/kp/notebook')) {
-        void chrome.runtime.sendMessage({ type: 'login_required' });
+        void broadcastTerminal({ type: 'login_required' });
         cleanup();
       }
     }
@@ -122,10 +120,7 @@ async function startSync(): Promise<void> {
 
   setTimeout(() => {
     if (currentSyncTab !== null && Date.now() - start > TAB_LOAD_TIMEOUT_MS) {
-      void chrome.runtime.sendMessage({
-        type: 'error',
-        reason: 'Tab did not finish loading within 60s',
-      });
+      void broadcastTerminal({ type: 'error', reason: 'Tab did not finish loading within 60s' });
       cleanup();
     }
   }, TAB_LOAD_TIMEOUT_MS + 1000);
@@ -150,10 +145,7 @@ type ImportResult = {
 async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
   const settings = await loadSettings();
   if (!settings) {
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'No server configured. Open settings first.',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'No server configured. Open settings first.' });
     cleanup();
     return;
   }
@@ -174,7 +166,7 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
       body: compressed,
     });
   } catch (err) {
-    void chrome.runtime.sendMessage({
+    void broadcastTerminal({
       type: 'error',
       reason: `FreeWise unreachable: ${String(err)}`,
     });
@@ -183,16 +175,13 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
   }
 
   if (response.status === 401) {
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'Token rejected (401)',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'Token rejected (401)' });
     cleanup();
     return;
   }
   if (!response.ok) {
     const text = await response.text();
-    void chrome.runtime.sendMessage({
+    void broadcastTerminal({
       type: 'error',
       reason: `HTTP ${response.status}: ${text.slice(0, 200)}`,
     });
@@ -204,6 +193,13 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
   if (collectedErrors.length > 0) {
     result.errors = (result.errors ?? []).concat(collectedErrors);
   }
+  // Persist before broadcasting: Chrome popups close as soon as the user
+  // clicks anywhere outside them, so a sync that completes after the popup
+  // has closed loses its message. Storing the outcome lets the next popup
+  // render show "Last sync: …" instead of leaving the user wondering.
+  await chrome.storage.local.set({
+    last_sync: { at: Date.now(), result },
+  });
   void chrome.runtime.sendMessage({ type: 'sync_complete', result });
   cleanup();
 }
@@ -216,6 +212,26 @@ async function gzipString(s: string): Promise<ArrayBuffer> {
     new Blob([s]).stream().pipeThrough(new CompressionStream('gzip'))
   );
   return await stream.arrayBuffer();
+}
+
+// Broadcast a terminal status (error / login_required) AND mirror it into
+// chrome.storage.local so the next popup open can re-display it. Chrome
+// closes the popup the moment focus leaves it, which during a tab-switch
+// or alt-tab is most of the time — without this, errors evaporate
+// silently and users assume the import "did nothing".
+async function broadcastTerminal(
+  msg:
+    | { type: 'error'; reason: string }
+    | { type: 'login_required' },
+): Promise<void> {
+  void chrome.runtime.sendMessage(msg);
+  try {
+    await chrome.storage.local.set({
+      last_sync: { at: Date.now(), terminal: msg },
+    });
+  } catch {
+    /* storage write is best-effort — never let it mask the original error */
+  }
 }
 
 function cleanup(): void {
