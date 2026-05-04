@@ -201,8 +201,9 @@ Big-ticket items needing user decision:
 
 - **A3** Email digest — needs SMTP credentials
 - **A7** PWA offline review — multi-hour Service Worker investigation
-- **B1** FTS5 search migration — Japanese tokenizer choice (default `unicode61`
-  doesn't segment CJK)
+
+(B1 — FTS5 Japanese tokenizer — was already shipped in commit `0d2c21a`
+on `unicode61` → `trigram`; removed from this list 2026-05-04.)
 
 ### K.3 — prune QNAP daily Kindle scraper cron
 
@@ -228,6 +229,16 @@ crontab -l | grep -v 'kindle_cron.sh'   # confirm what's there
 - Per-book stats (Insights panel) — `/library/ui/book/{id}` shows avg
   highlight length, date range, last-reviewed, total reviews,
   mastered fraction, top 3 tags within the book
+- Daily digest page — `/digest/today` renders a deterministic-per-day
+  set of 10 picks + on-this-day + library health, behind CF Access.
+  Cache-Control is `private, max-age=1800`.
+- Reading log persistence — durable `reviewlog` table populated by a
+  SQLAlchemy `before_flush` listener. Powers the dashboard "Past 7
+  days" sparkline and `GET /api/v2/review-log`.
+- Search snippet highlighting — `/highlights/ui/search` and
+  `GET /api/v2/highlights/search` show FTS5 hit-context snippets with
+  `<mark>` around each match. Sentinel-then-escape pattern keeps
+  user-pasted HTML safe.
 
 ### Still open (smaller autonomous-safe ideas)
 
