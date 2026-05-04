@@ -204,9 +204,35 @@ Big-ticket items needing user decision:
 - **B1** FTS5 search migration — Japanese tokenizer choice (default `unicode61`
   doesn't segment CJK)
 
-Smaller autonomous-safe ideas:
-- Tag rename / merge utilities
-- Author rename utility (typo fix)
-- Reading log endpoint (which highlights were viewed when)
-- Daily digest static page (`/digest/today`)
-- Per-book stats panel on book detail page
+### K.3 — prune QNAP daily Kindle scraper cron
+
+Once the Chrome extension has been the primary import path for a full
+week without dogfood incidents (≈ from the day PR #1 was merged), the
+QNAP daily entry in `/etc/config/crontab` can be dropped. Keep the
+monthly entry as a backstop for when the user is travelling without
+the laptop.
+
+```sh
+# On QNAP (as admin)
+crontab -l | grep -v 'kindle_cron.sh'   # confirm what's there
+# Edit /etc/config/crontab and remove the daily line
+# Reload: /etc/init.d/crond.sh restart
+```
+
+### Shipped since the last edit of this file
+
+- Tag rename / merge utilities — `/api/v2/tags/{name}/{rename,merge}`,
+  `freewise tag rename` / `freewise tag merge`, MCP `freewise_tag_*`
+- Author rename utility — `/api/v2/authors/rename`,
+  `freewise author rename`, MCP `freewise_author_rename`
+- Per-book stats (Insights panel) — `/library/ui/book/{id}` shows avg
+  highlight length, date range, last-reviewed, total reviews,
+  mastered fraction, top 3 tags within the book
+
+### Still open (smaller autonomous-safe ideas)
+
+- Reading log endpoint (which highlights were viewed when) —
+  `review_sessions` is in-memory only; making it durable + queryable
+  would surface engagement-over-time data.
+- Daily digest static page (`/digest/today`) — deterministic-per-day
+  sampler; cacheable. Renders without auth.
