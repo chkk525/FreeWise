@@ -185,3 +185,30 @@ class ReviewSession(SQLModel, table=True):
     
     def __repr__(self) -> str:
         return f"ReviewSession(id={self.id}, date={self.session_date}, reviewed={self.highlights_reviewed}/{self.target_count})"
+
+
+class ReviewLog(SQLModel, table=True):
+    """Append-only log of user actions on highlights.
+
+    Captured automatically via a SQLAlchemy ``before_flush`` listener
+    (see :mod:`app.services.review_log`) so every action surface
+    (HTML/HTMX, JSON API, /api/v2, bulk routes) records without each
+    handler having to remember. Reads support the dashboard's recent-
+    activity widget and the ``GET /api/v2/review-log`` endpoint.
+
+    ``action`` is a free-form short label rather than an enum so the
+    set can grow without a schema migration. Today's vocabulary:
+    ``done``, ``favorite``, ``unfavorite``, ``discard``, ``restore``,
+    ``master``, ``unmaster``. Append new verbs as features land.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    highlight_id: int = Field(foreign_key="highlight.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    action: str = Field(index=True)
+    at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        index=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"ReviewLog(id={self.id}, hl={self.highlight_id}, {self.action!r}, at={self.at})"
