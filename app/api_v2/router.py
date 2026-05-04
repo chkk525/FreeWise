@@ -57,7 +57,7 @@ from app.api_v2.schemas import (
     TagSummaryItem,
 )
 from app.db import get_session
-from app.models import ApiToken, Book, Embedding, Highlight, HighlightTag, Tag
+from app.models import ApiToken, Book, Embedding, Highlight, HighlightTag, ReviewLog, Tag
 from app.routers.importer import get_or_create_book
 from app.services.embeddings import (
     _env_model,
@@ -1518,6 +1518,61 @@ def get_stats(
         highlights_mastered=mastered,
         books_total=books_total,
         review_due_today=review_due,
+    )
+
+
+# ── Review log ──────────────────────────────────────────────────────────────
+
+
+class _ReviewLogEntry(BaseModel):
+    """One row of the review-action log."""
+    id: int
+    highlight_id: int
+    action: str
+    at: datetime
+
+
+class _ReviewLogResponse(BaseModel):
+    count: int
+    results: list[_ReviewLogEntry]
+
+
+@router.get("/review-log", response_model=_ReviewLogResponse)
+def get_review_log(
+    since: Optional[datetime] = Query(default=None, description="Only entries at-or-after this UTC datetime."),
+    action: Optional[str] = Query(default=None, max_length=32, description="Filter to a single action verb."),
+    limit: int = Query(default=200, ge=1, le=1000),
+    token: ApiToken = Depends(get_api_token),
+    session: Session = Depends(get_session),
+) -> _ReviewLogResponse:
+    """Newest-first review-action log for the authenticated token's user.
+
+    Each row records a single action (``done``, ``favorite``,
+    ``unfavorite``, ``discard``, ``restore``, ``master``, ``unmaster``)
+    fired by an automatic SQLAlchemy ``before_flush`` listener — every
+    action surface in the app contributes without per-route plumbing.
+    """
+    from app.services.review_log import recent_entries
+
+    actions = [action] if action else None
+    rows = recent_entries(
+        session,
+        user_id=token.user_id,
+        since=since,
+        actions=actions,
+        limit=limit,
+    )
+    return _ReviewLogResponse(
+        count=len(rows),
+        results=[
+            _ReviewLogEntry(
+                id=r.id,
+                highlight_id=r.highlight_id,
+                action=r.action,
+                at=r.at,
+            )
+            for r in rows
+        ],
     )
 
 

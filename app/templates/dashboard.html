@@ -170,6 +170,36 @@
 <div id="dashboard-health" class="mb-6"
      hx-get="/dashboard/ui/health" hx-trigger="load once" hx-swap="innerHTML"></div>
 
+{# ── 7-day review activity ─────────────────────────────────────────── #}
+{% if activity_counts %}
+<div class="mb-6 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
+    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+        <i data-lucide="activity" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
+        Past 7 days
+        <span class="ml-auto text-xs font-normal text-gray-500 dark:text-gray-400">{{ activity_total }} action{{ 's' if activity_total != 1 else '' }}</span>
+    </h3>
+    {% if activity_total > 0 %}
+    <div class="flex items-end justify-between gap-2 h-16" id="review-activity-spark">
+        {% for day, count in activity_counts %}
+        {% set ratio = (count / activity_max) if activity_max else 0 %}
+        {# Map ratio (0-1) to a height tier so empty days still render a baseline. #}
+        {% set h = (ratio * 56)|int %}
+        <div class="flex-1 flex flex-col items-center gap-1" title="{{ day.isoformat() }}: {{ count }}">
+            <div class="w-full bg-emerald-100 dark:bg-emerald-900/40 rounded-sm relative" style="height: 56px;">
+                {% if count > 0 %}
+                <div class="absolute bottom-0 left-0 right-0 bg-emerald-500 dark:bg-emerald-400 rounded-sm" style="height: {{ [4, h]|max }}px;"></div>
+                {% endif %}
+            </div>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ day.strftime('%a')[0] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400">No review actions logged yet — head over to <a href="/highlights/ui/review" class="text-blue-600 dark:text-blue-400 hover:underline">review</a> to start the log.</p>
+    {% endif %}
+</div>
+{% endif %}
+
 {# ── Tag cloud ─────────────────────────────────────────────────────── #}
 {% if tag_cloud and tag_cloud|length > 0 %}
 {% set _SIZE_CLS = {1: 'text-sm', 2: 'text-base', 3: 'text-lg', 4: 'text-xl', 5: 'text-2xl'} %}

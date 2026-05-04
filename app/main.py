@@ -29,6 +29,7 @@ from app.api_v2 import router as api_v2_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.middleware.gzip_request import GzipRequestMiddleware
 from app.services import kindle_import_watcher
+from app.services.review_log import install_listener as install_review_log_listener
 
 
 _log = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI):
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
     ensure_schema_migrations(engine)
+    install_review_log_listener()
 
     # Initialize default settings if not exists
     with Session(engine) as session:

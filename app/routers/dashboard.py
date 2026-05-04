@@ -9,6 +9,7 @@ from datetime import datetime, date
 from app.db import get_session, get_settings, get_current_streak
 from app.models import Book, Highlight, Settings, ReviewSession
 from app.services.kindle_import_status import get_status as get_kindle_status
+from app.services.review_log import counts_by_day as review_log_counts_by_day
 from app.template_filters import make_templates
 
 
@@ -158,6 +159,10 @@ async def ui_dashboard(
             # 1..5 buckets for sm/base/lg/xl/2xl in the template.
             t["size"] = max(1, min(5, 1 + int(ratio * 4 + 0.5)))
 
+    activity_counts = review_log_counts_by_day(session, days=7)
+    activity_total = sum(c for _, c in activity_counts)
+    activity_max = max((c for _, c in activity_counts), default=0)
+
     return templates.TemplateResponse(request, "dashboard.html", {"settings": settings,
         "daily_review_count": daily_review_count,
         "reviewed_today": reviewed_today,
@@ -176,7 +181,10 @@ async def ui_dashboard(
         "longest_streak": longest_streak,
         "tag_cloud": tag_cloud,
         "embedding_coverage": embedding_coverage,
-        "kindle_status": kindle_status})
+        "kindle_status": kindle_status,
+        "activity_counts": activity_counts,
+        "activity_total": activity_total,
+        "activity_max": activity_max})
 
 
 @router.get("/kindle/status")
