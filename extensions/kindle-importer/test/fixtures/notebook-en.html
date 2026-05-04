@@ -10,15 +10,57 @@
     </div>
   </div>
 
-  <div id="kp-notebook-annotations">
-    <div class="a-row a-spacing-base a-spacing-top-medium" id="QID:1">
-      <span id="highlight" class="kp-notebook-highlight-yellow">First highlight text.</span>
-      <span id="kp-annotation-location">Location 100</span>
+  <div id="kp-notebook-annotations" class="a-row">
+    <input type="hidden" class="kp-notebook-content-limit-state">
+    <input type="hidden" class="kp-notebook-annotations-next-page-start">
+
+    <div id="QID:1" class="a-row a-spacing-base">
+      <div class="a-column a-span10 kp-notebook-row-separator">
+        <div class="a-row">
+          <input type="hidden" id="kp-annotation-location" value="100">
+          <div class="a-column a-span8">
+            <span id="annotationHighlightHeader" class="a-size-small a-color-secondary kp-notebook-selectable kp-notebook-metadata">Yellow highlight | Location:&nbsp;100</span>
+            <span id="annotationNoteHeader" class="a-size-small a-color-secondary aok-hidden">Note | Location:&nbsp;100</span>
+          </div>
+        </div>
+        <div class="a-row a-spacing-top-medium">
+          <div class="a-column a-span10 a-spacing-small kp-notebook-print-override">
+            <div id="highlight-QID:1" class="a-row kp-notebook-highlight kp-notebook-selectable kp-notebook-highlight-yellow">
+              <span id="highlight" class="a-size-base-plus a-color-base">First highlight text.</span>
+            </div>
+            <div id="note-" class="a-row a-spacing-top-base kp-notebook-note aok-hidden kp-notebook-selectable">
+              <span id="note-label" class="a-size-small a-color-secondary">Note:</span>
+              <span id="note" class="a-size-base-plus a-color-base"></span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="a-row a-spacing-base a-spacing-top-medium" id="QID:2">
-      <span id="highlight" class="kp-notebook-highlight-blue">Second highlight.</span>
-      <span id="note">A user note.</span>
-      <span id="kp-annotation-location">Location 250</span>
+
+    <div id="QID:2" class="a-row a-spacing-base">
+      <div class="a-column a-span10 kp-notebook-row-separator">
+        <div class="a-row">
+          <input type="hidden" id="kp-annotation-location" value="250">
+          <div class="a-column a-span8">
+            <span id="annotationHighlightHeader" class="a-size-small a-color-secondary kp-notebook-selectable kp-notebook-metadata">Blue highlight | Location:&nbsp;250</span>
+          </div>
+        </div>
+        <div class="a-row a-spacing-top-medium">
+          <div class="a-column a-span10 a-spacing-small kp-notebook-print-override">
+            <div id="highlight-QID:2" class="a-row kp-notebook-highlight kp-notebook-selectable kp-notebook-highlight-blue">
+              <span id="highlight" class="a-size-base-plus a-color-base">Second highlight.</span>
+            </div>
+            <div id="note-QID:2" class="a-row a-spacing-top-base kp-notebook-note kp-notebook-selectable">
+              <span id="note-label" class="a-size-small a-color-secondary">Note:</span>
+              <span id="note" class="a-size-base-plus a-color-base">A user note.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="empty-annotations-pane" class="a-row aok-hidden">
+      <p>You haven't created any notes for this book yet.</p>
     </div>
   </div>
 </body></html>
