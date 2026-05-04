@@ -20,6 +20,7 @@ from app.routers import (
     importer,
     library,
     dashboard,
+    digest,
     export,
     api_tokens,
 )
@@ -251,6 +252,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Include routers
 app.include_router(dashboard.router)
+app.include_router(digest.router)
 app.include_router(highlights.router)
 app.include_router(settings.router)
 app.include_router(importer.router)
