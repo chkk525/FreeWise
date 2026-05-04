@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FreeWise Kindle Importer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Sync Kindle highlights from read.amazon.<region> to a self-hosted FreeWise instance.",
   "permissions": ["tabs", "scripting", "storage"],
   "host_permissions": [
