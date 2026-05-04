@@ -25,6 +25,17 @@ let currentPort: chrome.runtime.Port | null = null;
 let tabUpdateHandler: Parameters<typeof chrome.tabs.onUpdated.addListener>[0] | null = null;
 let collectedErrors: { book_title: string; reason: string }[] = [];
 
+// chrome.runtime.sendMessage rejects with "Could not establish connection.
+// Receiving end does not exist." whenever the popup is closed at the
+// moment we broadcast — which is most of the time, since Chrome closes
+// popups on focus loss. We never want to act on that reject (state is
+// already mirrored to chrome.storage.local for the next popup open), so
+// swallow it. `void` only discards the return value; the promise still
+// rejects and shows up as an unhandled error in the SW console.
+function broadcast(msg: unknown): void {
+  chrome.runtime.sendMessage(msg).catch(() => {});
+}
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'sync_now') {
     void startSync();
@@ -49,7 +60,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener((msg) => {
     if (msg?.type === 'progress') {
-      void chrome.runtime.sendMessage({
+      broadcast({
         type: 'progress',
         current: msg.current,
         total: msg.total,
@@ -87,7 +98,7 @@ async function startSync(): Promise<void> {
   currentSyncTab = SYNC_PENDING;
 
   collectedErrors = [];
-  void chrome.runtime.sendMessage({ type: 'tab_opening' });
+  broadcast({ type: 'tab_opening' });
 
   let tab: chrome.tabs.Tab;
   try {
@@ -224,7 +235,7 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
   await chrome.storage.local.set({
     last_sync: { at: Date.now(), result },
   });
-  void chrome.runtime.sendMessage({ type: 'sync_complete', result });
+  broadcast({ type: 'sync_complete', result });
   cleanup();
 }
 
@@ -248,7 +259,7 @@ async function broadcastTerminal(
     | { type: 'error'; reason: string }
     | { type: 'login_required' },
 ): Promise<void> {
-  void chrome.runtime.sendMessage(msg);
+  broadcast(msg);
   try {
     await chrome.storage.local.set({
       last_sync: { at: Date.now(), terminal: msg },
