@@ -1,6 +1,17 @@
 import { loadSettings } from './lib/storage';
 
-const NOTEBOOK_URL = 'https://read.amazon.com/kp/notebook';
+// Amazon redirects to whatever path is current — historically `/kp/notebook`,
+// at present `/notebook`. They also openid-bounce through `/ap/signin` when
+// the browser session needs a fresh handshake, even for already-logged-in
+// users. The regex below accepts both notebook paths on every regional
+// `read.amazon.<TLD>` domain.
+const NOTEBOOK_URL = 'https://read.amazon.com/notebook';
+const NOTEBOOK_URL_RE = /^https:\/\/read\.amazon\.[a-z.]+\/(?:kp\/)?notebook(?:[/?#]|$)/i;
+// Pages that are clearly the sign-in flow — we surface "login required"
+// only when the tab has actually settled here, never on transient
+// in-flight URLs (which would cause a false positive during the openid
+// callback round-trip).
+const SIGN_IN_URL_RE = /^https:\/\/(?:www\.)?amazon\.[a-z.]+\/ap\/signin/i;
 const TAB_LOAD_TIMEOUT_MS = 60_000;
 
 // -1 is a "claim" sentinel held while chrome.tabs.create is awaiting; once
@@ -109,9 +120,22 @@ async function startSync(): Promise<void> {
   ): void => {
     if (updatedId !== tabId) return;
     if (info.status === 'complete' && t.url) {
-      if (!t.url.startsWith('https://read.amazon.com/kp/notebook')) {
+      // Only treat the tab as "login required" when it has actually settled
+      // on Amazon's sign-in page. Earlier we tripped on every non-notebook
+      // URL, which false-positived during the OpenID round-trip (Amazon
+      // bounces through intermediate URLs even for already-logged-in users).
+      if (SIGN_IN_URL_RE.test(t.url)) {
+        console.warn(`[FreeWise] tab landed at sign-in page ${t.url}`);
         void broadcastTerminal({ type: 'login_required' });
         cleanup();
+        return;
+      }
+      // If the tab settled somewhere unexpected (neither notebook nor
+      // sign-in), log it but don't kill the sync — the content script
+      // either fires (if it's a notebook URL covered by the manifest) or
+      // never connects (timeout handler will catch it).
+      if (!NOTEBOOK_URL_RE.test(t.url)) {
+        console.warn(`[FreeWise] tab landed at unexpected URL ${t.url}`);
       }
     }
   };

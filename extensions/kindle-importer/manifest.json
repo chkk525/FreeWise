@@ -1,12 +1,24 @@
 {
   "manifest_version": 3,
   "name": "FreeWise Kindle Importer",
-  "version": "1.0.0",
-  "description": "Sync Kindle highlights from read.amazon.com to a self-hosted FreeWise instance.",
+  "version": "1.0.2",
+  "description": "Sync Kindle highlights from read.amazon.<region> to a self-hosted FreeWise instance.",
   "permissions": ["tabs", "scripting", "storage"],
   "host_permissions": [
     "https://read.amazon.com/*",
-    "https://freewiseapi.chikaki.com/*"
+    "https://read.amazon.co.jp/*",
+    "https://read.amazon.co.uk/*",
+    "https://read.amazon.de/*",
+    "https://read.amazon.fr/*",
+    "https://read.amazon.it/*",
+    "https://read.amazon.es/*",
+    "https://read.amazon.ca/*",
+    "https://read.amazon.com.au/*",
+    "https://read.amazon.com.br/*",
+    "https://read.amazon.com.mx/*",
+    "https://read.amazon.in/*",
+    "https://www.amazon.com/*",
+    "https://www.amazon.co.jp/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -21,7 +33,32 @@
     "type": "module"
   },
   "content_scripts": [{
-    "matches": ["https://read.amazon.com/kp/notebook*"],
+    "matches": [
+      "https://read.amazon.com/kp/notebook*",
+      "https://read.amazon.co.jp/kp/notebook*",
+      "https://read.amazon.co.uk/kp/notebook*",
+      "https://read.amazon.de/kp/notebook*",
+      "https://read.amazon.fr/kp/notebook*",
+      "https://read.amazon.it/kp/notebook*",
+      "https://read.amazon.es/kp/notebook*",
+      "https://read.amazon.ca/kp/notebook*",
+      "https://read.amazon.com.au/kp/notebook*",
+      "https://read.amazon.com.br/kp/notebook*",
+      "https://read.amazon.com.mx/kp/notebook*",
+      "https://read.amazon.in/kp/notebook*",
+      "https://read.amazon.com/notebook*",
+      "https://read.amazon.co.jp/notebook*",
+      "https://read.amazon.co.uk/notebook*",
+      "https://read.amazon.de/notebook*",
+      "https://read.amazon.fr/notebook*",
+      "https://read.amazon.it/notebook*",
+      "https://read.amazon.es/notebook*",
+      "https://read.amazon.ca/notebook*",
+      "https://read.amazon.com.au/notebook*",
+      "https://read.amazon.com.br/notebook*",
+      "https://read.amazon.com.mx/notebook*",
+      "https://read.amazon.in/notebook*"
+    ],
     "js": ["content.js"],
     "run_at": "document_idle",
     "all_frames": false
