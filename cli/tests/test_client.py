@@ -87,6 +87,60 @@ def test_list_books(cli_client):
     assert body["results"][0]["num_highlights"] == 1
 
 
+def test_list_highlights_favorited_filter(cli_client):
+    _add_book_with_highlights(
+        {"text": "plain"},
+        {"text": "starred", "is_favorited": True},
+    )
+    only_fav = cli_client.list_highlights(favorited=True)
+    assert only_fav["count"] == 1
+    assert only_fav["results"][0]["text"] == "starred"
+    assert only_fav["results"][0]["is_favorited"] is True
+
+    no_fav = cli_client.list_highlights(favorited=False)
+    assert no_fav["count"] == 1
+    assert no_fav["results"][0]["text"] == "plain"
+
+
+def test_list_highlights_discarded_filter(cli_client):
+    _add_book_with_highlights(
+        {"text": "active"},
+        {"text": "binned", "is_discarded": True},
+    )
+    only_disc = cli_client.list_highlights(discarded=True)
+    assert only_disc["count"] == 1
+    assert only_disc["results"][0]["text"] == "binned"
+
+
+def test_list_books_author_filter(cli_client):
+    """list_books(author=) hits the new /api/v2/books/?author= filter."""
+    with Session(_test_engine) as s:
+        a = Book(title="A book", author="Target Author")
+        b = Book(title="B book", author="Other Author")
+        s.add_all([a, b]); s.commit(); s.refresh(a); s.refresh(b)
+        s.add(Highlight(book_id=a.id, user_id=1, text="x"))
+        s.add(Highlight(book_id=b.id, user_id=1, text="y"))
+        s.commit()
+
+    body = cli_client.list_books(author="Target Author")
+    assert body["count"] == 1
+    assert body["results"][0]["title"] == "A book"
+
+
+def test_list_books_q_substring(cli_client):
+    with Session(_test_engine) as s:
+        a = Book(title="The Stoic Way", author="M")
+        b = Book(title="Other", author="N")
+        s.add_all([a, b]); s.commit(); s.refresh(a); s.refresh(b)
+        s.add(Highlight(book_id=a.id, user_id=1, text="x"))
+        s.add(Highlight(book_id=b.id, user_id=1, text="y"))
+        s.commit()
+
+    body = cli_client.list_books(q="stoic")
+    assert body["count"] == 1
+    assert body["results"][0]["title"] == "The Stoic Way"
+
+
 def test_backup_streams_to_disk(cli_client, tmp_path):
     """The CLI backup() method writes a real SQLite blob to disk."""
     _add_book_with_highlights({"text": "round-trip me"})
