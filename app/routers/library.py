@@ -10,6 +10,7 @@ import httpx
 
 from app.db import get_session, get_settings
 from app.models import Book, Highlight, Settings
+from app.services.book_stats import compute_book_stats
 from app.template_filters import make_templates
 
 
@@ -294,10 +295,12 @@ async def ui_book_detail(
         )
     )
     highlights = session.exec(highlights_stmt).all()
-    
+    stats = compute_book_stats(session, book_id)
+
     return templates.TemplateResponse(request, "book_detail.html", {"settings": settings,
         "book": book,
-        "highlights": highlights})
+        "highlights": highlights,
+        "stats": stats})
 
 
 @router.post("/ui/book/{book_id}/cover/upload", response_class=HTMLResponse)
