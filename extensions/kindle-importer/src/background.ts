@@ -68,6 +68,18 @@ chrome.runtime.onConnect.addListener((port) => {
     } else if (msg?.type === 'book_error') {
       collectedErrors.push({ book_title: msg.book_title, reason: msg.reason });
     } else if (msg?.type === 'done') {
+      // Mirror the scrape summary into the SW console — the content script
+      // already logs to the page console, but if the user is reading SW
+      // logs they'd otherwise see only the upload result.
+      const env = msg.payload as { books?: { highlights?: unknown[] }[] };
+      const bookCount = env?.books?.length ?? 0;
+      const hlCount = (env?.books ?? []).reduce(
+        (n, b) => n + (Array.isArray(b.highlights) ? b.highlights.length : 0),
+        0,
+      );
+      console.info(
+        `[FreeWise] scrape done: ${bookCount} books / ${hlCount} highlights → uploading`,
+      );
       void onScrapeComplete(msg.payload).catch((e) => {
         void broadcastTerminal({ type: 'error', reason: String(e) });
         cleanup();
