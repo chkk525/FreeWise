@@ -778,6 +778,74 @@ async def ui_discarded(
     )
 
 
+_TIMELINE_ACTIONS = (
+    "done", "favorite", "unfavorite",
+    "discard", "restore", "master", "unmaster",
+)
+_TIMELINE_PAGE_SIZE = 50
+
+
+@router.get("/ui/activity", response_class=HTMLResponse)
+async def ui_activity(
+    request: Request,
+    action: Optional[str] = None,
+    page: int = 1,
+    session: Session = Depends(get_session),
+):
+    """Newest-first timeline of every review-log action.
+
+    Surfaces the same data as ``GET /api/v2/review-log`` but as a
+    scannable HTML page grouped by date. Optional ``?action=`` chip
+    filters to a single verb (favorite, discard, master, …).
+    """
+    from app.services.review_log import (
+        timeline_entries,
+        timeline_total,
+    )
+
+    settings = get_settings(session)
+    page = max(1, int(page))
+    page_size = _TIMELINE_PAGE_SIZE
+    action_filter = action if action in _TIMELINE_ACTIONS else None
+
+    total = timeline_total(session, action=action_filter)
+    rows = timeline_entries(
+        session,
+        action=action_filter,
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    total_pages = max(1, math.ceil(total / page_size)) if total else 1
+
+    # Group hydrated entries by local date for the date-header layout.
+    grouped: list[tuple[date, list]] = []
+    current_day: Optional[date] = None
+    bucket: list = []
+    for r in rows:
+        d = r.at.date()
+        if d != current_day:
+            if bucket:
+                grouped.append((current_day, bucket))
+            current_day = d
+            bucket = []
+        bucket.append(r)
+    if bucket and current_day is not None:
+        grouped.append((current_day, bucket))
+
+    return templates.TemplateResponse(
+        request, "activity.html",
+        {
+            "settings": settings,
+            "grouped": grouped,
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "action": action_filter,
+            "available_actions": _TIMELINE_ACTIONS,
+        },
+    )
+
+
 @router.get("/ui/ask", response_class=HTMLResponse)
 async def ui_ask_page(
     request: Request,
