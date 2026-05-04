@@ -633,6 +633,7 @@ async def ui_search(
 
     conditions = [Highlight.is_discarded == False]  # noqa: E712
 
+    fts_match_query: Optional[str] = None
     if q_clean:
         from app.db import FTS5_AVAILABLE
         # Trigram FTS5 needs at least one full 3-char trigram; for shorter
@@ -643,13 +644,13 @@ async def ui_search(
         if FTS5_AVAILABLE and len(q_clean) >= 3:
             from sqlalchemy import text as sa_text
             escaped = q_clean.replace('"', '""')
-            match_query = f'"{escaped}"'
+            fts_match_query = f'"{escaped}"'
             conditions.append(
                 Highlight.id.in_(
                     sa_text(
                         "SELECT rowid FROM highlight_fts "
                         "WHERE highlight_fts MATCH :match"
-                    ).bindparams(match=match_query)
+                    ).bindparams(match=fts_match_query)
                 )
             )
         else:
@@ -681,6 +682,19 @@ async def ui_search(
             session, base_filter, page=page, page_size=page_size,
         )
     )
+
+    # Hit-context snippets: only available on the FTS5 MATCH path.
+    # Empty dict on LIKE-fallback or non-FTS sessions; the template
+    # falls back to plain highlight.text rendering.
+    snippets_by_id: dict[int, str] = {}
+    if fts_match_query and rows:
+        from app.services.search_snippet import fetch_snippets
+        snippets_by_id = fetch_snippets(
+            session,
+            rowids=[h.id for h in rows],
+            match_query=fts_match_query,
+        )
+
     return templates.TemplateResponse(
         request, "search.html",
         {
@@ -688,6 +702,7 @@ async def ui_search(
             "q": q_clean,
             "active_filters": active_filters,
             "highlights": rows,
+            "snippets_by_id": snippets_by_id,
             "page": page,
             "page_size": page_size,
             "total": total,

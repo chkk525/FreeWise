@@ -19,7 +19,16 @@
     {% endif %}
     
     <div class="font-serif text-lg leading-relaxed text-gray-900 dark:text-gray-100">
-        {{ highlight.text }}
+        {# `snippet_html` is populated by FTS5-MATCH search results — already
+           HTML-escaped + <mark>-wrapped by app.services.search_snippet, so
+           rendering with `| safe` is intentional. Other callers (library,
+           dashboard random card, etc.) leave it None and fall back to the
+           plain text rendering. #}
+        {% if snippet_html is defined and snippet_html %}
+            {{ snippet_html | safe }}
+        {% else %}
+            {{ highlight.text }}
+        {% endif %}
     </div>
     
     <!-- Page Number (if exists) -->
