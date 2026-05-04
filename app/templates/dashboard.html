@@ -200,6 +200,50 @@
 </div>
 {% endif %}
 
+{# ── Cold books — long-tail re-engagement ─────────────────────────── #}
+{% if cold_books and cold_books|length > 0 %}
+<div class="mb-6 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
+    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2 flex-wrap">
+        <i data-lucide="snowflake" class="w-5 h-5 text-sky-600 dark:text-sky-400"></i>
+        Books going cold
+        <span class="text-xs font-normal text-gray-500 dark:text-gray-400">— surface the long tail</span>
+    </h3>
+    <ul class="divide-y divide-gray-100 dark:divide-gray-700">
+        {% for cb in cold_books %}
+        <li class="py-2.5 flex items-center gap-3">
+            <a href="/library/ui/book/{{ cb.id }}" class="flex-shrink-0 w-8 h-12 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden flex items-center justify-center">
+                {% if cb.cover_image_url %}
+                <img src="{{ cb.cover_image_url }}" alt="" class="w-full h-full object-cover" loading="lazy" />
+                {% else %}
+                <i data-lucide="book" class="w-4 h-4 text-gray-400 dark:text-gray-500"></i>
+                {% endif %}
+            </a>
+            <div class="min-w-0 flex-1">
+                <a href="/library/ui/book/{{ cb.id }}" class="block font-medium text-gray-900 dark:text-white truncate hover:text-primary-600 dark:hover:text-primary-400">{{ cb.title }}</a>
+                {% if cb.author %}
+                <p class="text-xs text-gray-500 dark:text-gray-400 truncate">{{ cb.author }}</p>
+                {% endif %}
+            </div>
+            <div class="text-right flex-shrink-0">
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {% if cb.days_since is none %}
+                        <span class="text-amber-600 dark:text-amber-400">never reviewed</span>
+                    {% elif cb.days_since == 0 %}
+                        today
+                    {% elif cb.days_since == 1 %}
+                        1 day ago
+                    {% else %}
+                        {{ cb.days_since }} days ago
+                    {% endif %}
+                </p>
+                <p class="text-xs text-gray-400 dark:text-gray-500">{{ cb.active_highlights }} active</p>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
 {# ── Tag cloud ─────────────────────────────────────────────────────── #}
 {% if tag_cloud and tag_cloud|length > 0 %}
 {% set _SIZE_CLS = {1: 'text-sm', 2: 'text-base', 3: 'text-lg', 4: 'text-xl', 5: 'text-2xl'} %}
