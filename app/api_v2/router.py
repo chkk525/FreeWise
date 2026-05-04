@@ -436,16 +436,17 @@ def search_highlights(
     from app.db import FTS5_AVAILABLE
     q_stripped = q.strip()
     base = select(Highlight).where(Highlight.user_id == token.user_id)
+    fts_match_query: Optional[str] = None
     # FTS5 trigram needs >= 3 chars; below that we fall back to LIKE so
     # short Japanese-particle searches still resolve.
     if FTS5_AVAILABLE and len(q_stripped) >= 3:
         from sqlalchemy import text as sa_text
-        match_query = '"' + q_stripped.replace('"', '""') + '"'
+        fts_match_query = '"' + q_stripped.replace('"', '""') + '"'
         base = base.where(
             Highlight.id.in_(
                 sa_text(
                     "SELECT rowid FROM highlight_fts WHERE highlight_fts MATCH :match"
-                ).bindparams(match=match_query)
+                ).bindparams(match=fts_match_query)
             )
         )
     else:
@@ -499,14 +500,25 @@ def search_highlights(
         for hl_id in tags_by_hl:
             tags_by_hl[hl_id].sort()
 
-    results = [
-        _highlight_to_detail(
+    snippets_by_id: dict[int, str] = {}
+    if fts_match_query and rows:
+        from app.services.search_snippet import fetch_snippets
+        snippets_by_id = fetch_snippets(
+            session,
+            rowids=[h.id for h in rows],
+            match_query=fts_match_query,
+        )
+
+    def _detail(h: Highlight) -> dict:
+        d = _highlight_to_detail(
             h,
             books_by_id.get(h.book_id) if h.book_id else None,
             tags=tags_by_hl.get(h.id, []),
-        ).model_dump(mode="json")
-        for h in rows
-    ]
+        )
+        d.snippet = snippets_by_id.get(h.id)
+        return d.model_dump(mode="json")
+
+    results = [_detail(h) for h in rows]
     return PaginatedResponse(count=count, results=results)
 
 
