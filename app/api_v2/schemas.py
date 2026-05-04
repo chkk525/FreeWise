@@ -60,6 +60,11 @@ class HighlightListItem(BaseModel):
     location_type: Optional[str] = None
     highlighted_at: Optional[datetime] = None
     book_id: Optional[int] = None
+    # State flags — surfaced so callers don't need a per-row /detail
+    # follow-up to know what to render.
+    is_favorited: bool = False
+    is_discarded: bool = False
+    is_mastered: bool = False
     # FTS5 snippet of the matching context, with hits wrapped in
     # <mark> tags. Populated only by /highlights/search MATCH path; null
     # for non-search endpoints and for short-query LIKE fallback.

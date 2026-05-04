@@ -235,11 +235,20 @@ def create_highlights(
     )
 
 
-def _build_page_url(base_path: str, page: int, page_size: int, **extra: int) -> str:
-    """Build a relative URL for the ``next``/``previous`` pagination links."""
+def _build_page_url(base_path: str, page: int, page_size: int, **extra) -> str:
+    """Build a relative URL for the ``next``/``previous`` pagination links.
+
+    ``extra`` carries arbitrary scalar query params (ints, strings, bools).
+    Bools render as ``true``/``false`` so they round-trip cleanly through
+    FastAPI's bool-coercer on the next request.
+    """
     params = [f"page={page}", f"page_size={page_size}"]
     for key, value in extra.items():
-        if value is not None:
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            params.append(f"{key}={'true' if value else 'false'}")
+        else:
             params.append(f"{key}={value}")
     return f"{base_path}?{'&'.join(params)}"
 
@@ -251,11 +260,35 @@ def list_highlights(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=1000),
     book_id: Optional[int] = Query(default=None),
+    favorited: Optional[bool] = Query(
+        default=None,
+        description="True → only favorited; False → exclude favorited; omit for all.",
+    ),
+    discarded: Optional[bool] = Query(
+        default=None,
+        description="True → only discarded; False → exclude discarded; omit for all (default behavior keeps the historic 'show everything' shape).",
+    ),
+    mastered: Optional[bool] = Query(
+        default=None,
+        description="True → only mastered; False → exclude mastered; omit for all.",
+    ),
 ) -> PaginatedResponse:
-    """Paginated list of highlights belonging to the authenticated user."""
+    """Paginated list of highlights belonging to the authenticated user.
+
+    Tri-state state-flag filters: pass ``favorited=true`` to include only
+    favorited rows, ``favorited=false`` to exclude them, or omit the
+    parameter to apply no filter. Same semantics for ``discarded`` and
+    ``mastered``.
+    """
     base_stmt = select(Highlight).where(Highlight.user_id == token.user_id)
     if book_id is not None:
         base_stmt = base_stmt.where(Highlight.book_id == book_id)
+    if favorited is not None:
+        base_stmt = base_stmt.where(Highlight.is_favorited == favorited)
+    if discarded is not None:
+        base_stmt = base_stmt.where(Highlight.is_discarded == discarded)
+    if mastered is not None:
+        base_stmt = base_stmt.where(Highlight.is_mastered == mastered)
 
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
     count = session.exec(count_stmt).one()
@@ -286,22 +319,31 @@ def list_highlights(
             location_type=h.location_type,
             highlighted_at=h.created_at,
             book_id=h.book_id,
+            is_favorited=bool(h.is_favorited),
+            is_discarded=bool(h.is_discarded),
+            is_mastered=bool(getattr(h, "is_mastered", False)),
         )
         results.append(item.model_dump(mode="json"))
 
+    # Persist filter state across pagination links so ?page=2 keeps the
+    # caller's filter context.
+    extras: dict[str, object] = {}
+    if book_id is not None:
+        extras["book_id"] = book_id
+    if favorited is not None:
+        extras["favorited"] = "true" if favorited else "false"
+    if discarded is not None:
+        extras["discarded"] = "true" if discarded else "false"
+    if mastered is not None:
+        extras["mastered"] = "true" if mastered else "false"
+
     next_url = (
-        _build_page_url(
-            "/api/v2/highlights/", page + 1, page_size,
-            book_id=book_id if book_id is not None else None,
-        )
+        _build_page_url("/api/v2/highlights/", page + 1, page_size, **extras)
         if page * page_size < count
         else None
     )
     prev_url = (
-        _build_page_url(
-            "/api/v2/highlights/", page - 1, page_size,
-            book_id=book_id if book_id is not None else None,
-        )
+        _build_page_url("/api/v2/highlights/", page - 1, page_size, **extras)
         if page > 1
         else None
     )
@@ -315,12 +357,25 @@ def list_books(
     session: Session = Depends(get_session),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=1000),
+    author: Optional[str] = Query(
+        default=None,
+        description="Exact author match (case-sensitive — pair with the canonical author name from /authors).",
+    ),
+    q: Optional[str] = Query(
+        default=None,
+        max_length=120,
+        description="Case-insensitive substring match against title or author.",
+    ),
 ) -> PaginatedResponse:
     """Paginated list of books that have at least one highlight by this user.
 
     Ordering: newest first by ``Book.id`` descending — i.e. most recently
     created books surface first. This is a deliberate choice (not Readwise's)
     documented here so callers can rely on it.
+
+    Filters: ``?author=`` for an exact author match (the canonical name as
+    surfaced by ``/api/v2/authors``) and ``?q=`` for a case-insensitive
+    substring match against title or author.
     """
     book_id_subq = (
         select(Highlight.book_id)
@@ -329,6 +384,17 @@ def list_books(
         .distinct()
     )
     base_stmt = select(Book).where(Book.id.in_(book_id_subq))
+    if author is not None:
+        base_stmt = base_stmt.where(Book.author == author)
+    if q is not None and q.strip():
+        like = f"%{q.strip()}%"
+        # SQLite's LIKE is case-insensitive for ASCII by default; for
+        # CJK substrings it does codepoint-equality which is what users
+        # actually want here. ``or_`` avoids a separate count query.
+        from sqlalchemy import or_
+        base_stmt = base_stmt.where(
+            or_(Book.title.ilike(like), Book.author.ilike(like))
+        )
 
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
     count = session.exec(count_stmt).one()
@@ -359,13 +425,19 @@ def list_books(
         )
         results.append(item.model_dump(mode="json"))
 
+    extras: dict[str, object] = {}
+    if author is not None:
+        extras["author"] = author
+    if q is not None and q.strip():
+        extras["q"] = q.strip()
+
     next_url = (
-        _build_page_url("/api/v2/books/", page + 1, page_size)
+        _build_page_url("/api/v2/books/", page + 1, page_size, **extras)
         if page * page_size < count
         else None
     )
     prev_url = (
-        _build_page_url("/api/v2/books/", page - 1, page_size)
+        _build_page_url("/api/v2/books/", page - 1, page_size, **extras)
         if page > 1
         else None
     )
@@ -423,6 +495,14 @@ def search_highlights(
     page_size: int = Query(default=50, ge=1, le=1000),
     include_discarded: bool = Query(default=False),
     tag: Optional[str] = Query(default=None, max_length=64),
+    favorited: Optional[bool] = Query(
+        default=None,
+        description="True → only favorited results; False → exclude.",
+    ),
+    mastered: Optional[bool] = Query(
+        default=None,
+        description="True → only mastered results; False → exclude.",
+    ),
     token: ApiToken = Depends(get_api_token),
     session: Session = Depends(get_session),
 ) -> PaginatedResponse:
@@ -468,6 +548,11 @@ def search_highlights(
             .where(Tag.name == tag_name)
         )
         base = base.where(Highlight.id.in_(tagged))
+
+    if favorited is not None:
+        base = base.where(Highlight.is_favorited == favorited)
+    if mastered is not None:
+        base = base.where(Highlight.is_mastered == mastered)
 
     count = session.exec(
         select(func.count()).select_from(base.subquery())

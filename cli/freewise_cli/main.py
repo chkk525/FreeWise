@@ -146,6 +146,8 @@ def cmd_search(args: argparse.Namespace) -> int:
         args.query, page=1, page_size=args.limit,
         include_discarded=args.include_discarded,
         tag=getattr(args, "tag", None),
+        favorited=getattr(args, "favorited", None),
+        mastered=getattr(args, "mastered", None),
     )
     if args.json:
         _print_json(body)
@@ -159,7 +161,12 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 def cmd_recent(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
-    body = client.list_highlights(page=1, page_size=args.limit)
+    body = client.list_highlights(
+        page=1, page_size=args.limit,
+        favorited=getattr(args, "favorited", None),
+        discarded=getattr(args, "discarded", None),
+        mastered=getattr(args, "mastered", None),
+    )
     if args.json:
         _print_json(body)
         return 0
@@ -549,7 +556,11 @@ def cmd_stats(args: argparse.Namespace) -> int:
 
 def cmd_books(args: argparse.Namespace) -> int:
     client = _client_from_args(args)
-    body = client.list_books(page=1, page_size=args.limit)
+    body = client.list_books(
+        page=1, page_size=args.limit,
+        author=getattr(args, "author", None),
+        q=getattr(args, "q", None),
+    )
     if args.json:
         _print_json(body)
         return 0
@@ -800,6 +811,16 @@ def _build_parser() -> argparse.ArgumentParser:
     s.add_argument("--limit", type=int, default=20)
     s.add_argument("--include-discarded", action="store_true")
     s.add_argument("--tag", help="Filter to highlights carrying this tag (case-insensitive).")
+    s_fav = s.add_mutually_exclusive_group()
+    s_fav.add_argument("--favorited", dest="favorited", action="store_true",
+                       default=None, help="Only favorited results.")
+    s_fav.add_argument("--no-favorited", dest="favorited", action="store_false",
+                       help="Exclude favorited results.")
+    s_mas = s.add_mutually_exclusive_group()
+    s_mas.add_argument("--mastered", dest="mastered", action="store_true",
+                       default=None, help="Only mastered results.")
+    s_mas.add_argument("--no-mastered", dest="mastered", action="store_false",
+                       help="Exclude mastered results.")
     s.set_defaults(func=cmd_search)
 
     # tags (summary listing)
@@ -842,6 +863,21 @@ def _build_parser() -> argparse.ArgumentParser:
     # recent
     r = sub.add_parser("recent", help="Most recent highlights.")
     r.add_argument("--limit", type=int, default=10)
+    r_fav = r.add_mutually_exclusive_group()
+    r_fav.add_argument("--favorited", dest="favorited", action="store_true",
+                       default=None, help="Only favorited.")
+    r_fav.add_argument("--no-favorited", dest="favorited", action="store_false",
+                       help="Exclude favorited.")
+    r_dis = r.add_mutually_exclusive_group()
+    r_dis.add_argument("--discarded", dest="discarded", action="store_true",
+                       default=None, help="Only discarded.")
+    r_dis.add_argument("--no-discarded", dest="discarded", action="store_false",
+                       help="Exclude discarded.")
+    r_mas = r.add_mutually_exclusive_group()
+    r_mas.add_argument("--mastered", dest="mastered", action="store_true",
+                       default=None, help="Only mastered.")
+    r_mas.add_argument("--no-mastered", dest="mastered", action="store_false",
+                       help="Exclude mastered.")
     r.set_defaults(func=cmd_recent)
 
     # show
@@ -948,6 +984,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # books
     b = sub.add_parser("books", help="List books that have at least one highlight.")
+    b.add_argument("--author", help="Filter by exact author match.")
+    b.add_argument("--q", help="Substring match against title or author (case-insensitive).")
     b.add_argument("--limit", type=int, default=20)
     b.set_defaults(func=cmd_books)
 
