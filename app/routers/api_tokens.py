@@ -41,6 +41,12 @@ templates = make_templates()
 # the verified session identity here, NOT from a form parameter.
 DEFAULT_TOKEN_USER_ID = 1
 
+# New tokens get the full Readwise-compat surface plus the kindle browser-
+# extension scope. Same default as the startup migration backfill in app/db.py
+# so a token created from this UI is immediately usable for every existing
+# /api/v2/* endpoint. Refine the UI later to let users pick a narrower set.
+DEFAULT_TOKEN_SCOPES = "kindle:import,highlights:read,highlights:write,books:read"
+
 
 def _check_same_origin(request: Request) -> None:
     """Reject POSTs whose Origin (or fallback Referer) is not same-host.
@@ -134,6 +140,7 @@ async def create_api_token(
         token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
         name=label,
         user_id=DEFAULT_TOKEN_USER_ID,
+        scopes=DEFAULT_TOKEN_SCOPES,
     )
     session.add(token)
     session.commit()

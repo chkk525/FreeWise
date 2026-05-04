@@ -334,6 +334,8 @@ app/
 ├── db.py                         # Engine + forward-only migrations + FTS5 setup
 ├── models.py                     # SQLModel ORM models
 ├── api_v2/                       # Token-gated /api/v2/* endpoints
+├── importers/                    # Import pipelines (Kindle JSON, Readwise CSV, …)
+├── middleware/                   # Custom Starlette middleware (gzip request body)
 ├── routers/                      # HTML routes (dashboard, library, highlights, …)
 ├── services/                     # Embeddings, RAG, digest, email, quote_card, kindle_*
 ├── template_filters.py           # Custom Jinja filters (autolink + make_templates helper)
@@ -341,10 +343,16 @@ app/
 └── static/                       # CSS, JS, uploaded covers
 cli/                              # `freewise` CLI (separate package)
 mcp/                              # MCP stdio server with 30 tools
+extensions/
+└── kindle-importer/              # Chrome MV3 extension — see docs/KINDLE_BROWSER_EXTENSION.md
+scrapers/
+└── kindle/                       # Playwright fallback scraper (monthly cron on QNAP)
+shared/                           # Selectors + JSON Schema shared by Python + TS
 docs/
 ├── USAGE.md                      # Reference for every CLI cmd / API endpoint / MCP tool
 ├── SEMANTIC_SETUP.md             # Ollama install + first-time backfill
 ├── KINDLE_JSON_SCHEMA.md         # Contract with the Kindle scraper
+├── KINDLE_BROWSER_EXTENSION.md   # MV3 extension architecture, install, error matrix
 └── …
 tests/                            # pytest suite (server)
 CHANGELOG.md                      # Theme-grouped changelog of fork additions

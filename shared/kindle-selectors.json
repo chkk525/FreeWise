@@ -1,0 +1,23 @@
+{
+  "library_container": [
+    "#kp-notebook-library",
+    "#library-section",
+    "div.kp-notebook-library"
+  ],
+  "library_row": "div.kp-notebook-library-each-book",
+  "annotation_container": [
+    "#kp-notebook-annotations",
+    "#annotations",
+    "div.kp-notebook-annotation-list"
+  ],
+  "annotation_row": "div.a-row.a-spacing-base.a-spacing-top-medium",
+  "highlight_text": "span#highlight",
+  "note_text": "span#note",
+  "highlight_color_prefix": "kp-notebook-highlight-",
+  "location_text": "span#kp-annotation-location",
+  "header_note_label": "span#annotationNoteHeader",
+  "book_title": "h2.kp-notebook-searchable",
+  "book_author": "p.kp-notebook-searchable",
+  "book_cover_image": "img.kp-notebook-cover-image",
+  "notebook_url": "https://read.amazon.com/kp/notebook"
+}

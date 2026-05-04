@@ -94,3 +94,92 @@ def test_migration_does_not_overwrite_existing_kindle_asin() -> None:
             text("SELECT kindle_asin FROM book WHERE id = :id"), {"id": bid}
         ).one()
         assert row[0] == "MANUAL"
+
+
+# ── ApiToken NOT NULL constraint rebuild ──────────────────────────────────
+
+
+def _replace_apitoken_with_legacy_schema(engine) -> None:
+    """Drop the model-emitted apitoken and recreate it with the pre-Phase-4
+    schema (token VARCHAR NOT NULL). Other tables (book, user, …) stay."""
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS apitoken"))
+        conn.execute(
+            text(
+                "CREATE TABLE apitoken (\n"
+                "    id INTEGER NOT NULL,\n"
+                "    token VARCHAR NOT NULL,\n"
+                "    name VARCHAR NOT NULL,\n"
+                "    user_id INTEGER NOT NULL,\n"
+                "    created_at DATETIME NOT NULL,\n"
+                "    last_used_at DATETIME,\n"
+                "    PRIMARY KEY (id),\n"
+                "    FOREIGN KEY(user_id) REFERENCES user (id)\n"
+                ")"
+            )
+        )
+        conn.execute(
+            text("CREATE UNIQUE INDEX ix_apitoken_token ON apitoken (token)")
+        )
+        conn.execute(
+            text("INSERT INTO user (id, email, password_hash) VALUES (1, 'a@b', 'x')")
+        )
+        conn.execute(
+            text(
+                "INSERT INTO apitoken (id, token, name, user_id, created_at) "
+                "VALUES (1, 'plaintext-legacy', 'old', 1, '2025-01-01 00:00:00')"
+            )
+        )
+
+
+def test_migration_drops_not_null_on_apitoken_token() -> None:
+    """A legacy DB declared apitoken.token NOT NULL. New rows leave that
+    column NULL (only token_hash + token_prefix are populated), so the
+    migration must rebuild the table to relax the constraint. Symptom on
+    a non-migrated production DB:
+        sqlite3.IntegrityError: NOT NULL constraint failed: apitoken.token
+    on every fresh INSERT.
+    """
+    engine = _fresh_engine()
+    SQLModel.metadata.create_all(engine)  # all model tables incl. book
+    _replace_apitoken_with_legacy_schema(engine)
+
+    # Sanity: pre-migration, the column is NOT NULL.
+    with engine.connect() as conn:
+        col = next(r for r in conn.execute(text("PRAGMA table_info(apitoken)")).all() if r[1] == "token")
+        assert col[3] == 1  # notnull == True
+
+    ensure_schema_migrations(engine)
+
+    # Post-migration: notnull cleared, indexes preserved, row preserved.
+    with engine.connect() as conn:
+        col = next(r for r in conn.execute(text("PRAGMA table_info(apitoken)")).all() if r[1] == "token")
+        assert col[3] == 0  # nullable now
+
+        row = conn.execute(
+            text("SELECT id, token, name, user_id FROM apitoken WHERE id = 1")
+        ).one()
+        assert row == (1, "plaintext-legacy", "old", 1)
+
+        # New-style rows must now insert successfully with token=NULL.
+        conn.execute(
+            text(
+                "INSERT INTO apitoken (token, name, user_id, created_at, "
+                "token_prefix, token_hash, scopes) "
+                "VALUES (NULL, 'new-token', 1, '2026-05-04 00:00:00', "
+                "'fw_abc', 'hash', 'kindle:import')"
+            )
+        )
+        cnt = conn.execute(text("SELECT COUNT(*) FROM apitoken")).scalar()
+        assert cnt == 2
+
+
+def test_apitoken_rebuild_idempotent_on_already_nullable_db() -> None:
+    """A DB that already has token nullable should be a no-op the second time."""
+    engine = _fresh_engine()
+    SQLModel.metadata.create_all(engine)
+    ensure_schema_migrations(engine)
+    ensure_schema_migrations(engine)
+    with engine.connect() as conn:
+        col = next(r for r in conn.execute(text("PRAGMA table_info(apitoken)")).all() if r[1] == "token")
+        assert col[3] == 0

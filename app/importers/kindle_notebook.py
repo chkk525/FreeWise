@@ -12,8 +12,10 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import IO, Any, Optional, Union
 
+import jsonschema
 from sqlmodel import Session, select
 
 from app.models import Book, Highlight
@@ -26,15 +28,32 @@ logger = logging.getLogger(__name__)
 SUPPORTED_SCHEMA_MAJOR = "1"
 SUPPORTED_SOURCE = "kindle_notebook"
 
+_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "shared" / "kindle-export-v1.schema.json"
+# Loaded lazily on first import call. Eager `read_text()` at module-import
+# time meant a missing `shared/` directory (e.g. an incomplete Docker layer)
+# crashed the *whole* FastAPI process at startup, including endpoints that
+# don't touch Kindle at all. We hit exactly this regression on the QNAP
+# deploy when shared/ wasn't COPY'd in. Lazy loading isolates the failure
+# to the import endpoint and surfaces it as a 500 instead of a boot loop.
+_VALIDATOR: Optional[jsonschema.Draft202012Validator] = None
+
+
+def _get_validator() -> jsonschema.Draft202012Validator:
+    global _VALIDATOR
+    if _VALIDATOR is None:
+        schema = json.loads(_SCHEMA_PATH.read_text())
+        _VALIDATOR = jsonschema.Draft202012Validator(schema)
+    return _VALIDATOR
+
 
 @dataclass(frozen=True)
 class KindleImportResult:
-    """Aggregated counts and per-row error messages from a single import call."""
+    """Aggregated counts and per-row error dicts from a single import call."""
     books_created: int = 0
     books_matched: int = 0
     highlights_created: int = 0
     highlights_skipped_duplicates: int = 0
-    errors: list[str] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,7 +68,14 @@ def _read_payload(file_obj: Union[IO[bytes], IO[str]]) -> dict[str, Any]:
 
 
 def _validate_envelope(payload: dict[str, Any]) -> None:
-    """Raise ValueError if schema_version major or source is unsupported."""
+    """Raise ValueError if the envelope is malformed.
+
+    The version + source checks intentionally run BEFORE the strict JSON
+    Schema. Both checks are also enforced by the schema, but the friendly
+    messages are useful when a producer is on the wrong major version
+    (the schema would otherwise complain about ``pattern "^1\\.[0-9]+$"``,
+    which is less actionable than ``Unsupported schema_version major: '2'``).
+    """
     schema_version = payload.get("schema_version", "")
     if not isinstance(schema_version, str) or "." not in schema_version:
         raise ValueError(
@@ -68,6 +94,14 @@ def _validate_envelope(payload: dict[str, Any]) -> None:
         raise ValueError(
             f"Unsupported source: {source!r} (expected {SUPPORTED_SOURCE!r})"
         )
+
+    schema_errors = sorted(
+        _get_validator().iter_errors(payload), key=lambda e: list(e.absolute_path)
+    )
+    if schema_errors:
+        first = schema_errors[0]
+        path = ".".join(str(p) for p in first.absolute_path) or "(root)"
+        raise ValueError(f"Schema validation failed at {path}: {first.message}")
 
 
 def _merge_asin_tag(existing: Optional[str], asin: str) -> str:
@@ -127,7 +161,7 @@ def import_kindle_notebook_json(
     books_matched = 0
     highlights_created = 0
     highlights_skipped_duplicates = 0
-    errors: list[str] = []
+    errors: list[dict[str, str]] = []
 
     for book_idx, book_data in enumerate(payload.get("books", []) or []):
         try:
@@ -139,9 +173,10 @@ def import_kindle_notebook_json(
                 errors=errors,
             )
         except Exception as exc:  # defensive: never let one book kill the run
+            title = book_data.get("title") or f"<book at index {book_idx}>"
             msg = f"book[{book_idx}]: unexpected error: {exc}"
             logger.exception(msg)
-            errors.append(msg)
+            errors.append({"book_title": title, "reason": str(exc)})
             continue
 
         if counts is None:
@@ -170,7 +205,7 @@ def _import_book(
     session: Session,
     user_id: int,
     fallback_created_at: Optional[datetime],
-    errors: list[str],
+    errors: list[dict[str, str]],
 ) -> Optional[tuple[int, int, int, int]]:
     """
     Import one book and its highlights.
@@ -182,14 +217,12 @@ def _import_book(
     asin = (book_data.get("asin") or "").strip()
 
     if not title:
-        msg = f"Skipping book with missing title (asin={asin!r})"
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping book with missing title (asin=%r)", asin)
+        errors.append({"book_title": f"<book at asin {asin!r}>", "reason": "missing title"})
         return None
     if not asin:
-        msg = f"Skipping book {title!r}: missing asin"
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping book %r: missing asin", title)
+        errors.append({"book_title": title, "reason": "missing asin"})
         return None
 
     raw_highlights = book_data.get("highlights") or []
@@ -231,8 +264,7 @@ def _import_book(
             document_tags=f"asin:{asin}",
         )
         if book is None:  # pragma: no cover — only on empty title
-            msg = f"Failed to materialise book {title!r}"
-            errors.append(msg)
+            errors.append({"book_title": title, "reason": "failed to materialise book"})
             return None
 
     # Always set kindle_asin (Phase 3 column), and keep the document_tags
@@ -319,7 +351,7 @@ def _import_highlights(
     session: Session,
     user_id: int,
     fallback_created_at: Optional[datetime],
-    errors: list[str],
+    errors: list[dict[str, str]],
 ) -> tuple[int, int]:
     """Import highlights for a single book. Returns (created, skipped_duplicates)."""
     created = 0
@@ -337,11 +369,10 @@ def _import_highlights(
                 h_idx=h_idx,
             )
         except Exception as exc:
-            msg = (
-                f"book[{book.title!r}].highlight[{h_idx}]: unexpected error: {exc}"
+            logger.exception(
+                "book[%r].highlight[%d]: unexpected error: %s", book.title, h_idx, exc
             )
-            logger.exception(msg)
-            errors.append(msg)
+            errors.append({"book_title": book.title, "reason": f"highlight[{h_idx}]: {exc}"})
             continue
 
         if created_one:
@@ -359,7 +390,7 @@ def _import_one_highlight(
     session: Session,
     user_id: int,
     fallback_created_at: Optional[datetime],
-    errors: list[str],
+    errors: list[dict[str, str]],
     h_idx: int,
 ) -> tuple[bool, bool]:
     """
@@ -373,18 +404,12 @@ def _import_one_highlight(
     h_id = h.get("id")
 
     if not text:
-        msg = (
-            f"Skipping highlight #{h_idx} in book {book.title!r}: missing text"
-        )
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping highlight #%d in book %r: missing text", h_idx, book.title)
+        errors.append({"book_title": book.title, "reason": f"highlight #{h_idx}: missing text"})
         return (False, False)
     if not h_id:
-        msg = (
-            f"Skipping highlight #{h_idx} in book {book.title!r}: missing id"
-        )
-        logger.warning(msg)
-        errors.append(msg)
+        logger.warning("Skipping highlight #%d in book %r: missing id", h_idx, book.title)
+        errors.append({"book_title": book.title, "reason": f"highlight #{h_idx}: missing id"})
         return (False, False)
 
     location, location_type = _resolve_location(h.get("location"), h.get("page"))

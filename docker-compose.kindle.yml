@@ -1,0 +1,28 @@
+services:
+  kindle:
+    build:
+      context: .
+      dockerfile: Dockerfile.kindle
+    image: kindle-scraper-qnap:latest
+    # profiles:[manual] keeps this off the auto-up path. Run via:
+    #   docker compose -f docker-compose.kindle.yml --env-file .env.kindle run --rm kindle
+    # Default CMD is `scrape ...`; override with `... run --rm kindle login ...` for the
+    # initial headed login. See docs/KINDLE_SETUP.md for the recommended flow (login is
+    # done locally on a desktop and storage_state.json is scp'd to QNAP).
+    profiles:
+      - manual
+    # QNAP's built-in Docker DNS (127.0.0.11) cannot reliably resolve external
+    # hosts (same lesson learned for cloudflared and safaribooks).
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    user: "${KINDLE_RUN_AS:-0:0}"
+    volumes:
+      # storage_state.json (Playwright session) lives here; persist across runs
+      # so we don't have to re-login every export.
+      - "${KINDLE_STATE_DIR:-/share/Container/freewise/state/kindle}:/work/state"
+      # JSON exports land here. The FreeWise importer in the deploy repo
+      # watches this directory.
+      - "${KINDLE_OUTPUT_DIR:-/share/Container/freewise/imports/kindle}:/work/output"
+    environment:
+      TZ: "${TZ:-Asia/Tokyo}"

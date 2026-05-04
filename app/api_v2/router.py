@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
 from app.api_v2.auth import get_api_token
+from app.api_v2.kindle_import import router as kindle_import_router
 from app.api_v2.schemas import (
     AuthorListItem,
     BookListItem,
@@ -1616,3 +1617,10 @@ def admin_digest_send(
             detail="SMTP is not configured on this server.",
         )
     return out
+
+
+# ── Sub-routers ──────────────────────────────────────────────────────────────
+# Mounted last so they pick up the prefix + tags + dependencies of the
+# parent router. The kindle browser-extension lives behind require_scope
+# rather than the bare get_api_token; see app/api_v2/kindle_import.py.
+router.include_router(kindle_import_router)

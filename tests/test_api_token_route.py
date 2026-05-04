@@ -199,3 +199,27 @@ def test_user_id_is_not_form_controlled(db: Session):
         import inspect
         sig = inspect.signature(api_tokens_module.create_api_token)
         assert "user_id" not in sig.parameters
+
+
+def test_new_token_gets_default_scopes(db: Session):
+    """Newly minted tokens must include the kindle:import scope so the
+    Chrome extension works out of the box. Earlier rows had ``scopes
+    IS NULL`` and were grandfathered in by the migration backfill, but
+    the create-token UI must NOT rely on the legacy NULL-means-full-
+    access path — operators who later tighten the scope policy
+    shouldn't accidentally lock the extension out."""
+    dummy = _DummyTemplate()
+    request = _build_request()
+    with patch.object(api_tokens_module, "templates", dummy):
+        _run(
+            api_tokens_module.create_api_token(
+                request, name="ext", session=db
+            )
+        )
+    row = db.exec(select(ApiToken).where(ApiToken.name == "ext")).one()
+    assert row.scopes is not None and row.scopes != ""
+    granted = {s.strip() for s in row.scopes.split(",") if s.strip()}
+    assert "kindle:import" in granted
+    assert "highlights:read" in granted
+    assert "highlights:write" in granted
+    assert "books:read" in granted
