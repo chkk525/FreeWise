@@ -1,142 +1,58 @@
-# FreeWise (chkk525 fork)
+# FreeWise
 
-[![Tests: 840 passing](https://img.shields.io/badge/tests-840%20passing-brightgreen)](#running-tests)
+[![Tests: 885 / 50 / 31 passing](https://img.shields.io/badge/tests-966%20passing-brightgreen)](#testing)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 ![License: CC0](https://img.shields.io/badge/license-CC0-green)
 ![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)
 ![PWA](https://img.shields.io/badge/PWA-installable-purple?logo=pwa)
+![MCP-ready](https://img.shields.io/badge/MCP-30%20tools-orange)
 
-> Self-hosted highlight library — Readwise's daily-review + ask-anything
-> experience without the subscription, the data sale, or the lock-in.
+> **Self-hosted highlight library — own your reading the way Readwise *almost* lets you, without the subscription, the data sale, or the lock-in.**
 
-This is a **fork** of [`wardeiling/FreeWise`](https://github.com/wardeiling/FreeWise).
-The upstream provides a clean FastAPI + HTMX baseline (CRUD, import/export,
-review, dashboard). This fork adds full-text search, semantic search,
-Retrieval-Augmented Generation (RAG) over your library, a Kindle scraper
-pipeline, an SMTP email digest, an OG image generator, a CLI, an MCP
-stdio server with 30 tools, and more — all single-user, single-binary,
-SQLite-backed.
+FreeWise is the FastAPI + SQLite + HTMX clone of Readwise's daily-review experience, plus search, RAG ("ask my library"), Kindle scraping, an HTML+CLI+MCP triple surface, and a Chrome extension that turns any web selection into a saved highlight. **Single user, single binary, single SQLite file** — designed to run on your laptop, a $50 VPS, or a NAS.
 
-> [!TIP]
-> For the day-to-day reference of every CLI command / API endpoint /
-> MCP tool, see [`docs/USAGE.md`](docs/USAGE.md). For the timeline of
-> what's been added, see [`CHANGELOG.md`](CHANGELOG.md).
+This repo is the [`chkk525`](https://github.com/chkk525) **fork** of [`wardeiling/FreeWise`](https://github.com/wardeiling/FreeWise). The upstream is the CRUD/import/review baseline; this fork adds everything documented under [What's in this fork](#whats-in-this-fork) below. **PRs stay on the fork — never opened upstream.**
 
 ---
 
-## Highlights of the fork
+## Table of contents
 
-### Search & discovery
-
-- **FTS5 trigram full-text search** — works for English, Japanese,
-  Chinese without MeCab. Auto-backfills on first start; LIKE fallback
-  if FTS5 isn't compiled in.
-- **Faceted search** — `?favorited_only=true&has_note=true&tag=ml` on
-  `/highlights/ui/search`. Filter-only browsing valid (no `q` required).
-- **Author index** at `/library/ui/authors` with sort tabs.
-- **Per-tag detail page** at `/highlights/ui/tag/{name}`.
-- **On-this-day** dashboard widget — past-year highlights for today's MM-DD.
-- **Daily-pick** widget — deterministic highlight of the day.
-
-### AI / RAG (Ollama-backed)
-
-- **Embedding substrate** — per-highlight vectors, cosine retrieval,
-  chunked numpy matmul (handles 25k×768 in ~50ms).
-- **`/ask` endpoint** + UI page — answers questions over the library
-  with citation links to the source highlights.
-- **Per-book summarize** — LLM summary using only that book's highlights.
-- **Tag suggestions** — embedding-neighbor-based for one highlight.
-- **Semantic near-duplicate detection** + UI page with one-click discard.
-
-### Curation & cleanup
-
-- **Exact duplicate finder** with bulk-cleanup UI.
-- **Library-health card** on dashboard — surfaces dup-group count and
-  tagging-coverage % with backfill CTAs (defer-loaded so the main
-  page returns instantly).
-- **Tag rename / merge / autocomplete** — bulk operations + native
-  `<datalist>` suggestions on the bulk-tag input.
-- **Author rename** across all books.
-- **Append-to-note** — atomic concat with 8191-char cap.
-- **Quick-capture** dashboard textarea.
-- **Copy-as-quote** button on every highlight row.
-- **Notes formatting** — preserves line breaks and auto-links bare URLs
-  (XSS-safe; `javascript:`/`data:` schemes rejected).
-
-### Sharing
-
-- **Open Graph + Twitter Card meta** on every highlight permalink.
-- **Quote-card OG image** at `/highlights/ui/h/{id}/quote.png` —
-  1200×630 PNG with the highlight + author/title attribution. Twitter,
-  Slack, iMessage all expand richly.
-
-### Import / export
-
-- **Multi-format import** — Readwise CSV, Kindle JSON, Meebook HTML,
-  custom CSV. CLI auto-detects by extension.
-- **Kindle scraper pipeline** (separate `freewise-qnap-kindle` repo) —
-  Playwright headless scrape of `read.amazon.com`, dedup-by-ASIN,
-  webhook notifications, daily cron schedule. **"Scrape now" button**
-  on the dashboard for on-demand triggers.
-- **Filtered export** — `?tag=…&book_id=…&author=…&favorited_only=true&active_only=true`
-  on `/export/csv` and `/export/markdown.zip`.
-- **Markdown export** — Obsidian / Logseq friendly, one `.md` per book.
-
-### Operations
-
-- **`/healthz`** — counts + Ollama reachability.
-- **`/metrics`** — Prometheus exposition (7 gauges: highlights_total /
-  active / favorited / mastered, books_total, embeddings_count +
-  embedding_coverage, freewise_up).
-- **`/api/v2/admin/backup`** — atomic SQLite snapshot via
-  `sqlite3.backup()`. Token-gated, dedicated 3 req/IP/min rate bucket.
-- **CLI backup rotation** — `freewise backup --to-dir DIR --retain N`
-  for cron, ms-precision timestamps.
-- **Daily email digest** — SMTP via env vars. POST `/api/v2/admin/digest/send`
-  or `freewise digest --send`. Subject + HTML body include today's
-  pick, on-this-day highlights, and library-health summary.
-- **Per-IP rate limiter** + security headers + hashed API tokens.
-
-### Multi-surface
-
-- **`freewise` CLI** — 36+ subcommands (search, today, ask, backup,
-  digest, import, …). One binary, one auth file.
-- **MCP stdio server** — 30 tools so a Claude Code session has
-  first-class read/write access to the library:
-  `freewise_search`, `freewise_ask`, `freewise_summarize_book`,
-  `freewise_today`, `freewise_backup`, `freewise_health`, etc.
-
-### Engineering
-
-- **Test coverage:** 840 passing (server 767 + CLI 42 + MCP 31).
-- **Code review at every batch boundary** — U57, U67, U75, U79, U83,
-  U92, U100. Every CRITICAL / HIGH cleared before the next batch starts.
-- **Defer-load HTMX pattern** — heavy dashboard widgets (full-table
-  scans) load after the main page returns.
-- **Forward-only schema migrations** — no alembic, just `app/db.py`
-  inspecting `PRAGMA table_info` and adding columns idempotently.
+1. [Who is this for?](#who-is-this-for)
+2. [Quick start (3 commands)](#quick-start-3-commands)
+3. [What's in this fork](#whats-in-this-fork)
+4. [Tour of the surfaces](#tour-of-the-surfaces)
+   - [Web UI](#web-ui)
+   - [REST API (`/api/v2`)](#rest-api-apiv2)
+   - [`freewise` CLI](#freewise-cli)
+   - [`freewise-mcp` MCP server](#freewise-mcp-mcp-server)
+   - [Chrome extension](#chrome-extension)
+5. [Configuration reference](#configuration-reference)
+6. [Operations](#operations)
+7. [Development](#development)
+8. [Troubleshooting](#troubleshooting)
+9. [Roadmap](#roadmap)
+10. [Contributing](#contributing)
+11. [License](#license)
 
 ---
 
-## Tech Stack
+## Who is this for?
 
-| Layer | Technology |
+| You are… | …and FreeWise gives you |
 |---|---|
-| Backend | [FastAPI](https://fastapi.tiangolo.com/) + [SQLModel](https://sqlmodel.tiangolo.com/) |
-| Database | SQLite + FTS5 (trigram tokenizer) |
-| Frontend | [HTMX](https://htmx.org/) + [TailwindCSS](https://tailwindcss.com/) + [Lucide Icons](https://lucide.dev/) |
-| Templating | Jinja2 (with custom `autolink` filter for note rendering) |
-| AI | [Ollama](https://ollama.com) (`nomic-embed-text` for embeddings, `llama3.2` for generation) |
-| Image | [Pillow](https://pillow.readthedocs.io) for the OG quote-card |
-| Container | Docker + Docker Compose |
-| MCP | [`mcp`](https://pypi.org/project/mcp/) (FastMCP) over stdio |
+| A heavy reader of books, articles, papers | A searchable, taggable, **permanent** home for the highlights you'll otherwise lose. |
+| A Readwise subscriber tired of paying $8/mo | The same daily-review loop, FTS5 search, OG image cards, and email digest — self-hosted, in one Docker container. |
+| A Claude Code / LLM tinkerer | A **30-tool MCP server** so the assistant can read, write, and reason over your library directly. |
+| A privacy-leaning reader | All embeddings, all search, all LLM RAG runs locally via Ollama. No third party sees your highlights. |
+| A Kindle reader who hates web-based exports | A Chrome extension + a Playwright scraper + a manual import path — three ways to get notes out, all idempotent. |
+
+**Not for you if** you need: real-time multi-device sync, multi-user permissions, a hosted SaaS UI, or a free-tier mobile app. FreeWise is intentionally single-user and single-tenant.
 
 ---
 
-## Quick Start
+## Quick start (3 commands)
 
-> **Requirements:** [Docker](https://docs.docker.com/get-docker/) and
-> [Docker Compose](https://docs.docker.com/compose/install/).
+> **Requirements:** [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/install/). Tested on Linux, macOS, and QNAP Container Station.
 
 ```bash
 git clone https://github.com/chkk525/FreeWise.git
@@ -144,126 +60,322 @@ cd FreeWise
 docker compose up -d --build
 ```
 
-Open **http://localhost:8063** in your browser.
+→ Open **http://localhost:8063** and you'll see an empty dashboard.
 
-The first build takes ~2 minutes (Node CSS compile + Pillow build).
-Subsequent starts are instant. On first start the FTS5 index
-auto-backfills (a few seconds for 25k rows).
+**Success criteria:** by the end of the next 5 minutes you should have
+
+1. ✅ Imported your existing highlights (Readwise CSV, Kindle JSON, or use the Chrome extension live).
+2. ✅ Searched for one of them by Japanese / English / mixed-script substring.
+3. ✅ Bookmarked one as a favorite from the dashboard's daily review card.
+
+If anything fails, jump to [Troubleshooting](#troubleshooting).
 
 ### Optional: enable AI features
 
-`docker-compose.yml` already defines an Ollama service. Pull models once:
-
 ```bash
-docker compose exec ollama ollama pull nomic-embed-text
-docker compose exec ollama ollama pull llama3.2
+docker compose exec ollama ollama pull nomic-embed-text  # embeddings
+docker compose exec ollama ollama pull llama3.2          # chat / RAG
 ```
 
-Then visit `/dashboard/ui` and use the **"Embed all"** action, or run
-`freewise embed-backfill`. See [`docs/SEMANTIC_SETUP.md`](docs/SEMANTIC_SETUP.md).
+Then run `freewise embed-backfill` once to vectorize the library. After that, `/highlights/ui/ask` and the related-highlights surface light up.
 
 ### Optional: enable email digest
 
-Add to `.env` (or `.env.qnap`, both gitignored):
+Add SMTP creds to `.env`:
 
 ```bash
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=you@gmail.com
-SMTP_PASS=<Gmail App Password — spaces ok>
+SMTP_PASS=<Gmail App Password>
 SMTP_FROM=FreeWise <you@gmail.com>
 SMTP_TO=you@gmail.com
 ```
 
-Test: `freewise digest` (dry-run preview). Send: `freewise digest --send`.
-Cron: `0 8 * * * freewise digest --send`.
+Test once: `freewise digest` (dry-run preview). Then schedule:
 
-### Optional: enable Kindle scrape-now button
-
-Set `KINDLE_SCRAPE_CMD` to your scrape entry point (typically
-`/srv/freewise/kindle/tools/kindle_dl.sh` from the
-[`freewise-qnap-kindle`](https://github.com/chkk525/freewise-qnap-kindle)
-sibling repo). The dashboard button appears automatically.
-
----
-
-## CLI
-
-```bash
-pip install -e cli/
-freewise auth login --url https://your-host --token <api-token>
-freewise search "stoicism"
-freewise today
-freewise ask "what did I learn about systems thinking?"
-freewise backup --to-dir /backups --retain 7
-freewise digest --send
+```cron
+0 8 * * *  freewise digest --send
 ```
 
-36+ subcommands — see [`docs/USAGE.md`](docs/USAGE.md) for the full list.
+---
+
+## What's in this fork
+
+Grouped by user job-to-be-done. The upstream `wardeiling/FreeWise` ships the CRUD baseline; everything below is fork-only.
+
+### 1. Find anything you've ever read
+
+- **FTS5 trigram search** — works for English, 日本語, 中文, mixed-script, no MeCab needed. Auto-backfills on first start; LIKE fallback if FTS5 isn't compiled in.
+- **Result snippets with `<mark>` highlighting** at `/highlights/ui/search` and `/api/v2/highlights/search` — sentinel-then-escape XSS-safe rendering.
+- **Faceted search** — combine `?q=` + `?tag=` + `?favorited_only=true` + `?has_note=true`. Filter-only browsing valid (no query needed).
+- **Author / tag / book pivots** — every highlight links into the author index, tag detail, and book detail pages.
+
+### 2. Get into a daily review habit
+
+- **Daily review card** with weighted random pick (favors fresh, low-mastery highlights).
+- **Streak counter** + 30-day GitHub-style heatmap on the dashboard.
+- **Daily digest page** at `/digest/today` — same picks all day; refreshes once at midnight.
+- **Activity timeline** at `/highlights/ui/activity` — newest-first log of every favorite/discard/master action, grouped by date, filterable by verb.
+- **Cold-books re-engagement widget** on the dashboard — surfaces 5 books you haven't touched in the longest time, so the long-tail of imports doesn't rot.
+
+### 3. Ask your library questions (RAG)
+
+- **Embedding substrate** — per-highlight `nomic-embed-text` vectors, cosine retrieval, chunked numpy matmul (handles 25k × 768 in ~50ms).
+- **`/highlights/ui/ask`** — answers questions over the library with citation links to the source highlights.
+- **Per-book summarize** — LLM summary using only that book's highlights, available from book detail pages.
+- **Tag suggestions** — embedding-neighbor based, accepts/rejects via HTMX.
+- **Semantic near-duplicate detection** + UI page with one-click discard.
+- **Related highlights** at `/highlights/ui/h/{id}/related` — top-K cosine-similar items.
+
+### 4. Import & curate
+
+- **Multi-format import** — Readwise CSV, Kindle JSON (the Amazon export shape), Meebook HTML, custom CSV. CLI auto-detects by extension.
+- **Kindle scraper pipeline** — Playwright headless scrape of `read.amazon.com`, dedup-by-ASIN, webhook notifications, daily cron schedule. **"Scrape now" button** on the dashboard for on-demand triggers (lives in the [`freewise-qnap-kindle`](https://github.com/chkk525/freewise-qnap-kindle) sibling repo).
+- **Chrome extension** — right-click any web selection → save to `/api/v2/highlights/`. MV3, persistent storage, recent-saves history. See [Chrome extension](#chrome-extension).
+- **Tag rename / merge / autocomplete** — bulk operations + native `<datalist>` suggestions.
+- **Author rename across all books** — fixes typos and full-width-space splits in one shot.
+- **Append-to-note** — atomic concat with 8191-char cap.
+- **Quick-capture textarea** on the dashboard.
+- **Exact + semantic duplicate finder** with bulk-cleanup UI.
+
+### 5. Share what you've highlighted
+
+- **Open Graph + Twitter Card meta** on every highlight permalink → rich previews in Slack, iMessage, Twitter.
+- **Quote-card OG image** at `/highlights/ui/h/{id}/quote.png` — 1200×630 PNG with attribution, generated on demand via Pillow.
+- **Filtered export** — `?tag=…&book_id=…&author=…&favorited_only=true&active_only=true` on `/export/csv` and `/export/markdown.zip`.
+- **Markdown export** — Obsidian / Logseq / Notion-flavored, one `.md` per book, atomic-notes mode for Zettelkasten workflows.
+
+### 6. Operate without surprise
+
+- **`/healthz`** — counts + Ollama reachability.
+- **`/metrics`** — Prometheus exposition (7 gauges).
+- **Atomic SQLite backup** via `sqlite3.backup()` — token-gated `/api/v2/admin/backup` and `freewise backup --to-dir DIR --retain N` for cron rotation.
+- **Per-IP rate limiter**, **security headers**, **hashed API tokens** with token-prefix display.
+- **Forward-only migrations** — no Alembic, just `app/db.py` doing `PRAGMA table_info` introspection + idempotent column adds + table-rebuild for SQLite-can't-DROP-NOT-NULL cases.
+- **Defer-loaded HTMX widgets** — heavy dashboard widgets (dup-group scan, tagging-coverage, on-this-day) load after the main page returns.
+
+### 7. Multi-surface from day one
+
+| Surface | What you get | How to drive it |
+|---|---|---|
+| **Web UI** | Daily review, dashboard, library, search, activity, ask, settings | Browser at `:8063` |
+| **REST API** | Token-authed `/api/v2` (Readwise-shaped where it makes sense) | `Authorization: Token <raw>` |
+| **CLI** | 32 subcommands across read, write, discovery, RAG, ops | `freewise <cmd>` |
+| **MCP** | 30 tools so Claude Code / Claude Desktop reads & writes the library | stdio adapter |
+| **Chrome extension** | Right-click web selection → save | `chrome://extensions` → load `extensions/chrome/` |
 
 ---
 
-## MCP
+## Tour of the surfaces
 
-Add to your Claude Code settings:
+### Web UI
+
+| Path | What it does |
+|---|---|
+| `/dashboard/ui` | Stats, daily review CTA, 7-day activity sparkline → activity timeline, cold-books widget, tag cloud, embedding coverage |
+| `/highlights/ui/review` | The daily review queue. `j`/`Space` next, `s`/`f` favorite, `x`/`d`/`#` discard. |
+| `/highlights/ui/search` | FTS5 search with `<mark>` snippets, faceted filters, bulk action bar. |
+| `/highlights/ui/activity` | Newest-first timeline of every action (favorite/discard/master/...). `g v` from anywhere. |
+| `/highlights/ui/ask` | RAG over the library; cites the source highlights. Needs embeddings. |
+| `/highlights/ui/h/{id}` | Highlight permalink (OG-rich) — `/quote.png` for the social card. |
+| `/highlights/ui/duplicates` | Exact dup groups + bulk-discard. |
+| `/highlights/ui/duplicates/semantic` | Cosine-similar pairs with one-click discard. |
+| `/library/ui` | Book grid with cover art, filterable by author. |
+| `/library/ui/book/{id}` | Book detail with stats panel + LLM summary action. |
+| `/library/ui/authors` | Author index sortable by book count or highlight count. |
+| `/digest/today` | Stable daily digest (today's pick, today's sample, on-this-day). |
+| `/import/ui` | Multi-format import UI. |
+| `/import/api-token` | Self-service API token mint. |
+| `/settings/ui` | Theme cycle, daily review count, backup, export. |
+
+**Keyboard shortcuts.** Gmail-style `g` then a letter: `g d` dashboard, `g l` library, `g r` review, `g f` favorites, `g x` discarded, `g m` mastered, `g a` ask, `g u` duplicates, `g v` activity, `g i` import, `g s` settings, `g t` API tokens. Press `?` anywhere for the help modal.
+
+### REST API (`/api/v2`)
+
+Auth: `Authorization: Token <raw>` (Readwise convention, **not** `Bearer`). Token minted at `/import/api-token`.
+
+#### Highlights
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET`    | `/api/v2/auth/` | Token validation (204 on success). |
+| `GET`    | `/api/v2/highlights/` | Paginated list. Filters: `book_id`, `favorited`, `discarded`, `mastered`. |
+| `POST`   | `/api/v2/highlights/` | Bulk create (Readwise-shaped body). |
+| `GET`    | `/api/v2/highlights/search` | FTS5 search with `<mark>` snippets. Filters: `tag`, `include_discarded`, `favorited`, `mastered`. |
+| `GET`    | `/api/v2/highlights/random` | One random highlight (`?book_id=` to scope). |
+| `GET`    | `/api/v2/highlights/today` | Stable highlight-of-the-day (same all day). |
+| `GET`    | `/api/v2/highlights/duplicates` | Exact-text dup groups. |
+| `GET`    | `/api/v2/highlights/duplicates/semantic` | Cosine-similar pairs. |
+| `GET`    | `/api/v2/highlights/{id}` | Single detail incl. tags + similarity-if-related. |
+| `PATCH`  | `/api/v2/highlights/{id}` | Note / favorite / discard / mastered. |
+| `POST`   | `/api/v2/highlights/{id}/note/append` | Atomic note append. |
+| `GET`    | `/api/v2/highlights/{id}/related` | Top-K semantic similar (needs embeddings). |
+| `GET`    | `/api/v2/highlights/{id}/suggest-tags` | Embedding-neighbor tag suggestions. |
+| `GET`    | `/api/v2/highlights/{id}/tags` | List tags. |
+| `POST`   | `/api/v2/highlights/{id}/tags` | Add tag (idempotent). |
+| `DELETE` | `/api/v2/highlights/{id}/tags/{name}` | Remove tag. |
+
+#### Discovery
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET`  | `/api/v2/books/` | Paginated book list. Filters: `author`, `q` (substring on title or author). |
+| `GET`  | `/api/v2/authors` | Distinct authors with counts (`?q=` substring). |
+| `GET`  | `/api/v2/tags` | Distinct tags with counts. |
+| `GET`  | `/api/v2/stats` | Counts + review-due. |
+| `POST` | `/api/v2/tags/{name}/rename` | Global tag rename. |
+| `POST` | `/api/v2/tags/{name}/merge` | Merge tag into another. |
+| `POST` | `/api/v2/authors/rename` | Rename author across all books. |
+
+#### AI
+
+| Method | Path | What it does |
+|---|---|---|
+| `POST` | `/api/v2/ask` | RAG over the library. |
+| `POST` | `/api/v2/books/{id}/summarize` | LLM summary of one book. |
+| `POST` | `/api/v2/embeddings/backfill` | Run one batch of embeddings (CLI driver). |
+
+#### Logs & ops
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET`  | `/api/v2/review-log` | Newest-first action log; filter by `action`, `since`. |
+| `POST` | `/api/v2/admin/digest/send` | Send the email digest now. |
+| `GET`  | `/api/v2/admin/backup` | Stream an atomic SQLite snapshot. |
+| `POST` | `/api/v2/kindle` | Kindle JSON ingest endpoint (used by the scraper). |
+
+Full schemas in [`docs/USAGE.md`](docs/USAGE.md). Pagination follows Readwise's `count`/`next`/`previous` envelope.
+
+### `freewise` CLI
+
+```bash
+pip install -e cli/                    # or: uv pip install -e cli/
+freewise auth login --url https://your-host --token <fw_…>
+```
+
+Reads from `~/.config/freewise/config.toml`, falls back to `FREEWISE_URL` / `FREEWISE_TOKEN` env vars.
+
+| Group | Commands |
+|---|---|
+| **Auth** | `auth login` · `auth status` |
+| **Read** | `search` · `recent` · `show` · `random` · `today` · `books` · `book-highlights` · `authors` · `tags` · `stats` · `health` |
+| **Write** | `add` · `note` · `favorite` · `unfavorite` · `discard` · `restore` · `master` · `unmaster` · `tag {add,remove,list,rename,merge}` · `author rename` |
+| **Discovery** | `duplicates` · `semantic-dupes` · `related` · `suggest-tags` |
+| **AI** | `ask` · `summarize-book` · `embed-backfill` |
+| **Ops** | `backup` · `digest` · `import` · `export {csv,markdown,atomic,notion}` |
+
+**Filter flags shipped on the read commands** (tri-state):
+
+- `freewise recent --favorited` / `--no-favorited` (also `--discarded`, `--mastered`)
+- `freewise search "stoicism" --favorited --tag philosophy`
+- `freewise books --author "橘玲"` or `freewise books --q stoic`
+
+`--json` on any command emits structured output for piping.
+
+### `freewise-mcp` MCP server
+
+```bash
+pip install -e mcp/                    # or: uv pip install -e mcp/
+```
+
+Add to `~/.claude.json`:
 
 ```json
 {
   "mcpServers": {
     "freewise": {
-      "command": "python",
-      "args": ["-m", "freewise_mcp.server"],
+      "type": "stdio",
+      "command": "freewise-mcp",
       "env": {
         "FREEWISE_URL": "https://your-host",
-        "FREEWISE_TOKEN": "<api-token>"
+        "FREEWISE_TOKEN": "fw_…"
       }
     }
   }
 }
 ```
 
-Restart Claude Code. The 30 `freewise_*` tools become available in any
-conversation.
+Restart Claude Code → 30 tools land:
+
+| Read | Write | Discovery | AI | Ops |
+|---|---|---|---|---|
+| `freewise_search` | `freewise_set_note` | `freewise_books` | `freewise_ask` | `freewise_stats` |
+| `freewise_recent` | `freewise_append_note` | `freewise_book_highlights` | `freewise_summarize_book` | `freewise_health` |
+| `freewise_show` | `freewise_favorite` | `freewise_authors` | `freewise_related` | `freewise_backup` |
+| `freewise_today` | `freewise_discard` | `freewise_tags` | `freewise_suggest_tags` | |
+| `freewise_random` | `freewise_master` | `freewise_tag_list` | `freewise_semantic_dupes` | |
+| | `freewise_add` | `freewise_duplicates` | | |
+| | `freewise_tag_add` / `_remove` | | | |
+| | `freewise_tag_rename` / `_merge` | | | |
+| | `freewise_author_rename` | | | |
+
+### Chrome extension
+
+Right-click any web selection → "Save selection to FreeWise" → posts to `/api/v2/highlights/`. MV3, no remote code, token + base URL stored in `chrome.storage.local` only (never `sync` — Google would see the token).
+
+```bash
+# 1. chrome://extensions → Developer mode ON → Load unpacked
+# 2. Select the folder: extensions/chrome/
+# 3. Click the icon → fill in base URL + API token → Save
+```
+
+**Automated end-to-end tests** ship with the extension. They boot a fresh FreeWise on `:8064`, mint a temp ApiToken, load the unpacked extension into a real Chromium, and verify popup config + the right-click → POST → search flow:
+
+```bash
+bash extensions/chrome/e2e/run.sh
+```
 
 ---
 
-## Docker Reference
+## Configuration reference
 
-### Common commands
+All config is environment variables. `.env` and `.env.qnap` are gitignored — put secrets there.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `FREEWISE_DB_URL` | `sqlite:///./db/freewise.db` | SQLAlchemy URL. Used by both the app and the CLI's local-DB scripts. |
+| `FREEWISE_URL` | `http://localhost:8063` | (CLI/MCP only) base URL of the server. |
+| `FREEWISE_TOKEN` | unset | (CLI/MCP only) raw API token. |
+| `FREEWISE_OLLAMA_URL` | `http://localhost:11434` | Ollama base URL. |
+| `FREEWISE_OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model. Switch carefully — re-embed required. |
+| `FREEWISE_OLLAMA_GENERATE_MODEL` | `llama3.2` | Chat / RAG model. |
+| `KINDLE_IMPORTS_DIR` | unset | If set, watcher auto-imports JSON/CSV files dropped here. |
+| `KINDLE_SCRAPE_CMD` | unset | Command for the dashboard's "Scrape now" button. Hidden when unset. |
+| `KINDLE_SCRAPE_STATE_FILE` | `/tmp/freewise-kindle-scrape.json` | Trigger state for the scrape button. |
+| `SMTP_HOST` / `_PORT` / `_USER` / `_PASS` / `_FROM` / `_TO` | unset | Email digest. Digest is silently disabled when any are missing. |
+
+---
+
+## Operations
+
+### Common Docker commands
 
 | Task | Command |
 |---|---|
-| Start (first time or after update) | `docker compose up -d --build` |
+| Start (first time / after update) | `docker compose up -d --build` |
 | Start (no rebuild) | `docker compose up -d` |
 | Stop (data preserved) | `docker compose down` |
-| Stop and wipe all data | `docker compose down -v` |
-| Follow logs | `docker compose logs -f` |
-| Restart the container | `docker compose restart freewise` |
+| Stop and **wipe all data** | `docker compose down -v` |
+| Follow logs | `docker compose logs -f freewise` |
+| Restart only the app | `docker compose restart freewise` |
 
-### Updating to a newer version
+### Updating
 
 ```bash
 git pull
 docker compose up -d --build
 ```
 
-The schema migrations (incl. FTS5 backfill) run automatically on
-first startup post-upgrade.
+Forward-only migrations run automatically on startup. If FTS5 or any column is missing, the app rebuilds it idempotently.
 
-### Data persistence
+### Backups
 
-| Volume | Mount path | Contents |
-|---|---|---|
-| `freewise-db` | `/srv/freewise/db` | SQLite database (incl. FTS5 index, embeddings) |
-| `freewise-covers` | `/srv/freewise/app/static/uploads/covers` | Uploaded book cover images |
-
-### Backing up your data
-
-The cleanest path is the in-app backup endpoint (atomic via
-`sqlite3.backup()`):
+The cleanest path is the in-app endpoint (uses `sqlite3.backup()` — atomic, safe under writes):
 
 ```bash
 freewise backup --to-dir ./backups --retain 7
+# → ./backups/freewise-2026-05-04T22-26-00-123456.sqlite
 ```
 
 Or via raw `curl`:
@@ -273,7 +385,7 @@ curl -H "Authorization: Token $FREEWISE_TOKEN" \
   https://your-host/api/v2/admin/backup -o freewise-$(date +%F).sqlite
 ```
 
-The Docker volume tarball approach still works as a fallback:
+Volume-tarball still works as a fallback when the app is down:
 
 ```bash
 docker run --rm \
@@ -282,106 +394,144 @@ docker run --rm \
   alpine tar czf /backup/freewise-db-backup.tar.gz -C /data .
 ```
 
-### Environment variables
+### Volumes
 
-| Variable | Default | Description |
+| Volume | Mount path | Contents |
 |---|---|---|
-| `FREEWISE_DB_URL` | `sqlite:///./db/freewise.db` | SQLAlchemy database URL |
-| `FREEWISE_OLLAMA_URL` | `http://localhost:11434` | Ollama base URL |
-| `FREEWISE_OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
-| `FREEWISE_OLLAMA_GENERATE_MODEL` | `llama3.2` | Chat / generate model |
-| `FREEWISE_KINDLE_WATCH_DIR` | unset | Auto-import watcher target dir |
-| `FREEWISE_KINDLE_NOTIFY_URL` | unset | Webhook for import outcome |
-| `KINDLE_SCRAPE_CMD` | unset | "Scrape now" button command (hidden when unset) |
-| `KINDLE_SCRAPE_STATE_FILE` | `/tmp/freewise-kindle-scrape.json` | Trigger state |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` / `SMTP_TO` | unset | Email digest config (digest disabled when any unset) |
+| `freewise-db` | `/srv/freewise/db` | SQLite database (incl. FTS5 index, embeddings) |
+| `freewise-covers` | `/srv/freewise/app/static/uploads/covers` | Uploaded book covers |
+
+### Observability
+
+- `GET /healthz` — JSON liveness probe (DB reachable + Ollama if configured)
+- `GET /metrics` — Prometheus exposition: `freewise_highlights_total`, `_active`, `_favorited`, `_mastered`, `_books_total`, `_embeddings_count`, `_embedding_coverage`, `freewise_up`
+- The `crw-cloudflared` sidecar handles the Cloudflare tunnel for the QNAP deployment used by the maintainer.
 
 ---
 
-## Local Development
+## Development
 
 ```bash
 git clone https://github.com/chkk525/FreeWise.git
 cd FreeWise
 
-uv sync                          # creates .venv with all deps
-uv run uvicorn app.main:app --reload
+uv sync                                      # creates .venv with all deps
+uv run uvicorn app.main:app --reload         # http://localhost:8000
 
-# In another shell — for Tailwind:
-npm install && npm run build:css
+# In another shell, for Tailwind:
+npm install
+npm run build:css                            # one-shot
+npm run watch:css                            # watch mode
 ```
 
-The application will be available at **http://localhost:8000**.
+### Testing
 
-### Running tests
+Three independent suites — they can't share a collection because each sets up its own in-process FastAPI app:
 
-```bash
-uv run pytest                    # server suite (767 tests)
-uv run pytest cli/tests/         # CLI suite (42 tests)
-uv run pytest mcp/tests/         # MCP suite (31 tests)
-```
+| Suite | Tests | Run |
+|---|---|---|
+| Server | 885 | `uv run pytest tests/` |
+| CLI | 50 | `uv run pytest cli/tests/` |
+| MCP | 31 | `uv run pytest mcp/tests/` |
+| Chrome E2E | 3 | `bash extensions/chrome/e2e/run.sh` |
+| **Total** | **969** | `scripts/test_all.sh` (runs all three Python suites sequentially) |
 
-CLI and MCP test trees can't be collected together with the server
-tests because they each set up their own in-process FastAPI app.
-
----
-
-## Project Structure
+### Project structure
 
 ```
 app/
-├── main.py                       # FastAPI entry point
+├── main.py                       # FastAPI entry + lifespan
 ├── db.py                         # Engine + forward-only migrations + FTS5 setup
-├── models.py                     # SQLModel ORM models
+├── models.py                     # SQLModel ORM (Highlight, Book, Tag, ApiToken, ReviewLog, ...)
 ├── api_v2/                       # Token-gated /api/v2/* endpoints
-├── importers/                    # Import pipelines (Kindle JSON, Readwise CSV, …)
-├── middleware/                   # Custom Starlette middleware (gzip request body)
-├── routers/                      # HTML routes (dashboard, library, highlights, …)
-├── services/                     # Embeddings, RAG, digest, email, quote_card, kindle_*
-├── template_filters.py           # Custom Jinja filters (autolink + make_templates helper)
+├── importers/                    # Import pipelines (Kindle JSON, Readwise CSV, ...)
+├── middleware/                   # Custom Starlette middleware
+├── routers/                      # HTML routes (dashboard, library, highlights, digest, ...)
+├── services/                     # cold_books, review_log, search_snippet, embeddings,
+│                                 # rag, digest, email, quote_card, kindle_*, book_stats
+├── template_filters.py           # Custom Jinja filters
 ├── templates/                    # Jinja2 HTML
-└── static/                       # CSS, JS, uploaded covers
-cli/                              # `freewise` CLI (separate package)
+└── static/                       # Compiled CSS, JS, uploaded covers
+
+cli/                              # `freewise` CLI (separate package, own tests, own uv.lock)
 mcp/                              # MCP stdio server with 30 tools
+
 extensions/
-└── kindle-importer/              # Chrome MV3 extension — see docs/KINDLE_BROWSER_EXTENSION.md
+├── chrome/                       # MV3 Chrome extension
+│   └── e2e/                      # Playwright E2E for the extension
+└── kindle-importer/              # Legacy MV3 Kindle highlight extractor
+
 scrapers/
-└── kindle/                       # Playwright fallback scraper (monthly cron on QNAP)
+└── kindle/                       # Playwright fallback scraper (lives in sibling repo)
+
 shared/                           # Selectors + JSON Schema shared by Python + TS
+
 docs/
 ├── USAGE.md                      # Reference for every CLI cmd / API endpoint / MCP tool
 ├── SEMANTIC_SETUP.md             # Ollama install + first-time backfill
 ├── KINDLE_JSON_SCHEMA.md         # Contract with the Kindle scraper
-├── KINDLE_BROWSER_EXTENSION.md   # MV3 extension architecture, install, error matrix
-└── …
-tests/                            # pytest suite (server)
-CHANGELOG.md                      # Theme-grouped changelog of fork additions
+└── KINDLE_BROWSER_EXTENSION.md   # MV3 extension architecture, install, error matrix
+
+tests/                            # Server pytest suite
+CHANGELOG.md                      # Theme-grouped changelog
 Dockerfile                        # Multi-stage Node → Python production image
 docker-compose.yml                # Single-service deployment
 ```
 
 ---
 
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| **Search returns no results for a known term** | FTS5 index stale or missing. | Restart — the lifespan rebuilds it. Or hit `/healthz` to confirm the column counts. |
+| **`/api/v2/highlights/?favorited=true` returns everything** | You're on a pre-PR-#9 build. | `git pull && docker compose up -d --build`. |
+| **`freewise auth login` reports 401** | Token has whitespace or you used `Bearer` instead of `Token`. | Re-mint at `/import/api-token`. The CLI strips whitespace; raw curl needs `Authorization: Token <raw>`. |
+| **`/highlights/ui/ask` says "no embeddings"** | Backfill never ran. | `freewise embed-backfill --batch-size 64` — idempotent, resumable. |
+| **Chrome extension "FreeWise: HTTP 401"** | Wrong base URL or token. | Click the extension icon → Test connection. |
+| **Email digest never arrives but `freewise digest` succeeds dry-run** | One of the SMTP env vars is missing. | `docker compose exec freewise env \| grep SMTP` to confirm. Digest fails closed (silent) when any var is unset. |
+| **`docker compose down -v` deleted my highlights** | The `-v` flag wipes named volumes by design. | Restore from `freewise backup` snapshot. **Always backup before `down -v`.** |
+| **Kindle scraper found 0 books** | Amazon changed selectors or your session cookie expired. | Re-auth in the [`freewise-qnap-kindle`](https://github.com/chkk525/freewise-qnap-kindle) repo's setup flow. |
+| **Author X appears under multiple slightly-different names** | Full-width / half-width spaces or trailing typos in the source data. | `freewise author rename "old" "new"` consolidates into one canonical entry. |
+
+For anything else, check `docker compose logs -f freewise` and grep for `ERROR`. Most issues are visible there.
+
+---
+
 ## Roadmap
 
-- [ ] Notion integration for "currently reading" sync
-- [ ] PDF / EPUB attachment view
-- [ ] Differential Kindle scrape (only changed books)
-- [ ] PWA full offline mode
+**Confirmed wishlist** (autonomous-safe — implementable without UX redesign):
+
+- [ ] PWA full offline mode (Service Worker + IndexedDB cache).
+- [ ] Differential Kindle scrape (only changed books since last run).
+- [ ] PDF / EPUB attachment view inline on the book detail page.
+- [ ] Notion bidirectional sync for "currently reading" state.
+
+**Big-ticket items needing user decision**:
+
+- A3 — Email digest body redesign (HTML mockup pending).
+- A7 — Multi-device read state (would break the "single user" invariant).
+
+See [`CHANGELOG.md`](CHANGELOG.md) for what already shipped and roughly when.
+
+---
+
+## Contributing
+
+This is a single-user fork — open issues for bugs, but **PRs are not merged upstream from here**. The original [`wardeiling/FreeWise`](https://github.com/wardeiling/FreeWise) is the place for upstream work.
+
+If you want to fork the fork: go ahead, it's CC0. Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`) preferred. Tests for new features expected (the suite is fast — 969 tests in ~15s combined).
 
 ---
 
 ## Acknowledgements
 
-Built on top of [`wardeiling/FreeWise`](https://github.com/wardeiling/FreeWise).
-The original CRUD / import / review baseline is unchanged; this fork
-adds the search / AI / multi-surface / ops layers on top.
+Built on [`wardeiling/FreeWise`](https://github.com/wardeiling/FreeWise) — the CRUD/import/review baseline is unchanged. The fork adds search, AI/RAG, multi-surface (CLI + MCP + extension), Kindle scraping, and operations layers.
 
-This fork is intentionally single-user — it stays a personal tool, not
-a hosted service. Do **not** PR upstream from this branch.
+Inspired by [Readwise](https://readwise.io) — gratitude for proving the daily-review loop works. This is the self-hosted answer for people who wanted that loop without renting it.
 
 ---
 
 ## License
 
-[CC0](LICENSE) — same as upstream.
+[CC0](LICENSE) — same as upstream. Take it, fork it, port it, sell it.
