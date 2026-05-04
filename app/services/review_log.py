@@ -14,6 +14,7 @@ Read-side helpers power the dashboard activity widget and
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, UTC
 from typing import Iterable, Optional
 
@@ -22,7 +23,7 @@ from sqlalchemy.orm import Session as SASession
 from sqlalchemy.orm.attributes import get_history
 from sqlmodel import Session, select
 
-from app.models import Highlight, ReviewLog
+from app.models import Book, Highlight, ReviewLog
 
 
 # ── Capture listener ────────────────────────────────────────────────────────
@@ -151,6 +152,93 @@ def recent_entries(
         if action_list:
             stmt = stmt.where(ReviewLog.action.in_(action_list))
     return list(session.exec(stmt).all())
+
+
+@dataclass(frozen=True)
+class TimelineEntry:
+    """One hydrated review-log row ready for the activity timeline UI."""
+    log_id: int
+    highlight_id: int
+    action: str
+    at: datetime
+    text: str
+    note: Optional[str]
+    book_id: Optional[int]
+    book_title: Optional[str]
+    book_author: Optional[str]
+
+
+def timeline_entries(
+    session: Session,
+    *,
+    user_id: int = 1,
+    action: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[TimelineEntry]:
+    """Newest-first review-log rows joined with their highlight + book.
+
+    One round-trip — the join replaces the per-row Highlight/Book
+    lookups the route would otherwise need. Discarded highlights are
+    intentionally **kept** because the log is a record of action,
+    including discards; suppressing them would make the timeline lie
+    about what happened.
+    """
+    stmt = (
+        select(
+            ReviewLog.id,
+            ReviewLog.highlight_id,
+            ReviewLog.action,
+            ReviewLog.at,
+            Highlight.text,
+            Highlight.note,
+            Highlight.book_id,
+            Book.title,
+            Book.author,
+        )
+        .join(Highlight, Highlight.id == ReviewLog.highlight_id)
+        .outerjoin(Book, Book.id == Highlight.book_id)
+        .where(ReviewLog.user_id == user_id)
+        .order_by(ReviewLog.at.desc(), ReviewLog.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    if action:
+        stmt = stmt.where(ReviewLog.action == action)
+    rows = session.exec(stmt).all()
+    return [
+        TimelineEntry(
+            log_id=int(r[0]),
+            highlight_id=int(r[1]),
+            action=str(r[2]),
+            at=r[3],
+            text=r[4] or "",
+            note=r[5],
+            book_id=int(r[6]) if r[6] is not None else None,
+            book_title=r[7],
+            book_author=r[8],
+        )
+        for r in rows
+    ]
+
+
+def timeline_total(
+    session: Session,
+    *,
+    user_id: int = 1,
+    action: Optional[str] = None,
+) -> int:
+    """Count of review-log rows matching the timeline filters — used by
+    the route to render pagination labels without paging through the
+    whole log."""
+    from sqlalchemy import func as _func
+    stmt = (
+        select(_func.count(ReviewLog.id))
+        .where(ReviewLog.user_id == user_id)
+    )
+    if action:
+        stmt = stmt.where(ReviewLog.action == action)
+    return int(session.exec(stmt).one() or 0)
 
 
 def counts_by_day(
