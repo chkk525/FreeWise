@@ -43,7 +43,7 @@ function renderSettings(): void {
     <label>
       <span class="label-text">Server URL</span>
       <input id="server" type="url"
-             placeholder="https://freewiseapi.chikaki.com">
+             placeholder="https://freewise.chikaki.com or http://192.168.0.171:8063">
     </label>
     <label>
       <span class="label-text">API Token</span>
@@ -82,6 +82,52 @@ function renderMain(): void {
     btn.disabled = true;
     chrome.runtime.sendMessage({ type: 'sync_now' });
   });
+
+  // Re-display the last sync's outcome on every popup open. Without this,
+  // a sync that completes while the popup is closed (which is most of
+  // the time — Chrome auto-closes popups on focus loss) leaves the user
+  // with no feedback at all and the import looks like it "did nothing".
+  void chrome.storage.local.get(['last_sync']).then((stored) => {
+    const last = (stored as { last_sync?: StoredLastSync }).last_sync;
+    if (!last) return;
+    const result = document.getElementById('result');
+    const status = document.getElementById('status');
+    if (!result || !status) return;
+    const ago = formatAgo(Date.now() - last.at);
+    if (last.terminal?.type === 'error') {
+      result.classList.remove('hidden', 'success', 'warning');
+      result.classList.add('error');
+      result.textContent = `Last sync (${ago} ago): ${last.terminal.reason}`;
+    } else if (last.terminal?.type === 'login_required') {
+      result.classList.remove('hidden', 'success', 'error');
+      result.classList.add('warning');
+      result.textContent = `Last sync (${ago} ago): please log in to read.amazon.com first.`;
+    } else if (last.result) {
+      result.classList.remove('hidden', 'warning', 'error');
+      result.classList.add('success');
+      result.textContent = `Last sync (${ago} ago): ${formatResult(last.result)}`;
+    }
+    status.textContent = '';
+  });
+}
+
+type StoredLastSync = {
+  at: number;
+  result?: SyncResult;
+  terminal?:
+    | { type: 'error'; reason: string }
+    | { type: 'login_required' };
+};
+
+function formatAgo(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
 }
 
 function handlePopupMessage(msg: SyncMessage): void {
