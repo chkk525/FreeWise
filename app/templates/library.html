@@ -232,59 +232,10 @@
 </div>
 {% endif %}
 
-{% if total_pages and total_pages > 0 %}
-<div class="mt-6 flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3">
-    <div class="text-sm text-gray-600 dark:text-gray-400">
-        {% if total == 0 %}
-            No books
-        {% else %}
-            Showing <span class="font-medium text-gray-900 dark:text-white">{{ showing_first }}</span>–<span class="font-medium text-gray-900 dark:text-white">{{ showing_last }}</span>
-            of <span class="font-medium text-gray-900 dark:text-white">{{ total }}</span> books
-        {% endif %}
-    </div>
-    <div class="flex items-center gap-2 text-sm">
-        {% set qprev = page - 1 %}
-        {% set qnext = page + 1 %}
-        {% set qbase = '?sort=' ~ current_sort ~ '&order=' ~ current_order ~ '&page_size=' ~ page_size %}
-        {% if page > 1 %}
-            <a href="{{ qbase }}&page=1"
-               class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
-               title="First page">«</a>
-            <a href="{{ qbase }}&page={{ qprev }}"
-               class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">Prev</a>
-        {% else %}
-            <span class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">«</span>
-            <span class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">Prev</span>
-        {% endif %}
-        <form method="get" action="" class="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400">
-            <input type="hidden" name="sort" value="{{ current_sort }}">
-            <input type="hidden" name="order" value="{{ current_order }}">
-            <input type="hidden" name="page_size" value="{{ page_size }}">
-            <span>Page</span>
-            <input type="number" name="page" value="{{ page }}" min="1" max="{{ total_pages }}"
-                   class="w-16 px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-center">
-            <span>of {{ total_pages }}</span>
-        </form>
-        {% if page < total_pages %}
-            <a href="{{ qbase }}&page={{ qnext }}"
-               class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">Next</a>
-            <a href="{{ qbase }}&page={{ total_pages }}"
-               class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
-               title="Last page">»</a>
-        {% else %}
-            <span class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">Next</span>
-            <span class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">»</span>
-        {% endif %}
-        <select onchange="window.location.href='?sort={{ current_sort }}&order={{ current_order }}&page=1&page_size=' + this.value"
-                class="ml-2 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-sm"
-                aria-label="Books per page">
-            {% for size in [25, 50, 100, 200] %}
-                <option value="{{ size }}" {% if size == page_size %}selected{% endif %}>{{ size }}/page</option>
-            {% endfor %}
-        </select>
-    </div>
-</div>
-{% endif %}
+{# Shared partial preserves every active query param (q, author, tag, sort,
+   order, etc.) — the previous hand-rolled block silently dropped q/author
+   when the user picked a new page or page-size. #}
+{% with pagination_label='books' %}{% include "_pagination_footer.html" %}{% endwith %}
 
 <div class="mt-8">
     <a href="/" class="inline-flex items-center gap-2 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">

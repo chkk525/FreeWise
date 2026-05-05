@@ -55,9 +55,17 @@
             {% endfor %}
             <input type="hidden" name="page_size" value="{{ page_size }}">
             <span>Page</span>
+            {# Mobile: tapping the field, changing the value and tapping
+               elsewhere used to silently discard the input because the form
+               only submitted on Enter. The visible Go button + onchange
+               cover the keyboard, mouse, and touch paths. #}
             <input type="number" name="page" value="{{ page }}" min="1" max="{{ total_pages }}"
+                   onchange="this.form.requestSubmit()"
                    class="w-16 px-1 py-0.5 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-900 text-center">
             <span>of {{ total_pages }}</span>
+            <button type="submit"
+                    class="px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs"
+                    title="Jump to page">Go</button>
         </form>
         {% if page < total_pages %}
             <a href="?{{ _prefix }}page={{ qnext }}&page_size={{ page_size }}"

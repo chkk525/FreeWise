@@ -65,5 +65,9 @@
         </table>
     </div>
     {% endif %}
+
+    {% with pagination_label='authors' %}
+        {% include "_pagination_footer.html" %}
+    {% endwith %}
 </div>
 {% endblock %}
