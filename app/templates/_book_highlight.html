@@ -73,7 +73,7 @@
             
             <!-- Edit Button (hidden if discarded) -->
             {% if not highlight.is_discarded %}
-            <button 
+            <button
                 class="p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
                 hx-get="/highlights/{{ highlight.id }}/edit?context=book"
                 hx-target="#highlight-{{ highlight.id }}"
@@ -82,7 +82,41 @@
                 <i data-lucide="pencil" class="w-4 h-4"></i>
             </button>
             {% endif %}
-            
+
+            <!-- Permalink (parity with _highlight_row.html) -->
+            <a href="/highlights/ui/h/{{ highlight.id }}"
+               class="p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all"
+               title="Open permalink (shareable URL for this highlight)">
+                <i data-lucide="link" class="w-4 h-4"></i>
+            </a>
+
+            <!-- Copy as quote (parity with _highlight_row.html) -->
+            <button type="button"
+                    class="p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
+                    data-copy-quote
+                    data-text="{{ highlight.text }}"
+                    data-author="{{ (highlight.book.author or '') if highlight.book else '' }}"
+                    data-title="{{ (highlight.book.title or '') if highlight.book else '' }}"
+                    onclick="window.copyQuote(this)"
+                    title="Copy as quote (text + author/title)">
+                <i data-lucide="clipboard" class="w-4 h-4"></i>
+            </button>
+
+            <!-- Master Button (parity with _highlight_row.html) -->
+            {% if not highlight.is_discarded %}
+            <button
+                class="p-2 rounded-lg transition-all {% if highlight.is_mastered %}text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30{% else %}text-gray-400 dark:text-gray-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20{% endif %}"
+                hx-post="/highlights/{{ highlight.id }}/master"
+                hx-vals='{"context": "book"}'
+                hx-target="#highlights-sections-wrapper"
+                hx-swap="innerHTML"
+                hx-confirm="Are you sure you want to {{ 'unmark mastered (return to review)' if highlight.is_mastered else 'mark mastered (exclude from review)' }} this highlight?"
+                data-toast-success="{{ 'Unmastered — back in review' if highlight.is_mastered else 'Mastered — excluded from review' }}"
+                title="{{ 'Unmark mastered (return to review queue)' if highlight.is_mastered else 'Mark mastered (excluded from review)' }}">
+                <i data-lucide="graduation-cap" class="w-4 h-4 {% if highlight.is_mastered %}fill-current{% endif %}"></i>
+            </button>
+            {% endif %}
+
             <!-- Discard/Restore Button (hidden if favorited) -->
             {% if not highlight.is_favorited %}
             <button

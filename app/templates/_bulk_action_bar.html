@@ -145,27 +145,48 @@
         }
     });
 
-    // Populate the tag-input datalist with the user's most-used tags so the
-    // browser shows native autocomplete suggestions on focus / typing. Plain-
-    // text endpoint (one tag per line) keeps this dirt-cheap and CDN-cache
-    // friendly. Failures are non-fatal — the input still works without
-    // suggestions.
+    // Populate the tag-input datalist. We rank tags already visible on the
+    // current page first (so "page context" tags surface immediately), then
+    // append the user's globally most-used tags for completeness. Plain-
+    // text endpoint keeps this dirt-cheap; failures are non-fatal.
     (function loadTagSuggestions() {
         const datalist = document.getElementById('bulk-tag-suggestions');
         if (!datalist) return;
+        // 1) Scrape on-screen tag chips. Only proper user tags — never the
+        //    legacy favorite/discard pseudo-tags. The HTMX server response
+        //    already strips those, but defend in depth in case markup
+        //    changes elsewhere.
+        const seen = new Set();
+        const local = [];
+        document.querySelectorAll('a[href^="/highlights/ui/tag/"]').forEach(a => {
+            const name = (a.textContent || '').trim();
+            if (!name || name === 'favorite' || name === 'discard') return;
+            if (seen.has(name)) return;
+            seen.add(name);
+            local.push(name);
+        });
+        const frag = document.createDocumentFragment();
+        local.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            frag.appendChild(opt);
+        });
+        datalist.appendChild(frag);
+        // 2) Append global most-used tags after the page-context block.
         fetch('/highlights/tags/autocomplete', { headers: { 'Accept': 'text/plain' } })
             .then(r => r.ok ? r.text() : '')
             .then(body => {
                 if (!body) return;
-                const frag = document.createDocumentFragment();
+                const frag2 = document.createDocumentFragment();
                 body.split('\n').forEach(name => {
                     const trimmed = name.trim();
-                    if (!trimmed) return;
+                    if (!trimmed || seen.has(trimmed)) return;
+                    seen.add(trimmed);
                     const opt = document.createElement('option');
                     opt.value = trimmed;
-                    frag.appendChild(opt);
+                    frag2.appendChild(opt);
                 });
-                datalist.appendChild(frag);
+                datalist.appendChild(frag2);
             })
             .catch(() => { /* non-fatal */ });
     })();
