@@ -118,13 +118,13 @@
     {% set base_qs = ('action=' ~ action ~ '&') if action else '' %}
     <div class="flex items-center justify-between mt-8 text-sm">
         {% if page > 1 %}
-        <a href="/highlights/ui/activity?{{ base_qs }}page={{ page - 1 }}" class="text-blue-600 dark:text-blue-400 hover:underline">← Newer</a>
+        <a href="/highlights/ui/activity?{{ base_qs }}page={{ page - 1 }}" data-pagination-prev rel="prev" class="text-blue-600 dark:text-blue-400 hover:underline">← Newer</a>
         {% else %}
         <span class="text-gray-400 dark:text-gray-500">← Newer</span>
         {% endif %}
         <span class="text-xs text-gray-500 dark:text-gray-400">page {{ page }} / {{ total_pages }}</span>
         {% if page < total_pages %}
-        <a href="/highlights/ui/activity?{{ base_qs }}page={{ page + 1 }}" class="text-blue-600 dark:text-blue-400 hover:underline">Older →</a>
+        <a href="/highlights/ui/activity?{{ base_qs }}page={{ page + 1 }}" data-pagination-next rel="next" class="text-blue-600 dark:text-blue-400 hover:underline">Older →</a>
         {% else %}
         <span class="text-gray-400 dark:text-gray-500">Older →</span>
         {% endif %}

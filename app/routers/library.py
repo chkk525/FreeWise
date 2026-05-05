@@ -203,6 +203,8 @@ async def ui_library(
 async def ui_authors(
     request: Request,
     sort: str = "highlights",
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
     session: Session = Depends(get_session),
 ):
     """List every author with book/highlight counts and last activity.
@@ -219,6 +221,8 @@ async def ui_authors(
     settings = get_settings(session)
     if sort not in {"highlights", "books", "name", "recent"}:
         sort = "highlights"
+    page = max(1, page)
+    page_size = max(1, min(MAX_PAGE_SIZE, page_size))
 
     from sqlmodel import case as sa_case
     stmt = (
@@ -246,7 +250,7 @@ async def ui_authors(
         stmt = stmt.order_by(func.max(Highlight.created_at).desc().nullslast(), Book.author.asc())
 
     rows = session.exec(stmt).all()
-    authors = [
+    all_authors = [
         {
             "name": r[0],
             "book_count": int(r[1] or 0),
@@ -257,14 +261,29 @@ async def ui_authors(
         for r in rows
     ]
 
+    total = len(all_authors)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    authors = all_authors[start:start + page_size]
+    showing_first = 0 if total == 0 else start + 1
+    showing_last = min(start + page_size, total)
+
     return templates.TemplateResponse(
         request, "authors.html",
         {
             "settings": settings,
             "authors": authors,
             "current_sort": sort,
-            "total_authors": len(authors),
-            "total_highlights": sum(a["highlight_count"] for a in authors),
+            "total_authors": total,
+            "total_highlights": sum(a["highlight_count"] for a in all_authors),
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
         },
     )
 

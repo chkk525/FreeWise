@@ -71,11 +71,14 @@
               hx-post="/highlights/{{ highlight.id }}/tags/add"
               hx-target="#highlight-{{ highlight.id }}"
               hx-swap="outerHTML"
-              class="inline-flex items-center gap-1 px-2 py-0.5 bg-white dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 rounded-full text-xs text-gray-600 dark:text-gray-400 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+              {# Skip submit + suppress the success toast when the user
+                 hits Enter on an empty field — otherwise the toast claims
+                 "Tag added" while the server creates nothing. #}
+              hx-on::before-request="if(!this.querySelector('[name=new_tag]').value.trim()){event.preventDefault();return false;}"
               data-toast-success="Tag added">
             <i data-lucide="plus" class="w-3 h-3"></i>
             <input type="text" name="new_tag" placeholder="Add tag"
-                   maxlength="64" autocomplete="off"
+                   maxlength="64" autocomplete="off" required
                    class="bg-transparent focus:outline-none w-20 placeholder-gray-400 dark:placeholder-gray-500">
         </form>
     </div>
