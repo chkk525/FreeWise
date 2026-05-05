@@ -43,6 +43,7 @@
                class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
                title="First page">«</a>
             <a href="?{{ _prefix }}page={{ qprev }}&page_size={{ page_size }}"
+               data-pagination-prev rel="prev"
                class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">Prev</a>
         {% else %}
             <span class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed">«</span>
@@ -60,6 +61,7 @@
         </form>
         {% if page < total_pages %}
             <a href="?{{ _prefix }}page={{ qnext }}&page_size={{ page_size }}"
+               data-pagination-next rel="next"
                class="px-3 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">Next</a>
             <a href="?{{ _prefix }}page={{ total_pages }}&page_size={{ page_size }}"
                class="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
