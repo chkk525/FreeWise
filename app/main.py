@@ -28,6 +28,7 @@ from app.routers import (
 from app.routers import kindle_cookie as kindle_cookie_router
 from app.api_v2 import router as api_v2_router
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.middleware.gzip_request import GzipRequestMiddleware
 from app.services import kindle_import_watcher
 from app.services.review_log import install_listener as install_review_log_listener
@@ -123,6 +124,11 @@ def _maybe_start_kindle_scheduler():
 
 app = FastAPI(title="FreeWise", lifespan=lifespan)
 app.add_middleware(GzipRequestMiddleware)
+# Compress responses ≥1 KiB. Most HTML pages are 50–250 KiB and gzip
+# typically cuts them by 80%. Skipping tiny payloads avoids burning CPU
+# on already-tiny HTMX swap fragments. Starlette sets Vary: Accept-
+# Encoding automatically.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^chrome-extension://[a-z0-9]+$",
@@ -282,6 +288,33 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     for k, v in _SECURITY_HEADERS.items():
         response.headers.setdefault(k, v)
+    return response
+
+
+# Long-lived cache for vendored JS/CSS/fonts that never change at a given
+# path; short-lived for tailwind.css (rebuilds on deploy); no-cache for
+# sw.js so the browser always sees the latest service worker. Reduces the
+# 379 KB lucide.min.js round-trip on every navigation to one per year per
+# device. Cloudflare's edge cache + browser cache both honor this.
+_STATIC_CACHE_RULES: tuple[tuple[str, str], ...] = (
+    ("/static/sw.js", "no-cache"),
+    ("/static/css/tailwind.css", "public, max-age=300, must-revalidate"),
+    ("/static/vendor/", "public, max-age=31536000, immutable"),
+    ("/static/fonts/", "public, max-age=31536000, immutable"),
+    ("/static/favicons/", "public, max-age=86400"),
+    ("/static/", "public, max-age=3600"),  # default for anything else under /static
+)
+
+
+@app.middleware("http")
+async def add_static_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/"):
+        for prefix, value in _STATIC_CACHE_RULES:
+            if path == prefix or path.startswith(prefix):
+                response.headers.setdefault("Cache-Control", value)
+                break
     return response
 
 
