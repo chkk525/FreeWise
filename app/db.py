@@ -324,6 +324,19 @@ def ensure_schema_migrations(engine=None) -> None:
                 )
             )
 
+        # ── Settings.language (i18n) ─────────────────────────────────────
+        # Single-user app, so the column lives on the singleton settings
+        # row; default 'en' so existing installs stay English until the
+        # user flips the toggle on /settings/ui.
+        settings_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(settings)")).all()
+        }
+        if settings_cols and "language" not in settings_cols:
+            _log.info("migration: adding settings.language column")
+            conn.execute(
+                text("ALTER TABLE settings ADD COLUMN language VARCHAR NOT NULL DEFAULT 'en'")
+            )
+
     # ── FTS5 substring index (U91) ───────────────────────────────────────
     # Trigram tokenizer works for any language including Japanese / Chinese
     # (no MeCab/ICU dependency). Queries < 3 chars must fall back to LIKE

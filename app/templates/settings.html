@@ -96,25 +96,51 @@
             </div>
             <div class="flex-1">
                 <label for="theme" class="block text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                    Theme
+                    {{ t("Theme") }}
                 </label>
                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
                     Choose your preferred visual theme
                 </p>
-                <select 
-                    id="theme" 
-                    name="theme" 
+                <select
+                    id="theme"
+                    name="theme"
                     required
                     class="w-full max-w-xs px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all">
                     <option value="light" {% if settings.theme == "light" %}selected{% endif %}>
-                        Light
+                        {{ t("Light") }}
                     </option>
                     <option value="dark" {% if settings.theme == "dark" %}selected{% endif %}>
-                        Dark
+                        {{ t("Dark") }}
                     </option>
                     <option value="auto" {% if settings.theme == "auto" %}selected{% endif %}>
-                        Auto (System)
+                        {{ t("Auto") }} (System)
                     </option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Language Setting -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-start gap-4">
+            <div class="pt-1">
+                <i data-lucide="globe" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+            </div>
+            <div class="flex-1">
+                <label for="language" class="block text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                    {{ t("Language") }}
+                </label>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    UI language. Untranslated strings fall back to English.
+                </p>
+                <select
+                    id="language"
+                    name="language"
+                    required
+                    class="w-full max-w-xs px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all">
+                    {% for code, label in available_languages %}
+                    <option value="{{ code }}" {% if settings.language == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
                 </select>
             </div>
         </div>
@@ -124,7 +150,7 @@
     <div class="flex gap-3 pt-4">
         <button type="submit" class="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
             <i data-lucide="save" class="w-5 h-5"></i>
-            <span>Save Settings</span>
+            <span>{{ t("Save settings") }}</span>
         </button>
         <a href="/dashboard/ui" class="flex items-center gap-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white px-6 py-3 rounded-lg font-semibold transition-colors">
             <i data-lucide="x" class="w-5 h-5"></i>

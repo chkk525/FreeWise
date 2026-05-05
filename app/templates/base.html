@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja" data-theme="{{ settings.theme if settings else 'light' }}">
+<html lang="{{ settings.language if settings and settings.language else 'en' }}" data-theme="{{ settings.theme if settings else 'light' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -45,19 +45,19 @@
                 <div class="flex items-center gap-5 sm:gap-6">
                     <a href="/dashboard/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
                         <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
-                        <span class="hidden sm:inline">Dashboard</span>
+                        <span class="hidden sm:inline">{{ t("Dashboard") }}</span>
                     </a>
                     <a href="/library/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
                         <i data-lucide="library" class="w-5 h-5"></i>
-                        <span class="hidden sm:inline">Library</span>
+                        <span class="hidden sm:inline">{{ t("Library") }}</span>
                     </a>
                     <a href="/import/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
                         <i data-lucide="upload" class="w-5 h-5"></i>
-                        <span class="hidden sm:inline">Import</span>
+                        <span class="hidden sm:inline">{{ t("Import") }}</span>
                     </a>
                     <a href="/settings/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
                         <i data-lucide="settings" class="w-5 h-5"></i>
-                        <span class="hidden sm:inline">Settings</span>
+                        <span class="hidden sm:inline">{{ t("Settings") }}</span>
                     </a>
                 </div>
                 <!-- Search box: full-text across all highlights. Press / to focus. -->
@@ -66,7 +66,7 @@
                         <span class="sr-only">Search highlights</span>
                         <i data-lucide="search" class="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
                         <input id="global-search-input" type="search" name="q"
-                               placeholder="Search highlights…  (press /)"
+                               placeholder="{{ t('Search') }}…  (press /)"
                                value="{{ (request.query_params.get('q', '') if request and request.query_params is defined else '') }}"
                                class="w-full pl-8 pr-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500">
                     </label>
