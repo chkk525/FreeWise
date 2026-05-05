@@ -42,8 +42,8 @@
             <a href="/highlights/ui/h/{{ highlight.id }}"
                class="hover:text-primary-600 dark:hover:text-primary-400"
                title="Open permalink for this highlight">#{{ highlight.id }}</a>
-            {% if highlight.is_favorited %} · ★{% endif %}
-            {% if highlight.is_mastered %} · 🎓{% endif %}
+            {% if highlight.is_favorited %} · <i data-lucide="star" class="w-3 h-3 inline-block fill-current text-yellow-500" aria-label="Favorited"></i>{% endif %}
+            {% if highlight.is_mastered %} · <i data-lucide="graduation-cap" class="w-3 h-3 inline-block text-emerald-500" aria-label="Mastered"></i>{% endif %}
         </span>
         <div class="flex items-center gap-1">
             {% if is_today %}

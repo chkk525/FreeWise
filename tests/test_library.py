@@ -119,6 +119,31 @@ class TestLibraryBookSearch:
         assert "Filtering by query" in resp.text
 
 
+class TestLibraryTagFilter:
+    """GET /library/ui?tag=foo — narrow listing to books with tag foo."""
+
+    def test_tag_filter_narrows_results(self, client, make_book):
+        make_book(title="Sci Pick", document_tags="scifi")
+        make_book(title="Hist Pick", document_tags="history")
+        resp = client.get("/library/ui", params={"tag": "scifi"})
+        assert "Sci Pick" in resp.text
+        assert "Hist Pick" not in resp.text
+
+    def test_tag_filter_uses_csv_boundary(self, client, make_book):
+        # Boundary match prevents "sci" from matching "scifi" — important
+        # for users with closely-named tags.
+        make_book(title="Exact Sci", document_tags="sci")
+        make_book(title="Sci-fi Book", document_tags="scifi")
+        resp = client.get("/library/ui", params={"tag": "sci"})
+        assert "Exact Sci" in resp.text
+        assert "Sci-fi Book" not in resp.text
+
+    def test_tag_filter_matches_within_csv(self, client, make_book):
+        make_book(title="Multi Tagged", document_tags="alpha, beta, gamma")
+        resp = client.get("/library/ui", params={"tag": "beta"})
+        assert "Multi Tagged" in resp.text
+
+
 class TestAuthorSummaryCard:
     """The author-filtered library page shows a stats summary card."""
 

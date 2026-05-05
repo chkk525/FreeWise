@@ -90,11 +90,17 @@
 <!-- Mobile card view (<sm). Table is reserved for ≥sm via the `hidden sm:block` switch. -->
 <div class="sm:hidden space-y-3">
     {% for book in books %}
-    <a href="/library/ui/book/{{ book.id }}"
-       class="block bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:border-primary-500 transition-colors">
+    {# Card root is a div (not <a>) so tag chips below can be individual
+       links — nested <a> would be invalid HTML. The book title is the
+       primary tap target; the rest of the card carries hover styling
+       so it still reads as one unit. #}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm hover:border-primary-500 transition-colors">
         <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-                <h3 class="font-semibold text-gray-900 dark:text-white text-sm leading-snug line-clamp-2">{{ book.title }}</h3>
+                <a href="/library/ui/book/{{ book.id }}"
+                   class="block font-semibold text-gray-900 dark:text-white text-sm leading-snug line-clamp-2 hover:text-primary-600 dark:hover:text-primary-400">
+                    {{ book.title }}
+                </a>
                 {% if book.author %}
                 <p class="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">{{ book.author }}</p>
                 {% endif %}
@@ -104,21 +110,27 @@
                 </p>
                 {% endif %}
             </div>
-            <span class="shrink-0 inline-flex items-center gap-1 bg-amber-100 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-full text-xs font-semibold">
+            <a href="/library/ui/book/{{ book.id }}"
+               class="shrink-0 inline-flex items-center gap-1 bg-amber-100 dark:bg-amber-900/30 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-full text-xs font-semibold hover:bg-amber-200 dark:hover:bg-amber-900/50"
+               title="View book detail">
                 <i data-lucide="lightbulb" class="w-3 h-3"></i>
                 {{ book.highlight_count }}
-            </span>
+            </a>
         </div>
         {% if book.document_tags %}
+        {# Each tag is a clickable filter pill. Higher contrast on dark
+           mode (gray-200/gray-100 on gray-700) so chips stay legible. #}
         <div class="flex flex-wrap gap-1 mt-2">
             {% for tag in book.document_tags.split(',') %}
-            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] text-gray-600 dark:text-gray-400">
+            <a href="/library/ui?tag={{ tag.strip()|urlencode }}"
+               class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-[10px] text-gray-700 dark:text-gray-200 hover:bg-blue-100 dark:hover:bg-blue-900/40 hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
+               title="Filter library by tag">
                 {{ tag.strip() }}
-            </span>
+            </a>
             {% endfor %}
         </div>
         {% endif %}
-    </a>
+    </div>
     {% endfor %}
 </div>
 
@@ -180,10 +192,12 @@
                     {% if book.document_tags %}
                     <div class="flex flex-wrap gap-1 mt-1">
                         {% for tag in book.document_tags.split(',') %}
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs text-gray-600 dark:text-gray-400">
+                        <a href="/library/ui?tag={{ tag.strip()|urlencode }}"
+                           class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs text-gray-700 dark:text-gray-200 hover:bg-blue-100 dark:hover:bg-blue-900/40 hover:text-blue-800 dark:hover:text-blue-200 transition-colors"
+                           title="Filter library by tag">
                             <i data-lucide="tag" class="w-2.5 h-2.5"></i>
                             {{ tag.strip() }}
-                        </span>
+                        </a>
                         {% endfor %}
                     </div>
                     {% endif %}

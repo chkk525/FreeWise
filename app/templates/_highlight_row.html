@@ -129,6 +129,7 @@
                 hx-post="/highlights/{{ highlight.id }}/master"
                 hx-target="#highlight-{{ highlight.id }}"
                 hx-swap="outerHTML"
+                hx-confirm="Are you sure you want to {{ 'unmark mastered (return to review)' if highlight.is_mastered else 'mark mastered (exclude from review)' }} this highlight?"
                 data-toast-success="{{ 'Unmastered — back in review' if highlight.is_mastered else 'Mastered — excluded from review' }}"
                 title="{{ 'Unmark mastered (return to review queue)' if highlight.is_mastered else 'Mark mastered (excluded from review)' }}">
                 <i data-lucide="graduation-cap" class="w-4 h-4 {% if highlight.is_mastered %}fill-current{% endif %}"></i>
