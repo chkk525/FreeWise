@@ -261,13 +261,16 @@ _SECURITY_HEADERS = {
     # Conservative CSP: app uses inline <script> in api_tokens.html copy
     # button + several htmx data attrs, so we permit 'unsafe-inline' for now.
     # A future tightening pass should add per-script nonces.
+    # Cloudflare auto-injects beacon.min.js from static.cloudflareinsights.com
+    # on the public origin; allowlist it (script + connect) so the page
+    # doesn't throw a CSP violation on every load.
     "Content-Security-Policy": (
         "default-src 'self'; "
         "img-src 'self' data: https:; "
         "style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; "
         "font-src 'self' data:; "
-        "connect-src 'self'; "
+        "connect-src 'self' https://cloudflareinsights.com https://*.cloudflareinsights.com; "
         "frame-ancestors 'none'; "
         "base-uri 'self'"
     ),
