@@ -9,6 +9,7 @@ from datetime import datetime, date, UTC
 from app.db import get_session, get_settings, get_current_streak
 from app.models import Book, Highlight, Settings, ReviewSession
 from app.services.cold_books import cold_books as compute_cold_books
+from app.services.echoes import get_echoes
 from app.services.kindle_import_status import get_status as get_kindle_status
 from app.services.review_log import counts_by_day as review_log_counts_by_day
 from app.template_filters import make_templates
@@ -187,6 +188,11 @@ async def ui_dashboard(
         for entry in compute_cold_books(session, limit=5)
     ]
 
+    # Echoes — at most 3 cards drawn from anniversary / reread / neglect.
+    # Cheap query: ≤6 small SELECTs with random() ordering. Returns []
+    # gracefully when the library has no qualifying highlights.
+    echoes = get_echoes(session, limit=3)
+
     return templates.TemplateResponse(request, "dashboard.html", {"settings": settings,
         "daily_review_count": daily_review_count,
         "reviewed_today": reviewed_today,
@@ -209,7 +215,8 @@ async def ui_dashboard(
         "activity_counts": activity_counts,
         "activity_total": activity_total,
         "activity_max": activity_max,
-        "cold_books": cold_books_view})
+        "cold_books": cold_books_view,
+        "echoes": echoes})
 
 
 @router.get("/kindle/status")

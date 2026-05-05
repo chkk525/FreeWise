@@ -86,6 +86,10 @@ class Highlight(SQLModel, table=True):
     # Distinct from is_discarded ("never want to see this again"):
     # mastered rows still appear in library / search / exports.
     is_mastered: bool = Field(default=False, index=True)
+    # is_reread_target = "I want to read this book again." Surfaced by the
+    # Echoes dashboard widget; orthogonal to is_favorited (which is about
+    # the highlight itself, not the book it came from).
+    is_reread_target: bool = Field(default=False, index=True)
     next_review: Optional[datetime] = Field(default=None, index=True)
     last_reviewed_at: Optional[datetime] = Field(default=None, index=True)
     review_count: int = Field(default=0)

@@ -324,6 +324,22 @@ def ensure_schema_migrations(engine=None) -> None:
                 )
             )
 
+        # ── Highlight.is_reread_target (PR-E "Echoes") ───────────────────
+        # User flags individual highlights with 📖 "もう一度読みたい". The
+        # Echoes widget aggregates them by book and surfaces a card when
+        # at least one highlight in that book has the flag set.
+        if hl_cols and "is_reread_target" not in hl_cols:
+            _log.info("migration: adding highlight.is_reread_target column")
+            conn.execute(
+                text("ALTER TABLE highlight ADD COLUMN is_reread_target BOOLEAN NOT NULL DEFAULT 0")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_highlight_is_reread_target "
+                    "ON highlight (is_reread_target)"
+                )
+            )
+
         # ── Settings.language (i18n) ─────────────────────────────────────
         # Single-user app, so the column lives on the singleton settings
         # row; default 'en' so existing installs stay English until the

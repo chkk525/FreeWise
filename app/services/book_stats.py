@@ -31,6 +31,11 @@ class BookStats:
     discarded_count: int = 0
     favorited_count: int = 0
     mastered_count: int = 0
+    # `reviewed_count` = active highlights that have been surfaced in
+    # the review queue at least once (review_count > 0). Drives the
+    # "X / Y reviewed" progress bar on the book-detail page so users
+    # see a clear path to completing a book.
+    reviewed_count: int = 0
     avg_highlight_length: Optional[int] = None
     earliest_highlight_at: Optional[datetime] = None
     latest_highlight_at: Optional[datetime] = None
@@ -48,6 +53,13 @@ class BookStats:
         if self.active_count == 0:
             return 0.0
         return self.mastered_count / self.active_count
+
+    @property
+    def reviewed_fraction(self) -> float:
+        """Fraction of active highlights reviewed at least once (0.0 — 1.0)."""
+        if self.active_count == 0:
+            return 0.0
+        return self.reviewed_count / self.active_count
 
 
 def compute_book_stats(session: Session, book_id: int) -> BookStats:
@@ -90,6 +102,16 @@ def compute_book_stats(session: Session, book_id: int) -> BookStats:
                     else_=0,
                 )
             ),
+            func.sum(
+                case(
+                    (
+                        (Highlight.is_discarded == False)  # noqa: E712
+                        & (Highlight.review_count > 0),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
             func.avg(func.length(Highlight.text)),
             func.min(Highlight.created_at),
             func.max(Highlight.created_at),
@@ -104,6 +126,7 @@ def compute_book_stats(session: Session, book_id: int) -> BookStats:
         discarded,
         favorited,
         mastered,
+        reviewed,
         avg_len,
         min_at,
         max_at,
@@ -130,6 +153,7 @@ def compute_book_stats(session: Session, book_id: int) -> BookStats:
         discarded_count=int(discarded or 0),
         favorited_count=int(favorited or 0),
         mastered_count=int(mastered or 0),
+        reviewed_count=int(reviewed or 0),
         avg_highlight_length=int(round(avg_len)) if avg_len is not None else None,
         earliest_highlight_at=min_at,
         latest_highlight_at=max_at,

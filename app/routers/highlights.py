@@ -5,7 +5,7 @@ import math
 import random
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -1880,6 +1880,59 @@ async def toggle_master_html(
             detail="Cannot master a discarded highlight. Restore it first.",
         )
     highlight.is_mastered = not highlight.is_mastered
+    session.add(highlight)
+    session.commit()
+    session.refresh(highlight)
+
+    if context == "book":
+        return render_book_highlights_sections(request, highlight.book_id, session)
+    return templates.TemplateResponse(
+        request, "_highlight_row.html", {"highlight": highlight},
+    )
+
+
+@router.post("/{id}/touch", response_class=HTMLResponse)
+async def touch_highlight(
+    request: Request,
+    id: int,
+    session: Session = Depends(get_session),
+):
+    """Record a "I just looked at this" acknowledgment.
+
+    Bumps last_reviewed_at + review_count without any side effect on
+    favorite/discard/mastered state. Used by the Echoes widget's
+    "読み返した" button so a card the user has acknowledged stops
+    being surfaced as "neglected" on the next dashboard load.
+
+    Returns 204 — caller has nothing to swap; the toast already
+    confirmed the action visually.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    highlight.last_reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+    highlight.review_count = (highlight.review_count or 0) + 1
+    session.add(highlight)
+    session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/{id}/reread", response_class=HTMLResponse)
+async def toggle_reread_html(
+    request: Request,
+    id: int,
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Toggle is_reread_target — "I want to read this book again."
+
+    Independent of mastery + favorite. The dashboard Echoes widget
+    aggregates flagged highlights by book to suggest a re-read.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    highlight.is_reread_target = not highlight.is_reread_target
     session.add(highlight)
     session.commit()
     session.refresh(highlight)
