@@ -63,6 +63,31 @@ def autolink(text: str | None) -> Markup:
     return Markup("".join(parts))
 
 
+def localfmt(dt, fmt: str = "%b %d, %Y") -> str:
+    """Format a UTC datetime in the user's local timezone (JST for this fork).
+
+    Models store ``datetime.now(UTC).replace(tzinfo=None)`` — UTC time as a
+    naïve value. Templates were rendering that with bare ``strftime``,
+    so the date "next to" a UTC midnight rolled over a day before the
+    JS timestamp formatter (which uses the browser's locale and
+    correctly converts UTC → JST). Result was a flicker between
+    server-rendered "Apr 29" and JS-rendered "Apr 30" on every page
+    load. This filter brings the static fallback into the same TZ the
+    JS uses, eliminating the flicker.
+
+    Single-user fork: the locale is hard-coded to Asia/Tokyo. If a
+    future user wants a different TZ this becomes a settings lookup.
+    """
+    if dt is None:
+        return ""
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Asia/Tokyo")).strftime(fmt)
+
+
 def register(templates) -> None:
     """Attach all custom filters to a ``Jinja2Templates`` instance.
 
@@ -71,6 +96,7 @@ def register(templates) -> None:
     registers in one call.
     """
     templates.env.filters["autolink"] = autolink
+    templates.env.filters["localfmt"] = localfmt
 
 
 def make_templates(directory: str = "app/templates"):

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}{{ status_code }} {{ status_label }} — FreeWise{% endblock %}
+
+{% block heading %}{{ status_code }}{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto text-center py-8">
+    <div class="mb-6">
+        {% if status_code == 404 %}
+        <i data-lucide="search-x" class="w-20 h-20 mx-auto text-amber-500"></i>
+        {% else %}
+        <i data-lucide="alert-triangle" class="w-20 h-20 mx-auto text-rose-500"></i>
+        {% endif %}
+    </div>
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ status_label }}</h2>
+    <p class="text-gray-600 dark:text-gray-400 mb-6">
+        {% if status_code == 404 %}
+            お探しのページは見つかりませんでした。リンクが古いか、すでに削除された highlight / book かもしれません。
+        {% elif status_code == 500 %}
+            サーバ側で何かが壊れました。少し待ってからもう一度試すか、ダッシュボードに戻ってください。
+        {% else %}
+            {{ detail or "Something went wrong." }}
+        {% endif %}
+    </p>
+    {% if detail and status_code != 500 %}
+    <p class="text-xs text-gray-500 dark:text-gray-500 mb-6 font-mono">
+        {{ detail }}
+    </p>
+    {% endif %}
+    <div class="flex items-center justify-center gap-3 flex-wrap">
+        <a href="/dashboard/ui" class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-5 py-2.5 rounded-lg transition-colors">
+            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="/highlights/ui/search" class="inline-flex items-center gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 px-5 py-2.5 rounded-lg transition-colors">
+            <i data-lucide="search" class="w-4 h-4"></i>
+            <span>Search</span>
+        </a>
+    </div>
+</div>
+{% endblock %}

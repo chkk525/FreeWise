@@ -33,7 +33,7 @@
         {% if result.citations %}
         <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
             <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                {{ result.citations|length }} citation{{ 's' if result.citations|length != 1 else '' }}
+                {{ result.citations|length }} citation
             </h3>
             <ul class="space-y-2 text-sm">
                 {% for c in result.citations %}
