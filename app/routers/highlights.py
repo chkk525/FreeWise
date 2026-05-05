@@ -5,7 +5,7 @@ import math
 import random
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -1268,6 +1268,30 @@ async def ui_random(
     return templates.TemplateResponse(
         request, "_random_highlight.html", {"highlight": h, "is_today": False},
     )
+
+
+@router.get("/ui/random/go")
+async def ui_random_go(
+    session: Session = Depends(get_session),
+):
+    """302-redirect to one random non-discarded highlight's permalink.
+
+    Bound to the `r` keyboard shortcut. The companion `/ui/random` route
+    returns an HTMX partial used by the dashboard widget; this one
+    redirects to a full permalink page so a key press feels like a
+    Stumble-style "show me something" navigation. If the library is
+    empty we fall back to the dashboard rather than 404, since the
+    user pressed a navigation key.
+    """
+    h = session.exec(
+        select(Highlight.id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(func.random())
+        .limit(1)
+    ).first()
+    if h is None:
+        return RedirectResponse(url="/dashboard/ui", status_code=303)
+    return RedirectResponse(url=f"/highlights/ui/h/{h}", status_code=303)
 
 
 @router.get("/ui/today", response_class=HTMLResponse)

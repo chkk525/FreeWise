@@ -162,20 +162,26 @@
                         <dt><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Import</dd>
                         <dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Settings</dd>
                         <dt><kbd class="kbd">g</kbd> <kbd class="kbd">t</kbd></dt><dd class="text-gray-700 dark:text-gray-300">API tokens</dd>
-                        <dt><kbd class="kbd">u</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Up to dashboard</dd>
+                        <dt><kbd class="kbd">r</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Random highlight (Stumble)</dd>
                     </dl>
                 </div>
                 <div>
                     <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Review (on /highlights/ui/review)</h3>
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                        <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">e</kbd> / <kbd class="kbd">Space</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Done — next</dd>
+                        <dt><kbd class="kbd">e</kbd> / <kbd class="kbd">Space</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Done — next</dd>
                         <dt><kbd class="kbd">s</kbd> / <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Star (toggle favorite)</dd>
                         <dt><kbd class="kbd">x</kbd> / <kbd class="kbd">d</kbd> / <kbd class="kbd">#</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discard</dd>
                         <dt><kbd class="kbd">Enter</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Edit highlight</dd>
                     </dl>
+                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Lists (search / favorites / etc.)</h3>
+                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                        <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">k</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Next / previous highlight</dd>
+                        <dt><kbd class="kbd">n</kbd> / <kbd class="kbd">p</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Next / previous page</dd>
+                    </dl>
                     <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Anywhere</h3>
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                        <dt><kbd class="kbd">/</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Focus search box</dd>
+                        <dt><kbd class="kbd">/</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Focus search (or open search page)</dd>
+                        <dt><kbd class="kbd">⌘/Ctrl</kbd> <kbd class="kbd">k</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Quick search</dd>
                         <dt><kbd class="kbd">?</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Toggle this help</dd>
                         <dt><kbd class="kbd">Esc</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Close help / dismiss</dd>
                     </dl>
@@ -293,8 +299,98 @@
             return false;
         }
 
+        // Move scroll focus across [id^="highlight-"] cards on list pages.
+        // Tracks the index implicitly: on first j/k, anchor to the card
+        // currently nearest the top of the viewport, then step by ±1. Resets
+        // when the user scrolls manually (mousewheel/keyboard arrow), so a
+        // mid-page scroll plus a fresh `j` re-anchors to where the user is.
+        let _kbd_listIndex = -1;
+        let _kbd_listResetPending = false;
+        function _kbd_findCurrentCardIndex() {
+            const cards = Array.from(document.querySelectorAll('[id^="highlight-"]'));
+            if (cards.length === 0) return { cards, idx: -1 };
+            // The "current" card is the last one whose top is at or above
+            // the viewport top + 80px buffer (sticky header). If none yet,
+            // we're above the first one — anchor to it.
+            const cutoff = 80;
+            let idx = -1;
+            for (let i = 0; i < cards.length; i++) {
+                if (cards[i].getBoundingClientRect().top <= cutoff) idx = i;
+                else break;
+            }
+            if (idx === -1) idx = 0;
+            return { cards, idx };
+        }
+        function _kbd_listStep(delta) {
+            if (_kbd_listIndex < 0 || _kbd_listResetPending) {
+                const { idx } = _kbd_findCurrentCardIndex();
+                if (idx < 0) return false;
+                _kbd_listIndex = idx;
+                _kbd_listResetPending = false;
+            }
+            const cards = Array.from(document.querySelectorAll('[id^="highlight-"]'));
+            if (cards.length === 0) return false;
+            const next = Math.max(0, Math.min(cards.length - 1, _kbd_listIndex + delta));
+            _kbd_listIndex = next;
+            const target = cards[next];
+            if (!target) return false;
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Brief outline so the user sees which card is "active".
+            target.classList.add('ring-2', 'ring-primary-400');
+            setTimeout(function () {
+                target.classList.remove('ring-2', 'ring-primary-400');
+            }, 700);
+            return true;
+        }
+        // Reset card-anchor when the user manually scrolls — that signals
+        // they've moved their attention away, so the next j/k should
+        // re-anchor based on viewport, not the stale index.
+        window.addEventListener('wheel', function () { _kbd_listResetPending = true; }, { passive: true });
+        window.addEventListener('touchmove', function () { _kbd_listResetPending = true; }, { passive: true });
+
+        function _kbd_clickPagination(direction) {
+            const sel = direction === 'next'
+                ? '[data-pagination-next]'
+                : '[data-pagination-prev]';
+            const link = document.querySelector(sel);
+            if (link && link.getAttribute('href')) {
+                window.location.href = link.getAttribute('href');
+                return true;
+            }
+            return false;
+        }
+
+        function _kbd_focusOrOpenSearch() {
+            const search = document.getElementById('global-search-input');
+            if (search && search.offsetParent !== null) {
+                // offsetParent === null means hidden (e.g. `hidden sm:block`
+                // collapses it on mobile). Only focus when actually visible.
+                search.focus();
+                search.select();
+                return;
+            }
+            // Mobile / narrow screens hide the global box — go to the
+            // dedicated search page so the shortcut works everywhere.
+            window.location.href = '/highlights/ui/search';
+        }
+
         document.addEventListener('keydown', function (e) {
+            // IME composition guard: while a Japanese / Chinese / Korean
+            // IME is mid-conversion, keydown fires with key='Process' and
+            // keyCode 229. Stealing those breaks kana → kanji and similar
+            // composers — drop the event without preventDefault so the
+            // composer still receives it normally.
+            if (e.isComposing || e.keyCode === 229) return;
             if (_kbd_isTextInput(e.target)) return;
+
+            // Cmd/Ctrl+K opens quick-search. Handled BEFORE the
+            // modifier-only skip below so we don't drop it. Other
+            // modifier combos still pass through to the browser/OS.
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                _kbd_focusOrOpenSearch();
+                return;
+            }
             if (e.metaKey || e.ctrlKey || e.altKey) return;
 
             const help = document.getElementById('kbd-help-modal');
@@ -316,22 +412,12 @@
                 return;
             }
 
-            // u → up to dashboard.
-            if (e.key === 'u' && !_gPrefixActive) {
-                window.location.href = '/dashboard/ui';
+            // / → focus the global search box, or send the user to the
+            // search page if the inline box is hidden (mobile layout).
+            if (e.key === '/' && !_gPrefixActive) {
+                _kbd_focusOrOpenSearch();
                 e.preventDefault();
                 return;
-            }
-
-            // / → focus the global search box (Gmail / GitHub convention).
-            if (e.key === '/' && !_gPrefixActive) {
-                const search = document.getElementById('global-search-input');
-                if (search) {
-                    search.focus();
-                    search.select();
-                    e.preventDefault();
-                    return;
-                }
             }
 
             // Two-key g+letter navigation.
@@ -353,29 +439,70 @@
             }
 
             // Page-specific action keys — these click an action button if
-            // it's on the current page; missing = no-op.
+            // it's on the current page; missing = no-op (so j/k below get
+            // a chance on list pages).
             switch (e.key) {
-                case 'j':
                 case 'e':
                 case ' ':
-                    if (_kbd_clickIfPresent('review-done-btn')) e.preventDefault();
-                    break;
-                case 'k':
-                    // Best-effort "previous": currently no-op since the
-                    // review queue is forward-only. Reserved for future.
+                    if (_kbd_clickIfPresent('review-done-btn')) {
+                        e.preventDefault();
+                        return;
+                    }
                     break;
                 case 's':
                 case 'f':
-                    if (_kbd_clickIfPresent('review-fav-btn')) e.preventDefault();
+                    if (_kbd_clickIfPresent('review-fav-btn')) {
+                        e.preventDefault();
+                        return;
+                    }
                     break;
                 case 'x':
                 case 'd':
                 case '#':
-                    if (_kbd_clickIfPresent('review-discard-btn')) e.preventDefault();
+                    if (_kbd_clickIfPresent('review-discard-btn')) {
+                        e.preventDefault();
+                        return;
+                    }
                     break;
                 case 'Enter':
-                    if (_kbd_clickIfPresent('review-edit-btn')) e.preventDefault();
+                    if (_kbd_clickIfPresent('review-edit-btn')) {
+                        e.preventDefault();
+                        return;
+                    }
                     break;
+            }
+
+            // List navigation. j tries Done first (review page); if no
+            // review-done-btn exists we treat j as "next card" on lists.
+            if (e.key === 'j') {
+                if (_kbd_clickIfPresent('review-done-btn')) {
+                    e.preventDefault();
+                    return;
+                }
+                if (_kbd_listStep(1)) e.preventDefault();
+                return;
+            }
+            if (e.key === 'k') {
+                if (_kbd_listStep(-1)) e.preventDefault();
+                return;
+            }
+
+            // Pagination.
+            if (e.key === 'n') {
+                if (_kbd_clickPagination('next')) e.preventDefault();
+                return;
+            }
+            if (e.key === 'p') {
+                if (_kbd_clickPagination('prev')) e.preventDefault();
+                return;
+            }
+
+            // Random-highlight redirect ("Stumble"). Server picks one and
+            // 302s to its permalink. Useful from anywhere.
+            if (e.key === 'r') {
+                window.location.href = '/highlights/ui/random/go';
+                e.preventDefault();
+                return;
             }
         });
 

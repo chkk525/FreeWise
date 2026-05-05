@@ -598,6 +598,29 @@ class TestRandomHighlight:
         assert "No highlights" in resp.text
 
 
+class TestRandomHighlightRedirect:
+    """GET /highlights/ui/random/go — keyboard-shortcut Stumble redirect."""
+
+    def test_go_redirects_to_a_permalink(self, client, make_highlight):
+        h = make_highlight(text="pick me")
+        resp = client.get("/highlights/ui/random/go", follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == f"/highlights/ui/h/{h.id}"
+
+    def test_go_skips_discarded(self, client, make_highlight):
+        make_highlight(text="dead", is_discarded=True)
+        live = make_highlight(text="live")
+        for _ in range(8):
+            resp = client.get("/highlights/ui/random/go", follow_redirects=False)
+            assert resp.status_code == 303
+            assert resp.headers["location"] == f"/highlights/ui/h/{live.id}"
+
+    def test_go_falls_back_to_dashboard_when_empty(self, client):
+        resp = client.get("/highlights/ui/random/go", follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/dashboard/ui"
+
+
 class TestTagDetailPage:
     """GET /highlights/ui/tag/{name} — per-tag listing."""
 
