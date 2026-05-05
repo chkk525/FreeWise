@@ -75,7 +75,7 @@
             Book title, author, highlights, notes, and reading order will be imported automatically.
         </p>
         
-        <form method="post" action="/import/ui/meebook" enctype="multipart/form-data" id="upload-form">
+        <form hx-boost="false" method="post" action="/import/ui/meebook" enctype="multipart/form-data" id="upload-form">
             <input type="hidden" name="diagnostic" value="true">
             <div class="bg-white dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-12 mb-6 text-center hover:border-teal-500 dark:hover:border-teal-400 transition-colors">
                 <i data-lucide="tablet-smartphone" class="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4"></i>
