@@ -1,7 +1,8 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.template_filters import make_templates
@@ -129,6 +130,91 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Content-Encoding"],
     max_age=86400,
 )
+
+
+_STATUS_LABELS: dict[int, str] = {
+    400: "Bad Request",
+    401: "Sign in required",
+    403: "Forbidden",
+    404: "Page not found",
+    405: "Method not allowed",
+    422: "Could not understand the request",
+    500: "Internal Server Error",
+}
+
+
+def _wants_html(request: Request) -> bool:
+    """Decide whether to render the branded error page or fall back to JSON.
+
+    Rule of thumb:
+    - A real browser navigation sends `Accept: text/html, …` — render HTML.
+    - HTMX swaps set `HX-Request: true` and the surrounding page is HTML —
+      render HTML so the partial slot fills with a sensible message.
+    - Everything else (curl, the FastAPI TestClient with the default
+      `Accept: */*`, the CLI, the Chrome extension, /api/* / /export/*)
+      gets JSON so machine clients can parse the failure cleanly.
+
+    A typo'd HTML URL is the case we want to upgrade — the FastAPI
+    default of `{"detail":"Not Found"}` looks like the site is broken.
+    """
+    # API surfaces always speak JSON regardless of what the client says
+    # in Accept — the CLI, extension, and MCP all hit /api/* and need
+    # machine-readable errors, and /export/* is consumed by file
+    # downloaders that have no use for HTML.
+    path = request.url.path
+    if path.startswith("/api/") or path.startswith("/export/"):
+        return False
+    if request.headers.get("hx-request") == "true":
+        return True
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Render branded HTML for clicked URLs; fall through to FastAPI's default
+    JSON shape for API/programmatic clients (so curl, the CLI, and the
+    Chrome extension still see structured errors)."""
+    if not _wants_html(request):
+        # Re-raise so FastAPI's default JSON handler runs.
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None) or {},
+        )
+    label = _STATUS_LABELS.get(exc.status_code, "Error")
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "status_code": exc.status_code,
+            "status_label": label,
+            "detail": exc.detail if isinstance(exc.detail, str) else None,
+        },
+        status_code=exc.status_code,
+    )
+
+
+@app.exception_handler(500)
+async def internal_error_handler(request: Request, exc: Exception):
+    if not _wants_html(request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=500, content={"detail": "Internal Server Error"},
+        )
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "status_code": 500,
+            "status_label": _STATUS_LABELS[500],
+            "detail": None,
+        },
+        status_code=500,
+    )
 
 
 _STREAK_BEARING_PATHS: tuple[str, ...] = (

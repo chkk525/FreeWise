@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="{{ settings.theme if settings else 'light' }}">
+<html lang="ja" data-theme="{{ settings.theme if settings else 'light' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -282,7 +282,7 @@
             t: '/import/api-token',
             v: '/highlights/ui/activity',
         };
-        let _gPrefixActive = false;
+        let _gPrefixOn = false;
         let _gTimer = null;
 
         function _kbd_isTextInput(t) {
@@ -401,7 +401,7 @@
                     help.classList.add('hidden');
                     e.preventDefault();
                 }
-                _gPrefixActive = false;
+                _gPrefixOn = false;
                 return;
             }
 
@@ -414,16 +414,16 @@
 
             // / → focus the global search box, or send the user to the
             // search page if the inline box is hidden (mobile layout).
-            if (e.key === '/' && !_gPrefixActive) {
+            if (e.key === '/' && !_gPrefixOn) {
                 _kbd_focusOrOpenSearch();
                 e.preventDefault();
                 return;
             }
 
             // Two-key g+letter navigation.
-            if (_gPrefixActive) {
+            if (_gPrefixOn) {
                 const dest = _NAV_TARGETS[e.key.toLowerCase()];
-                _gPrefixActive = false;
+                _gPrefixOn = false;
                 if (_gTimer) { clearTimeout(_gTimer); _gTimer = null; }
                 if (dest) {
                     window.location.href = dest;
@@ -432,8 +432,8 @@
                 return;
             }
             if (e.key === 'g') {
-                _gPrefixActive = true;
-                _gTimer = setTimeout(function () { _gPrefixActive = false; }, 1500);
+                _gPrefixOn = true;
+                _gTimer = setTimeout(function () { _gPrefixOn = false; }, 1500);
                 e.preventDefault();
                 return;
             }

@@ -31,7 +31,7 @@
             <i data-lucide="zap" class="w-16 h-16 text-amber-200"></i>
         </div>
         <h2 class="text-2xl sm:text-3xl font-semibold mb-3 text-amber-50">
-            Only {{ active_highlights }} Highlight{{ 's' if active_highlights != 1 else '' }} Available
+            Only {{ active_highlights }} Highlight Available
         </h2>
         <p class="text-lg mb-6 text-amber-100/90">
             Please import more highlights to get the full experience.
@@ -177,7 +177,7 @@
         <i data-lucide="activity" class="w-5 h-5 text-emerald-600 dark:text-emerald-400"></i>
         Past 7 days
         <a href="/highlights/ui/activity" class="ml-auto text-xs font-normal text-gray-500 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 inline-flex items-center gap-1" title="See full activity timeline">
-            <span>{{ activity_total }} action{{ 's' if activity_total != 1 else '' }}</span>
+            <span>{{ activity_total }} action</span>
             <i data-lucide="arrow-right" class="w-3 h-3"></i>
         </a>
     </h3>
@@ -264,7 +264,7 @@
         {% for t in tag_cloud %}
         <a href="/highlights/ui/tag/{{ t.name|urlencode }}"
            class="{{ _SIZE_CLS.get(t.size, 'text-base') }} font-medium text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100 hover:underline transition-colors"
-           title="{{ t.count }} highlight{{ 's' if t.count != 1 else '' }}">{{ t.name }}<span class="text-xs text-gray-500 dark:text-gray-400 ml-0.5">·{{ t.count }}</span></a>
+           title="{{ t.count }} highlight">{{ t.name }}<span class="text-xs text-gray-500 dark:text-gray-400 ml-0.5">·{{ t.count }}</span></a>
         {% endfor %}
     </div>
 </div>
@@ -512,8 +512,8 @@
             <dt class="text-gray-500 dark:text-gray-400 font-medium">Last batch</dt>
             <dd class="text-gray-900 dark:text-white">
                 {% if kindle_status.last_imported_books is not none %}
-                    {{ kindle_status.last_imported_books }} book{{ 's' if kindle_status.last_imported_books != 1 else '' }},
-                    {{ kindle_status.last_imported_highlights }} highlight{{ 's' if kindle_status.last_imported_highlights != 1 else '' }}
+                    {{ kindle_status.last_imported_books }} book,
+                    {{ kindle_status.last_imported_highlights }} highlight
                 {% else %}
                     <span class="text-gray-400">—</span>
                 {% endif %}
@@ -530,8 +530,8 @@
         <div>
             <dt class="text-gray-500 dark:text-gray-400 font-medium">Kindle totals</dt>
             <dd class="text-gray-900 dark:text-white">
-                {{ kindle_status.total_kindle_books }} book{{ 's' if kindle_status.total_kindle_books != 1 else '' }},
-                {{ kindle_status.total_kindle_highlights }} highlight{{ 's' if kindle_status.total_kindle_highlights != 1 else '' }}
+                {{ kindle_status.total_kindle_books }} book,
+                {{ kindle_status.total_kindle_highlights }} highlight
             </dd>
         </div>
     </dl>
@@ -539,9 +539,12 @@
 {% endif %}
 
 <script>
+    // Lucide icons are already wired by base.html (`initAll`) on
+    // DOMContentLoaded and on every htmx swap; we used to re-call
+    // createIcons() here, but that piled up duplicate work and
+    // re-replaced freshly-rendered icons mid-frame. Just bind the
+    // dashboard-only heatmap renderer.
     document.addEventListener('DOMContentLoaded', function() {
-        lucide.createIcons();
-        
         // Initialize highlight creation heatmap
         const heatmapData = {{ heatmap_data | tojson }};
         if (Object.keys(heatmapData).length > 0) {

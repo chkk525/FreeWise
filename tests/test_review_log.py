@@ -203,4 +203,6 @@ def test_dashboard_widget_singular_vs_plural(client, db, make_highlight):
     db.refresh(h)
     h.is_discarded = True; db.add(h); db.commit()
     resp = client.get("/")
-    assert "2 actions" in resp.text  # plural
+    # Plural `s` was stripped from dashboard counters in the CX cleanup so
+    # JP users don't read "1 actions"; the count alone communicates.
+    assert "2 action" in resp.text
