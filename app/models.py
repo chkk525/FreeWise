@@ -164,7 +164,11 @@ class Settings(SQLModel, table=True):
     daily_review_count: int = Field(default=5)
     highlight_recency: int = Field(default=5)  # 0=prefer older, 5=neutral, 10=prefer newer
     theme: str = Field(default="light")
-    
+    # UI language. "en" = English (default), "ja" = 日本語. Drives the
+    # `t` Jinja filter and the <html lang="…"> attribute. Adding more
+    # languages = add a key to app.i18n.TRANSLATIONS and an option here.
+    language: str = Field(default="en")
+
     def __repr__(self) -> str:
         return f"Settings(id={self.id}, daily_review_count={self.daily_review_count}, highlight_recency={self.highlight_recency})"
 

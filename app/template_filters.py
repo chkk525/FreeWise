@@ -95,8 +95,31 @@ def register(templates) -> None:
     new code should prefer ``make_templates()`` which builds and
     registers in one call.
     """
+    from jinja2 import pass_context
+
+    from app.i18n import DEFAULT_LANGUAGE, t as _t
+
+    @pass_context
+    def t_global(ctx, key: str) -> str:
+        """Translate via the template's `settings.language`.
+
+        Wired as a Jinja global so templates can write the natural
+        ``{{ t("Library") }}`` instead of ``{{ "Library" | t(settings.language) }}``
+        every time. The decorator gives us access to the rendering
+        context, which already carries the singleton settings row on
+        every route.
+        """
+        settings = ctx.get("settings")
+        lang = getattr(settings, "language", None) or DEFAULT_LANGUAGE
+        return _t(key, lang)
+
     templates.env.filters["autolink"] = autolink
     templates.env.filters["localfmt"] = localfmt
+    # Both forms supported: `{{ t("Library") }}` and `{{ "Library" | t }}`.
+    # The filter form is handy in chained expressions; the global form
+    # is what the templates use for the bulk of UI strings.
+    templates.env.filters["t"] = t_global
+    templates.env.globals["t"] = t_global
 
 
 def make_templates(directory: str = "app/templates"):

@@ -16,7 +16,11 @@ from app.services.kindle_cookie import (
 )
 
 router = APIRouter(prefix="/dashboard/kindle", tags=["dashboard"])
-templates = Jinja2Templates(directory="app/templates")
+# Use the shared factory so this router inherits autolink/localfmt/t.
+# Building Jinja2Templates inline would skip the i18n `t` global and
+# crash the kindle status page for users on language=ja.
+from app.template_filters import make_templates as _make_templates
+templates = _make_templates()
 
 
 def _target_path() -> Path:

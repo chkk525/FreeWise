@@ -9,6 +9,7 @@ from sqlmodel import Session, select, func
 from starlette.background import BackgroundTask
 
 from app.db import get_engine, get_session, get_settings
+from app.i18n import LANGUAGES
 from app.models import Settings, Highlight
 from app.template_filters import make_templates
 
@@ -45,6 +46,7 @@ async def ui_settings(
         flash = _FLASH_MESSAGES["reset"]
     return templates.TemplateResponse(request, "settings.html", {"settings": settings,
         "highlights_count": highlights_count,
+        "available_languages": LANGUAGES,
         "success_message": flash})
 
 
@@ -54,6 +56,7 @@ async def update_settings_ui(
     daily_review_count: int = Form(...),
     highlight_recency: int = Form(...),
     theme: str = Form(...),
+    language: str = Form("en"),
     session: Session = Depends(get_session),
 ):
     """Update settings, then redirect (PRG) so a refresh doesn't re-submit."""
@@ -62,6 +65,10 @@ async def update_settings_ui(
     settings.daily_review_count = max(1, min(15, daily_review_count))
     settings.highlight_recency = max(0, min(10, highlight_recency))
     settings.theme = theme
+    # Reject unknown language codes — fall back to English so a user
+    # can't lock themselves into an unsupported locale via crafted POST.
+    valid_langs = {code for code, _ in LANGUAGES}
+    settings.language = language if language in valid_langs else "en"
 
     session.add(settings)
     session.commit()
