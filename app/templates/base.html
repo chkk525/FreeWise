@@ -59,6 +59,16 @@
                         <i data-lucide="settings" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">{{ t("Settings") }}</span>
                     </a>
+                    {# Mobile-only search shortcut. The inline form below is
+                       hidden on <sm to keep the nav uncluttered, so we give
+                       phones a tappable icon that jumps to the dedicated
+                       search page instead of fully removing the surface. #}
+                    <a href="/highlights/ui/search"
+                       class="sm:hidden flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                       aria-label="{{ t('Search') }}"
+                       title="{{ t('Search') }}">
+                        <i data-lucide="search" class="w-5 h-5"></i>
+                    </a>
                 </div>
                 <!-- Search box: full-text across all highlights. Press / to focus. -->
                 <form method="get" action="/highlights/ui/search" class="flex-1 max-w-xs hidden sm:block">

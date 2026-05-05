@@ -330,6 +330,23 @@ _JA: Final[dict[str, str]] = {
     # overriding it with a verb form.
     "Favorited": "お気に入りに追加しました",
     "Unfavorited": "お気に入りを解除しました",
+
+    # ── Dashboard CTA card (PR-G empty-state polish) ────────────────────
+    "No Highlights Available": "ハイライトがありません",
+    "Please import some highlights to get started.": "ハイライトをインポートして始めましょう。",
+    "Please import more highlights to get the full experience.": "もっとハイライトをインポートしてフル体験を楽しみましょう。",
+    "Start Review": "復習を始める",
+    "Import More": "さらにインポート",
+    "Start Your Daily Review": "今日の復習を始める",
+    "Great Job!": "お疲れさまでした！",
+    "Review More": "もっと復習する",
+    "highlights waiting for you": "件のハイライトが待っています",
+    "highlight waiting for you": "件のハイライトが待っています",
+    "You already reviewed": "今日はすでに",
+    "highlights today": "件のハイライトを復習しました",
+    "Only": "残り",
+    "Highlight Available": "件",
+    "Highlights Available": "件",
 }
 
 
