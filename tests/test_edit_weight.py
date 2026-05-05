@@ -49,6 +49,11 @@ class FakeHighlight:
 
 def _render(hw):
     env = Environment(loader=FileSystemLoader(str(ROOT / "app" / "templates")))
+    # Register the i18n `t` filter/global so templates that call `{{ ... | t }}`
+    # render in tests without pulling the full FastAPI templating stack.
+    from app.i18n import t as _i18n_t
+    env.filters["t"] = lambda key: _i18n_t(key, "en")
+    env.globals["t"] = lambda key: _i18n_t(key, "en")
     tpl = env.get_template("_highlight_edit.html")
     return tpl.render(highlight=FakeHighlight(id=99, hw=hw), context="book", request=None)
 

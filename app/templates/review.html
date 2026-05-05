@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}Daily Review - FreeWise{% endblock %}
+{% block title %}{{ t("Daily Review - FreeWise") }}{% endblock %}
 
-{% block heading %}Daily Review{% endblock %}
+{% block heading %}{{ t("Daily Review") }}{% endblock %}
 
 {% block content %}
 <div class="flex flex-col items-center pt-2 pb-8">
@@ -15,13 +15,13 @@
                 <div class="mb-6">
                     <i data-lucide="book-open" class="w-20 h-20 mx-auto text-amber-500"></i>
                 </div>
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">No highlights yet</h2>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ t("No highlights yet") }}</h2>
                 <p class="text-gray-600 dark:text-gray-400 mb-6">
-                    Import some highlights from Readwise, Kindle, Meebook, or a custom CSV to start your review streak.
+                    {{ t("Import some highlights from Readwise, Kindle, Meebook, or a custom CSV to start your review streak.") }}
                 </p>
                 <a href="/import/ui" class="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg transition-colors">
                     <i data-lucide="upload" class="w-5 h-5"></i>
-                    <span>Import highlights</span>
+                    <span>{{ t("Import highlights") }}</span>
                 </a>
             </div>
         {% else %}
@@ -29,13 +29,13 @@
                 <div class="mb-6">
                     <i data-lucide="check-circle" class="w-20 h-20 mx-auto text-green-500"></i>
                 </div>
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">All Done!</h2>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ t("All Done!") }}</h2>
                 <p class="text-gray-600 dark:text-gray-400 mb-6">
-                    No highlights available for review today. Great job staying on top of things!
+                    {{ t("No highlights available for review today. Great job staying on top of things!") }}
                 </p>
                 <a href="/dashboard/ui" class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg transition-colors">
                     <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                    <span>Back to Dashboard</span>
+                    <span>{{ t("Back to Dashboard") }}</span>
                 </a>
             </div>
         {% endif %}
