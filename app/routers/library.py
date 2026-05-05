@@ -48,10 +48,25 @@ async def ui_library(
 
     Query params: sort (title|author|highlight_count|last_highlight),
     order (asc|desc), page (1-based), page_size (1..200).
+
+    Sort/order persistence: when the user clicks a column header we save
+    the choice in `fw_lib_sort` / `fw_lib_order` cookies. Subsequent
+    visits to /library/ui without explicit params reuse those values so
+    the user lands on their preferred view instead of the global default.
     """
     settings = get_settings(session)
 
     valid_sorts = {"title", "author", "highlight_count", "last_highlight"}
+    # Honour cookie-stored preference only when the URL didn't carry an
+    # explicit sort/order. This keeps shareable links deterministic.
+    if "sort" not in request.query_params:
+        cookie_sort = request.cookies.get("fw_lib_sort")
+        if cookie_sort in valid_sorts:
+            sort = cookie_sort
+    if "order" not in request.query_params:
+        cookie_order = request.cookies.get("fw_lib_order")
+        if cookie_order in ("asc", "desc"):
+            order = cookie_order
     if sort not in valid_sorts:
         sort = "highlight_count"
     if order not in ("asc", "desc"):
@@ -195,7 +210,7 @@ async def ui_library(
                 "last_highlight_at": stats_row[4],
             }
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "library.html",
         {
@@ -215,6 +230,16 @@ async def ui_library(
             "author_summary": author_summary,
         },
     )
+    # Persist current sort/order so the next bare /library/ui visit lands
+    # on the user's preferred view. 1-year max-age — pure UX preference,
+    # nothing sensitive.
+    response.set_cookie(
+        "fw_lib_sort", sort, max_age=60 * 60 * 24 * 365, httponly=False, samesite="lax"
+    )
+    response.set_cookie(
+        "fw_lib_order", order, max_age=60 * 60 * 24 * 365, httponly=False, samesite="lax"
+    )
+    return response
 
 
 @router.get("/ui/authors", response_class=HTMLResponse)
