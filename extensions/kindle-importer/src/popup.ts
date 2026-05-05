@@ -43,7 +43,7 @@ function renderSettings(): void {
     <label>
       <span class="label-text">Server URL</span>
       <input id="server" type="url"
-             placeholder="https://freewiseapi.chikaki.com">
+             placeholder="https://freewise.chikaki.com or http://192.168.0.171:8063">
     </label>
     <label>
       <span class="label-text">API Token</span>

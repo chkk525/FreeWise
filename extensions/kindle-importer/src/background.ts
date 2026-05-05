@@ -236,7 +236,37 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
     return;
   }
 
-  const result = (await response.json()) as ImportResult;
+  // The endpoint normally returns JSON, but a fronting proxy (Cloudflare
+  // Access, an auth wall, a generic "site not found" page) can return 200
+  // OK with an HTML body. Catching that here gives a meaningful error
+  // instead of a SyntaxError from JSON.parse.
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const text = await response.text();
+    const isCfAccess =
+      response.headers.get('cf-mitigated') !== null ||
+      response.headers.get('cf-access-jwt-assertion') !== null ||
+      /cloudflare\s*access/i.test(text) ||
+      /<title>[^<]*just a moment/i.test(text);
+    const hint = isCfAccess
+      ? 'Cloudflare Access is blocking the API. Either point the extension at a non-tunneled URL (e.g. http://192.168.0.171:8063), or exclude /api/v2/* from your Access policy / use a service token.'
+      : `Server returned ${contentType || 'no content-type'} (expected JSON). First 200 chars: ${text.slice(0, 200)}`;
+    void broadcastTerminal({ type: 'error', reason: hint });
+    cleanup();
+    return;
+  }
+
+  let result: ImportResult;
+  try {
+    result = (await response.json()) as ImportResult;
+  } catch (err) {
+    void broadcastTerminal({
+      type: 'error',
+      reason: `Could not parse server response as JSON: ${String(err)}`,
+    });
+    cleanup();
+    return;
+  }
   if (collectedErrors.length > 0) {
     result.errors = (result.errors ?? []).concat(collectedErrors);
   }
