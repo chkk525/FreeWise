@@ -170,6 +170,9 @@
 <div id="dashboard-health" class="mb-6"
      hx-get="/dashboard/ui/health" hx-trigger="load once" hx-swap="innerHTML"></div>
 
+{# ── Echoes widget (PR-E): natural review nudges + re-read sparks ─── #}
+{% include "_echoes_widget.html" %}
+
 {# ── 7-day review activity ─────────────────────────────────────────── #}
 {% if activity_counts %}
 <div class="mb-6 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6">
