@@ -182,10 +182,12 @@
         </div>
 
         <!-- Page Title — capped at text-heading (32px) per Minna's no-display-
-             shouting rule for product UI. .title-font alias still works
-             (now points at Inter via input.css). -->
+             shouting rule for product UI. The yellow vbar prefix is the
+             brand's primary heading signature (§2.1) — every H2 carries one.
+             .title-font alias still works (now points at Inter via input.css). -->
         <div class="mb-8">
-            <h2 class="text-heading text-text-1">
+            <h2 class="text-heading text-text-1 inline-flex items-center gap-3">
+                <span class="vbar"></span>
                 {% block heading %}FreeWise{% endblock %}
             </h2>
         </div>

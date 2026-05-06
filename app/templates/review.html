@@ -10,30 +10,41 @@
         {% if total > 0 %}
             {% include "_review_card.html" %}
         {% elif total_active_highlights == 0 %}
-            {# Brand-new user: nothing to review because nothing imported yet. #}
-            <div class="text-center">
+            {# Brand-new user: nothing to review because nothing imported
+               yet. The page's single yellow stamp lives on the Import CTA
+               since that's the only forward path from here. #}
+            <div class="text-center pt-8">
                 <div class="mb-6">
-                    <i data-lucide="book-open" class="w-20 h-20 mx-auto text-amber-500"></i>
+                    <i data-lucide="book-open" class="w-20 h-20 mx-auto text-text-3"></i>
                 </div>
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ t("No highlights yet") }}</h2>
-                <p class="text-gray-600 dark:text-gray-400 mb-6">
+                <h2 class="text-2xl font-bold text-text-1 mb-3 inline-flex items-center gap-2">
+                    <span class="mn-stamp-bar align-middle"></span>
+                    {{ t("No highlights yet") }}
+                </h2>
+                <p class="text-text-2 mb-6 max-w-md mx-auto">
                     {{ t("Import some highlights from Readwise, Kindle, Meebook, or a custom CSV to start your review streak.") }}
                 </p>
-                <a href="/import/ui" class="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg transition-colors">
+                <a href="/import/ui" class="mn-btn-primary">
                     <i data-lucide="upload" class="w-5 h-5"></i>
                     <span>{{ t("Import highlights") }}</span>
                 </a>
             </div>
         {% else %}
-            <div class="text-center">
+            {# Daily queue cleared. Status icon is --success (green is
+               semantic, allowed); the page carries no yellow stamp because
+               there is no actionable next step. #}
+            <div class="text-center pt-8">
                 <div class="mb-6">
-                    <i data-lucide="check-circle" class="w-20 h-20 mx-auto text-green-500"></i>
+                    <i data-lucide="check-circle" class="w-20 h-20 mx-auto text-success"></i>
                 </div>
-                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ t("All Done!") }}</h2>
-                <p class="text-gray-600 dark:text-gray-400 mb-6">
+                <h2 class="text-2xl font-bold text-text-1 mb-3 inline-flex items-center gap-2">
+                    <span class="mn-stamp-bar align-middle"></span>
+                    {{ t("All Done!") }}
+                </h2>
+                <p class="text-text-2 mb-6 max-w-md mx-auto">
                     {{ t("No highlights available for review today. Great job staying on top of things!") }}
                 </p>
-                <a href="/dashboard/ui" class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg transition-colors">
+                <a href="/dashboard/ui" class="mn-btn-secondary">
                     <i data-lucide="arrow-left" class="w-5 h-5"></i>
                     <span>{{ t("Back to Dashboard") }}</span>
                 </a>
