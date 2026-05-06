@@ -54,6 +54,27 @@ def _env_generate_model() -> str:
     return os.environ.get("FREEWISE_OLLAMA_GENERATE_MODEL", "llama3.2")
 
 
+def _env_embed_text_max_chars() -> int:
+    """Max chars sent to Ollama's embedding endpoint per highlight.
+
+    Nomic's embedding context is short enough that very long Japanese
+    highlights can exceed it even at a few thousand characters. Trimming
+    long highlights keeps backfill resumable while preserving enough text
+    for retrieval and duplicate detection.
+    """
+    raw = os.environ.get("FREEWISE_EMBED_TEXT_MAX_CHARS", "1000")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 1000
+
+
+def _embedding_input(text: str) -> str:
+    """Return the bounded text sent to the embedding model."""
+    max_chars = _env_embed_text_max_chars()
+    return (text or "").strip()[:max_chars]
+
+
 # ── Errors ─────────────────────────────────────────────────────────────────
 
 
@@ -383,7 +404,7 @@ def backfill_embeddings(
     dim: int | None = None
 
     for h in rows:
-        text = (h.text or "").strip()
+        text = _embedding_input(h.text or "")
         if not text:
             skipped += 1
             continue

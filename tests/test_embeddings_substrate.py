@@ -383,6 +383,20 @@ def test_backfill_embeds_pending_rows(db, make_highlight):
     assert report2.skipped == 0
 
 
+def test_backfill_truncates_long_highlights_for_embedding(db, make_highlight, monkeypatch):
+    from app.services.embeddings import backfill_embeddings
+
+    monkeypatch.setenv("FREEWISE_EMBED_TEXT_MAX_CHARS", "5")
+    make_highlight(text="abcdefghijklmnopqrstuvwxyz")
+    client = _fake_ollama({"abcde": [1.0]})
+
+    report = backfill_embeddings(db, model="m", batch_size=10, client=client)
+
+    assert report.embedded == 1
+    assert report.failed == 0
+    assert report.remaining == 0
+
+
 def test_backfill_skips_empty_text(db, make_highlight):
     from app.services.embeddings import backfill_embeddings
 
