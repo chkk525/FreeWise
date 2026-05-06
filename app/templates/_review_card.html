@@ -9,7 +9,7 @@
     </div>
 
     <!-- Highlight Card -->
-    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border-2 border-gray-200 dark:border-gray-700 p-5 sm:p-8 md:p-12">
+    <div class="mn-card p-5 sm:p-8 md:p-12">
         <!-- Book Information (Top-left) -->
         {% if highlight.book %}
         <div class="mb-6 flex items-start gap-4">
@@ -28,7 +28,7 @@
         {% endif %}
 
         <!-- Highlight Text -->
-        <div class="font-serif leading-relaxed text-gray-900 dark:text-gray-100 mb-6 text-lg sm:text-[1.375rem]">
+        <div class="highlight-text leading-relaxed text-gray-900 dark:text-gray-100 mb-6 text-lg sm:text-[1.25rem]">
             {{ highlight.text }}
         </div>
 
@@ -41,7 +41,7 @@
 
         <!-- Note (if exists) -->
         {% if highlight.note %}
-        <div class="mt-4 text-base italic text-gray-600 dark:text-gray-400 pl-4 border-l-4 border-gray-300 dark:border-gray-600 whitespace-pre-wrap break-words">
+        <div class="mt-4 text-base text-gray-600 dark:text-gray-400 pl-4 border-l-4 border-gray-300 dark:border-gray-600 whitespace-pre-wrap break-words">
             {{ highlight.note | autolink }}
         </div>
         {% endif %}
@@ -83,38 +83,34 @@
     </div>
 
     <!-- Main Action Buttons (Outside Card) -->
-    <div class="flex items-center justify-center gap-6 sm:gap-12 mt-6">
+    <div class="flex items-center justify-center gap-3 sm:gap-4 mt-6 flex-wrap">
         <!-- Discard Button -->
         <button
             id="review-discard-btn"
-            class="flex flex-col items-center group appearance-none bg-transparent border-0 p-0"
+            class="mn-btn-danger"
             hx-post="/highlights/{{ highlight.id }}/discard"
             hx-vals='{"context": "review"}'
             hx-target="#review-container"
             hx-swap="innerHTML"
             aria-label="Discard this highlight (keyboard: d)"
             title="Discard (d)">
-            <div class="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center group-hover:bg-red-200 dark:group-hover:bg-red-900/30 group-hover:scale-110 transition-all border-2 border-red-300 dark:border-red-700 group-hover:border-red-400 dark:group-hover:border-red-600">
-                <i data-lucide="x" class="w-7 h-7 sm:w-10 sm:h-10 text-red-600 dark:text-red-500" aria-hidden="true"></i>
-            </div>
-            <span class="mt-2 text-sm font-semibold text-gray-900 dark:text-white">Discard</span>
-            <kbd class="mt-0.5 px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-[10px] text-gray-500 dark:text-gray-400">d</kbd>
+            <i data-lucide="x" class="w-5 h-5" aria-hidden="true"></i>
+            <span>Discard</span>
+            <kbd class="px-1.5 py-0.5 rounded border border-red-200 text-[10px] text-red-50">d</kbd>
         </button>
 
         <!-- Review Frequency Button -->
         <div class="flex flex-col items-center">
             <button
                 id="review-freq-btn"
-                class="flex flex-col items-center group appearance-none bg-transparent border-0 p-0"
+                class="mn-btn-secondary"
                 hx-get="/highlights/{{ highlight.id }}/weight/options"
                 hx-target="#review-weight-controls"
                 hx-swap="innerHTML"
                 aria-label="Change review frequency"
                 title="Frequency">
-                <div class="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center group-hover:bg-blue-200 dark:group-hover:bg-blue-900/30 group-hover:scale-110 transition-all border-2 border-blue-300 dark:border-blue-700 group-hover:border-blue-400 dark:group-hover:border-blue-600">
-                    <i data-lucide="sliders" class="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 dark:text-blue-500" aria-hidden="true"></i>
-                </div>
-                <span class="mt-2 text-sm font-semibold text-gray-900 dark:text-white">Frequency</span>
+                <i data-lucide="sliders" class="w-5 h-5" aria-hidden="true"></i>
+                <span>Frequency</span>
             </button>
             <div id="review-weight-controls" class="mt-3"></div>
         </div>
@@ -122,18 +118,16 @@
         <!-- Done Button -->
         <button
             id="review-done-btn"
-            class="flex flex-col items-center group appearance-none bg-transparent border-0 p-0"
+            class="mn-btn-primary"
             hx-post="/highlights/ui/review/next"
             hx-vals='{"current_id": "{{ highlight.id }}"}'
             hx-target="#review-container"
             hx-swap="innerHTML"
             aria-label="Mark this highlight reviewed and continue (keyboard: j or Space)"
             title="Done (j or Space)">
-            <div class="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center group-hover:bg-green-200 dark:group-hover:bg-green-900/30 group-hover:scale-110 transition-all border-2 border-green-300 dark:border-green-700 group-hover:border-green-400 dark:group-hover:border-green-600">
-                <i data-lucide="check" class="w-7 h-7 sm:w-10 sm:h-10 text-green-600 dark:text-green-500" aria-hidden="true"></i>
-            </div>
-            <span class="mt-2 text-sm font-semibold text-gray-900 dark:text-white">Done</span>
-            <kbd class="mt-0.5 px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-[10px] text-gray-500 dark:text-gray-400">j / Space</kbd>
+            <i data-lucide="check" class="w-5 h-5" aria-hidden="true"></i>
+            <span>Done</span>
+            <kbd class="px-1.5 py-0.5 rounded border border-black text-[10px] text-black">j / Space</kbd>
         </button>
     </div>
 </div>

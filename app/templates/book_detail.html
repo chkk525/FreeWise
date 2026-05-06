@@ -23,7 +23,7 @@
 
     <style>
         .title-font {
-            font-family: 'Libre Baskerville', 'Crimson Pro', Georgia, serif;
+            font-family: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
         }
 
         .htmx-indicator {
@@ -43,7 +43,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 min-h-screen">
+<body class="minna-skin bg-gray-50 dark:bg-gray-900 min-h-screen">
     <!-- Back Button (Top Left) -->
     <div class="absolute top-6 left-6 z-10">
         <a href="/library/ui" class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
@@ -178,15 +178,19 @@
                         <div class="inline-flex items-center px-3 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-full text-sm">
                             <i data-lucide="tag" class="w-3 h-3 mr-1.5"></i>
                             <span>{{ tag.strip() }}</span>
-                            <button 
-                                class="ml-2 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                            <form
                                 hx-post="/library/ui/book/{{ book.id }}/remove-tag"
-                                hx-vals='{"tag": "{{ tag.strip() }}"}'
                                 hx-target="#document-tags-section"
                                 hx-swap="innerHTML"
-                                title="Remove tag">
-                                <i data-lucide="x" class="w-3 h-3"></i>
-                            </button>
+                                class="inline-flex items-center">
+                                <input type="hidden" name="tag" value="{{ tag.strip() }}">
+                                <button
+                                    type="submit"
+                                    class="ml-2 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                                    title="Remove tag">
+                                    <i data-lucide="x" class="w-3 h-3"></i>
+                                </button>
+                            </form>
                         </div>
                         {% endfor %}
                     {% endif %}
@@ -253,6 +257,8 @@
         </div>
     </div>
 
+    {% include "_keyboard_shortcuts.html" %}
+
     <script>
         function initLucideIcons() {
             if (typeof lucide !== 'undefined') {
@@ -267,7 +273,6 @@
         }
         
         document.addEventListener('htmx:afterSwap', initLucideIcons);
-        document.addEventListener('htmx:afterSettle', initLucideIcons);
 
         document.body.addEventListener('htmx:beforeRequest', function(evt) {
             const path = evt.detail && evt.detail.requestConfig ? evt.detail.requestConfig.path : '';

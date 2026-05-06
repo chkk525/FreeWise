@@ -27,6 +27,11 @@ def _columns(engine, table: str) -> set[str]:
         return {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})")).all()}
 
 
+def _indexes(engine, table: str) -> set[str]:
+    with engine.connect() as conn:
+        return {row[1] for row in conn.execute(text(f"PRAGMA index_list({table})")).all()}
+
+
 def test_migration_adds_kindle_asin_column_to_pre_existing_table() -> None:
     """Simulate a DB created before kindle_asin existed in the model."""
     engine = _fresh_engine()
@@ -74,6 +79,18 @@ def test_migration_idempotent_on_already_migrated_db() -> None:
     ensure_schema_migrations(engine)
     # Still has the column, no errors.
     assert "kindle_asin" in _columns(engine, "book")
+
+
+def test_migration_adds_embedding_lookup_composite_index() -> None:
+    """Semantic retrieval filters embeddings by model + dim before joining."""
+    engine = _fresh_engine()
+    SQLModel.metadata.create_all(engine)
+
+    assert "ix_embedding_model_dim_highlight" not in _indexes(engine, "embedding")
+
+    ensure_schema_migrations(engine)
+
+    assert "ix_embedding_model_dim_highlight" in _indexes(engine, "embedding")
 
 
 def test_migration_does_not_overwrite_existing_kindle_asin() -> None:

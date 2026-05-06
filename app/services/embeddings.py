@@ -162,8 +162,16 @@ def top_k_similar(
     sims = np.zeros(n, dtype=np.float32)
     sims[safe] = (matrix[safe] @ target_vec) / (row_norms[safe] * target_norm)
 
-    # Argsort descending; trim to K.
-    order = np.argsort(-sims)[:k]
+    if k <= 0:
+        return []
+
+    # For small K, avoid sorting the full candidate array. Partition finds
+    # the K largest scores in linear time; only that small slice is sorted.
+    if k < n:
+        top_idx = np.argpartition(-sims, k - 1)[:k]
+        order = top_idx[np.argsort(-sims[top_idx])]
+    else:
+        order = np.argsort(-sims)
     return [(candidates[i][0], float(sims[i])) for i in order]
 
 

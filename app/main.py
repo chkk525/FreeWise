@@ -2,7 +2,8 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import HTTPException
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.template_filters import make_templates
 from sqlmodel import Session
@@ -27,6 +28,7 @@ from app.routers import kindle_cookie as kindle_cookie_router
 from app.api_v2 import router as api_v2_router
 from fastapi.middleware.cors import CORSMiddleware
 from app.middleware.gzip_request import GzipRequestMiddleware
+from app.security import check_same_origin
 from app.services import kindle_import_watcher
 
 
@@ -126,6 +128,21 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Content-Encoding"],
     max_age=86400,
 )
+
+
+_UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def reject_cross_origin_html_writes(request: Request, call_next):
+    """Apply CSRF Origin/Referer checks to browser-facing write routes."""
+    path = request.url.path
+    if request.method in _UNSAFE_METHODS and not path.startswith("/api/v2/"):
+        try:
+            check_same_origin(request)
+        except HTTPException as exc:
+            return PlainTextResponse(str(exc.detail), status_code=exc.status_code)
+    return await call_next(request)
 
 
 _STREAK_BEARING_PATHS: tuple[str, ...] = (

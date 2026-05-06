@@ -32,8 +32,9 @@ self.addEventListener('fetch', e => {
   // bypassing the SW cache entirely so updates are always visible immediately.
   if (url.pathname === '/static/css/tailwind.css') return;
 
-  // Other static assets (fonts, vendor libs) — cache-first
-  if (url.pathname.startsWith('/static/')) {
+  // Precached static assets (fonts, vendor libs) — cache-first.
+  // User uploads under /static/uploads/ should stay network-handled.
+  if (PRECACHE.includes(url.pathname)) {
     e.respondWith(caches.match(e.request).then(cached => cached || fetch(e.request)));
     return;
   }
@@ -41,4 +42,3 @@ self.addEventListener('fetch', e => {
   // Navigation — network-first (always fresh server data)
   e.respondWith(fetch(e.request));
 });
-

@@ -9,16 +9,27 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Manrope', 'system-ui', '-apple-system', 'sans-serif'],
-        serif: ['Crimson Pro', 'Georgia', 'serif'],
+        sans: ['Inter', 'Noto Sans JP', 'system-ui', '-apple-system', 'sans-serif'],
+        serif: ['Inter', 'Noto Sans JP', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['Roboto Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
         primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
+          50: '#FFFEE4',
+          100: '#FCFFCC',
+          300: '#EEFF66',
+          400: '#F0FF33',
+          500: '#EEFF00',
+          600: '#000000',
+          700: '#1D1E1F',
+        },
+        minna: {
+          accent: '#EEFF00',
+          surface: '#F8F8F8',
+          band: '#F4F4F4',
+          border: '#EAEAEA',
+          text: '#000000',
+          muted: '#4D4D4D',
         }
       }
     }

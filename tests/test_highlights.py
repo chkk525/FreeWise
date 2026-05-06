@@ -5,8 +5,10 @@ Covers: CRUD, favorite toggle, discard toggle, weight update,
 edit form save, and review flow.
 """
 from datetime import datetime, date
+from sqlalchemy import event
 from sqlmodel import select
 
+from app.db import get_engine
 from app.models import Highlight, ReviewSession
 
 
@@ -1000,6 +1002,30 @@ class TestSearchPage:
         # Only the highlight that literally contains "%" should match.
         assert "50% off" in resp.text
         assert "completely different" not in resp.text
+
+    def test_search_eager_loads_books(self, client, make_highlight, make_book):
+        for i in range(3):
+            book = make_book(title=f"Book {i}")
+            make_highlight(text=f"needle row {i}", book=book)
+
+        statements: list[str] = []
+
+        def record_sql(_conn, _cursor, statement, _params, _context, _executemany):
+            statements.append(" ".join(statement.lower().split()))
+
+        engine = get_engine()
+        event.listen(engine, "before_cursor_execute", record_sql)
+        try:
+            resp = client.get("/highlights/ui/search", params={"q": "needle"})
+        finally:
+            event.remove(engine, "before_cursor_execute", record_sql)
+
+        assert resp.status_code == 200
+        lazy_book_loads = [
+            stmt for stmt in statements
+            if "from book" in stmt and "where book.id = ?" in stmt
+        ]
+        assert lazy_book_loads == []
 
 
 class TestSearchFacets:

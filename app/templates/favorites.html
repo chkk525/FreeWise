@@ -15,12 +15,12 @@
     <meta name="apple-mobile-web-app-title" content="FreeWise">
     <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
     <style>
-        .title-font { font-family: 'Libre Baskerville', 'Crimson Pro', Georgia, serif; }
+        .title-font { font-family: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif; }
         .htmx-indicator { display: none; }
         .htmx-request .htmx-indicator { display: block; }
     </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 min-h-screen">
+<body class="minna-skin bg-gray-50 dark:bg-gray-900 min-h-screen">
     <div class="absolute top-6 left-6 z-10">
         <a href="/dashboard/ui" class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
             <i data-lucide="arrow-left" class="w-5 h-5"></i>
@@ -61,12 +61,13 @@
         </div>
     </div>
 
+    {% include "_keyboard_shortcuts.html" %}
+
     <script>
         function initLucideIcons() { if (typeof lucide !== 'undefined') lucide.createIcons(); }
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initLucideIcons);
         else initLucideIcons();
         document.addEventListener('htmx:afterSwap', initLucideIcons);
-        document.addEventListener('htmx:afterSettle', initLucideIcons);
     </script>
 </body>
 </html>

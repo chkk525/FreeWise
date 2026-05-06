@@ -212,6 +212,32 @@ def test_top_k_truncates_to_k():
     assert len(out) == 5
 
 
+def test_top_k_avoids_full_sort_for_partial_results(monkeypatch):
+    """Large candidate sets should select top-K without sorting every score."""
+    import numpy as np
+
+    from app.services.embeddings import top_k_similar
+
+    original_argsort = np.argsort
+
+    def fail_on_full_sort(values, *args, **kwargs):
+        if len(values) > 5:
+            raise AssertionError("top_k_similar should not full-sort all candidates")
+        return original_argsort(values, *args, **kwargs)
+
+    monkeypatch.setattr(np, "argsort", fail_on_full_sort)
+    target = pack_vector([1.0, 0.0])
+    candidates = [
+        (i, pack_vector([float(i), 1.0]))
+        for i in range(1, 21)
+    ]
+
+    out = top_k_similar(target, candidates, dim=2, k=5)
+
+    assert len(out) == 5
+    assert [hid for hid, _ in out] == [20, 19, 18, 17, 16]
+
+
 def test_top_k_handles_zero_candidate_vector():
     """Zero-norm candidates should not produce NaN — they get sim=0."""
     from app.services.embeddings import top_k_similar
