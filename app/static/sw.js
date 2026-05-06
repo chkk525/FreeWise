@@ -8,7 +8,10 @@
 //   v4 → v5: SW stopped intercepting every navigation (Access redirect fix)
 //   v5 → v6: fonts.css gained Crimson Pro back + Inter / Noto Sans JP
 //            shipped under /static/fonts/minna/ for the Minna redesign
-const CACHE = 'freewise-v6';
+//   v6 → v7: 22 MB of raw TTFs replaced with ~5.6 MB of woff2 +
+//            unicode-range subsets (Inter / Noto Sans JP / Roboto Mono).
+//            Files now live under /static/fonts/minna-woff2/.
+const CACHE = 'freewise-v7';
 
 // Vendor/font files that never change — served cache-first for offline support.
 // User uploads under /static/uploads/ deliberately stay network-handled (they
