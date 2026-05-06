@@ -306,6 +306,10 @@ def ensure_schema_migrations(engine=None) -> None:
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_embedding_hl_model "
                 "ON embedding (highlight_id, model_name)"
             ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_embedding_model_dim_highlight "
+            "ON embedding (model_name, dim, highlight_id)"
+        ))
 
         # ── Highlight.is_mastered (A5 mastery flag) ──────────────────────
         # Mastered highlights are excluded from the review queue (the user

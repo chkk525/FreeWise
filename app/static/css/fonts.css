@@ -1,59 +1,94 @@
 @font-face {
-  font-family: 'Manrope';
+  font-family: 'Inter';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url(/static/fonts/xn7_YHE41ni1AdIRqAuZuw1Bx9mbZk79FO_F.ttf) format('truetype');
+  src: url('/static/fonts/minna/inter-400.ttf') format('truetype');
 }
 @font-face {
-  font-family: 'Manrope';
+  font-family: 'Inter';
   font-style: normal;
   font-weight: 500;
   font-display: swap;
-  src: url(/static/fonts/xn7_YHE41ni1AdIRqAuZuw1Bx9mbZk7PFO_F.ttf) format('truetype');
+  src: url('/static/fonts/minna/inter-500.ttf') format('truetype');
 }
 @font-face {
-  font-family: 'Manrope';
+  font-family: 'Inter';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url(/static/fonts/xn7_YHE41ni1AdIRqAuZuw1Bx9mbZk4jE-_F.ttf) format('truetype');
+  src: url('/static/fonts/minna/inter-600.ttf') format('truetype');
 }
 @font-face {
-  font-family: 'Manrope';
+  font-family: 'Inter';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url(/static/fonts/xn7_YHE41ni1AdIRqAuZuw1Bx9mbZk4aE-_F.ttf) format('truetype');
+  src: url('/static/fonts/minna/inter-700.ttf') format('truetype');
 }
 
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/static/fonts/minna/noto-sans-jp-300.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/minna/noto-sans-jp-400.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/minna/noto-sans-jp-500.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Noto Sans JP';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/static/fonts/minna/noto-sans-jp-700.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/static/fonts/minna/roboto-mono-400.ttf') format('truetype');
+}
+@font-face {
+  font-family: 'Roboto Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/static/fonts/minna/roboto-mono-500.ttf') format('truetype');
+}
+
+/* === Crimson Pro — PERMANENT exception ============================================
+   The brand stack is anti-serif for product chrome, but reading-mode
+   highlight bodies (.highlight-text on _book_highlight, _review_card,
+   _random_highlight, etc.) keep Crimson Pro as a deliberate fork-specific
+   exception. A book quote in Inter feels institutional; the serif preserves
+   the reading voice. See handsoff.md §3.2 — do NOT "fix" this. The TTF
+   files were already vendored before the redesign. */
 @font-face {
   font-family: 'Crimson Pro';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url(/static/fonts/q5uUsoa5M_tv7IihmnkabC5XiXCAlXGks1WZzm18OA.ttf) format('truetype');
+  src: url('/static/fonts/q5uUsoa5M_tv7IihmnkabC5XiXCAlXGks1WZzm18OA.ttf') format('truetype');
 }
 @font-face {
   font-family: 'Crimson Pro';
   font-style: normal;
   font-weight: 600;
   font-display: swap;
-  src: url(/static/fonts/q5uUsoa5M_tv7IihmnkabC5XiXCAlXGks1WZEGp8OA.ttf) format('truetype');
+  src: url('/static/fonts/q5uUsoa5M_tv7IihmnkabC5XiXCAlXGks1WZEGp8OA.ttf') format('truetype');
 }
-
-@font-face {
-  font-family: 'Libre Baskerville';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url(/static/fonts/kmKUZrc3Hgbbcjq75U4uslyuy4kn0olVQ-LglH6T17uj8Q4SCQ.ttf) format('truetype');
-}
-@font-face {
-  font-family: 'Libre Baskerville';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url(/static/fonts/kmKUZrc3Hgbbcjq75U4uslyuy4kn0olVQ-LglH6T17ujFgkSCQ.ttf) format('truetype');
-}
-

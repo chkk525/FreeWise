@@ -27,35 +27,77 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="FreeWise">
+    {# Theme-color: pure white in light, true black in dark — Minna's
+       structural ramp. The two media variants let mobile browsers tint
+       the URL bar correctly without JS. #}
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
     <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
-    
+
     <style>
         /* Apply dark class when theme is dark */
         [data-theme="dark"] {
             color-scheme: dark;
         }
+        /* Yellow vertical bar (vbar) and stamp-dot signatures. .vbar is the
+           4x18 heading prefix. .vbar-sm is the 4x14 inline nav-link prefix.
+           .stamp-dot is the 9x9 black-bordered yellow dot used for bullet
+           lists and active markers. Black hairline is mandatory — that is
+           what makes the dot read as a stamp instead of a painted circle. */
+        .vbar { width: 4px; height: 18px; background: var(--accent); display: inline-block; flex-shrink: 0; }
+        .vbar-sm { width: 4px; height: 14px; background: var(--accent); display: inline-block; flex-shrink: 0; }
+        .stamp-dot { width: 9px; height: 9px; background: var(--accent); border: 1px solid var(--text1); border-radius: 999px; display: inline-block; flex-shrink: 0; }
     </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+<body class="minna-skin bg-background text-text-1 transition-colors duration-medium">
+    {# Active-nav detection — match by URL prefix. Loose by design so any
+       /import/* (incl. /import/api-token) lights up the Import link, etc. #}
+    {% set _path = (request.url.path if request and request.url else '') %}
+    {% set is_dashboard = _path.startswith('/dashboard') or _path == '/' %}
+    {% set is_library   = _path.startswith('/library') %}
+    {% set is_import    = _path.startswith('/import') %}
+    {% set is_settings  = _path.startswith('/settings') %}
     <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <!-- Navigation Header -->
-        <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
+        <div class="border-b pb-4 mb-6" style="border-color: var(--border);">
             <nav class="flex items-center justify-between text-base gap-3">
+                {# Wordmark — yellow vertical bar prefix + "FreeWise". The
+                   bar is the brand's primary heading signature; placing it
+                   here means every page carries the stamp in chrome. #}
+                <a href="/dashboard/ui"
+                   class="flex items-center gap-2 flex-shrink-0 text-text-1 hover:opacity-80 transition-opacity"
+                   aria-label="FreeWise — Dashboard">
+                    <span class="vbar"></span>
+                    <span class="font-bold tracking-heading text-base sm:text-lg">FreeWise</span>
+                </a>
+
                 <!-- Nav links: icon-only on mobile, icon + label on sm+ -->
-                <div class="flex items-center gap-5 sm:gap-6">
-                    <a href="/dashboard/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                <div class="flex items-center gap-4 sm:gap-5">
+                    <a href="/dashboard/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_dashboard %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_dashboard %}aria-current="page"{% endif %}>
+                        {% if is_dashboard %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">{{ t("Dashboard") }}</span>
                     </a>
-                    <a href="/library/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                    <a href="/library/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_library %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_library %}aria-current="page"{% endif %}>
+                        {% if is_library %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="library" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">{{ t("Library") }}</span>
                     </a>
-                    <a href="/import/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                    <a href="/import/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_import %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_import %}aria-current="page"{% endif %}>
+                        {% if is_import %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="upload" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">{{ t("Import") }}</span>
                     </a>
-                    <a href="/settings/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                    <a href="/settings/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_settings %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_settings %}aria-current="page"{% endif %}>
+                        {% if is_settings %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="settings" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">{{ t("Settings") }}</span>
                     </a>
@@ -70,48 +112,80 @@
                         <i data-lucide="search" class="w-5 h-5"></i>
                     </a>
                 </div>
-                <!-- Search box: full-text across all highlights. Press / to focus. -->
+
+                {# Search box — Minna input chassis: 8px radius (rounded-input),
+                   1px solid border-visible default, 2px black focus ring (NOT
+                   yellow). Compensating padding so the input doesn't jump on
+                   focus. Magnifier inherits from text-3. #}
                 <form method="get" action="/highlights/ui/search" class="flex-1 max-w-xs hidden sm:block">
                     <label class="relative block">
                         <span class="sr-only">Search highlights</span>
-                        <i data-lucide="search" class="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                        <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none"></i>
                         <input id="global-search-input" type="search" name="q"
                                placeholder="{{ t('Search') }}…  (press /)"
                                value="{{ (request.query_params.get('q', '') if request and request.query_params is defined else '') }}"
-                               class="w-full pl-8 pr-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500">
+                               class="w-full pl-8 pr-3 py-1.5 text-sm rounded-input bg-background text-text-1 placeholder:text-text-4 focus:outline-none transition-colors"
+                               style="border: 1px solid var(--border-visible);">
                     </label>
                 </form>
-                <!-- Theme toggle: cycles light → dark → auto. -->
+
+                {# Theme toggle — 3-segment pill track. Visual fidelity to the
+                   design preview's floating bar. The cycle endpoint
+                   (/settings/theme/toggle) advances light → dark → auto on
+                   any click, so each segment is the same POST; the active
+                   segment is stamped via aria-current + a black fill. #}
                 {% set _t = (settings.theme if settings and settings.theme else 'light') %}
-                <button type="button"
-                        hx-post="/settings/theme/toggle"
-                        hx-swap="none"
-                        title="Theme: {{ _t }} (click to cycle)"
-                        aria-label="Toggle theme (current: {{ _t }})"
-                        class="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                    {% if _t == 'dark' %}
-                    <i data-lucide="moon" class="w-5 h-5"></i>
-                    {% elif _t == 'auto' %}
-                    <i data-lucide="monitor" class="w-5 h-5"></i>
-                    {% else %}
-                    <i data-lucide="sun" class="w-5 h-5"></i>
-                    {% endif %}
-                </button>
-                <!-- Streak indicator: always pinned to the far right -->
+                <div role="group" aria-label="Theme: {{ _t }} (click any segment to cycle)"
+                     class="inline-flex items-center gap-0 p-0.5 rounded-pill bg-surface-1 flex-shrink-0"
+                     style="border: 1px solid var(--border);">
+                    <button type="button"
+                            hx-post="/settings/theme/toggle"
+                            hx-swap="none"
+                            title="Light"
+                            aria-label="Light theme"
+                            {% if _t == 'light' %}aria-current="true"{% endif %}
+                            class="flex items-center justify-center w-7 h-7 rounded-pill transition-colors {% if _t == 'light' %}bg-text-1 text-background{% else %}text-text-3 hover:text-text-1{% endif %}">
+                        <i data-lucide="sun" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button"
+                            hx-post="/settings/theme/toggle"
+                            hx-swap="none"
+                            title="Dark"
+                            aria-label="Dark theme"
+                            {% if _t == 'dark' %}aria-current="true"{% endif %}
+                            class="flex items-center justify-center w-7 h-7 rounded-pill transition-colors {% if _t == 'dark' %}bg-text-1 text-background{% else %}text-text-3 hover:text-text-1{% endif %}">
+                        <i data-lucide="moon" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button"
+                            hx-post="/settings/theme/toggle"
+                            hx-swap="none"
+                            title="Auto"
+                            aria-label="Auto theme (follow OS)"
+                            {% if _t == 'auto' %}aria-current="true"{% endif %}
+                            class="flex items-center justify-center w-7 h-7 rounded-pill transition-colors {% if _t == 'auto' %}bg-text-1 text-background{% else %}text-text-3 hover:text-text-1{% endif %}">
+                        <i data-lucide="monitor" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Streak indicator — uses --warning semantic token (status
+                     color is allowed an exception to the no-second-accent
+                     rule because it carries information, not chrome). -->
                 <div class="flex items-center gap-1.5 flex-shrink-0">
                     {% set streak = request.state.streak | default(0) %}
                     <i data-lucide="zap"
-                       class="w-6 h-6 zap-filled {% if streak >= 1 %}text-amber-500{% else %}text-gray-400 dark:text-gray-600{% endif %}"></i>
+                       class="w-6 h-6 zap-filled {% if streak >= 1 %}text-warning{% else %}text-text-4{% endif %}"></i>
                     {% if streak > 1 %}
-                    <span class="text-sm font-semibold text-amber-500 dark:text-amber-400">{{ streak }}</span>
+                    <span class="text-sm font-semibold text-warning">{{ streak }}</span>
                     {% endif %}
                 </div>
             </nav>
         </div>
-        
-        <!-- Page Title -->
+
+        <!-- Page Title — capped at text-heading (32px) per Minna's no-display-
+             shouting rule for product UI. .title-font alias still works
+             (now points at Inter via input.css). -->
         <div class="mb-8">
-            <h2 class="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white title-font">
+            <h2 class="text-heading text-text-1">
                 {% block heading %}FreeWise{% endblock %}
             </h2>
         </div>
@@ -144,79 +218,19 @@
         {% endblock %}
     </div>
     
-    <!-- Global keyboard shortcuts help modal (Gmail-style) -->
-    <div id="kbd-help-modal" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-         onclick="if(event.target===this)this.classList.add('hidden')">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[80vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Keyboard shortcuts</h2>
-                <button onclick="document.getElementById('kbd-help-modal').classList.add('hidden')"
-                        aria-label="Close" class="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
-            </div>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Gmail-style: press <kbd class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-xs">g</kbd> then a letter to navigate.</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
-                <div>
-                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Navigate</h3>
-                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">d</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Dashboard</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">l</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Library</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">r</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Review</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Favorites</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">x</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discarded</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">m</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Mastered</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">a</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Ask (RAG)</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">u</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Duplicates</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">v</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Activity</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Import</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Settings</dd>
-                        <dt><kbd class="kbd">g</kbd> <kbd class="kbd">t</kbd></dt><dd class="text-gray-700 dark:text-gray-300">API tokens</dd>
-                        <dt><kbd class="kbd">r</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Random highlight (Stumble)</dd>
-                    </dl>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Review (on /highlights/ui/review)</h3>
-                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                        <dt><kbd class="kbd">e</kbd> / <kbd class="kbd">Space</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Done — next</dd>
-                        <dt><kbd class="kbd">s</kbd> / <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Star (toggle favorite)</dd>
-                        <dt><kbd class="kbd">x</kbd> / <kbd class="kbd">d</kbd> / <kbd class="kbd">#</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discard</dd>
-                        <dt><kbd class="kbd">Enter</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Edit highlight</dd>
-                    </dl>
-                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Lists (search / favorites / etc.)</h3>
-                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                        <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">k</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Next / previous highlight</dd>
-                        <dt><kbd class="kbd">n</kbd> / <kbd class="kbd">p</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Next / previous page</dd>
-                    </dl>
-                    <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Anywhere</h3>
-                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                        <dt><kbd class="kbd">/</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Focus search (or open search page)</dd>
-                        <dt><kbd class="kbd">⌘/Ctrl</kbd> <kbd class="kbd">k</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Quick search</dd>
-                        <dt><kbd class="kbd">?</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Toggle this help</dd>
-                        <dt><kbd class="kbd">Esc</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Close help / dismiss</dd>
-                    </dl>
-                </div>
-            </div>
-            <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">
-                Shortcuts are ignored while typing in input fields.
-            </p>
-        </div>
-    </div>
+    {% include "_keyboard_shortcuts.html" %}
     <style>
-        .kbd { display:inline-block; padding:1px 6px; border:1px solid #d1d5db; background:#f9fafb; border-radius:4px; font-family:ui-monospace,Menlo,monospace; font-size:11px; color:#374151; }
-        @media (prefers-color-scheme: dark) { .kbd { background:#111827; border-color:#4b5563; color:#e5e7eb; } }
-        /* Toast notifications: fixed bottom-right column, animated in/out. */
+        /* Toast notifications — bank-grade, no blur. Status tags follow Minna
+           §6: tinted bg + matching foreground + 1px solid border in the same
+           hue. The accent (#EEFF00) is reserved for primary actions, so
+           toasts never carry the brand stamp. Both modes use semantic vars
+           so dark theme switching is automatic. */
         #toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
-        .toast { pointer-events: auto; min-width: 240px; max-width: 360px; padding: 0.625rem 0.875rem; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0,0,0,.15), 0 4px 6px -4px rgba(0,0,0,.1); display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; opacity: 0; transform: translateY(8px); transition: opacity 180ms ease, transform 180ms ease; }
+        .toast { pointer-events: auto; min-width: 240px; max-width: 360px; padding: 0.625rem 0.875rem; border-radius: 8px; box-shadow: none; display: flex; align-items: center; gap: 0.5rem; font-size: 13px; line-height: 1.55; opacity: 0; transform: translateY(8px); transition: opacity 180ms cubic-bezier(0.2,0,0,1), transform 180ms cubic-bezier(0.2,0,0,1); }
         .toast.show { opacity: 1; transform: translateY(0); }
-        .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
-        .toast-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-        .toast-info    { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
-        @media (prefers-color-scheme: dark) {
-            .toast-success { background: #064e3b; color: #d1fae5; border-color: #047857; }
-            .toast-error   { background: #7f1d1d; color: #fee2e2; border-color: #b91c1c; }
-            .toast-info    { background: #1e3a8a; color: #dbeafe; border-color: #2563eb; }
-        }
+        .toast-success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
+        .toast-error   { background: var(--error-bg);   color: var(--error);   border: 1px solid var(--error); }
+        .toast-info    { background: var(--surface2);   color: var(--text1);   border: 1px solid var(--border-visible); }
     </style>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
     {# Branded confirm modal — replaces native window.confirm() for bulk
@@ -241,10 +255,13 @@
     <!-- Global HTMX progress bar: animates while any HTMX request is in flight. -->
     <div id="htmx-progress" aria-hidden="true"></div>
     <style>
-        /* Top-of-page progress bar for in-flight HTMX requests. */
-        #htmx-progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: linear-gradient(90deg, #3b82f6, #22d3ee); z-index: 70; opacity: 0; transition: width 240ms ease, opacity 200ms ease; pointer-events: none; }
+        /* Top-of-page progress bar — single black bar tipped with the yellow
+           stamp at the leading edge so the wait still feels signature-aware
+           without becoming a chromatic decoration. Every motion uses the
+           single ease-out curve. */
+        #htmx-progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: linear-gradient(90deg, var(--text1) 0%, var(--text1) 95%, var(--accent) 100%); z-index: 70; opacity: 0; transition: width 240ms cubic-bezier(0.2,0,0,1), opacity 200ms cubic-bezier(0.2,0,0,1); pointer-events: none; }
         #htmx-progress.active { opacity: 1; width: 80%; transition: width 8s cubic-bezier(.05,.85,.2,.99), opacity 80ms ease; }
-        #htmx-progress.done   { width: 100%; opacity: 0; transition: width 200ms ease, opacity 320ms ease 180ms; }
+        #htmx-progress.done   { width: 100%; opacity: 0; transition: width 200ms cubic-bezier(0.2,0,0,1), opacity 320ms cubic-bezier(0.2,0,0,1) 180ms; }
         /* Per-element in-flight feedback: dim + disable pointer + spinner. */
         .htmx-request { opacity: 0.55; pointer-events: none; cursor: wait; }
         .htmx-request.htmx-request { /* HTMX adds this twice when nested; keep specificity */ }
@@ -284,256 +301,6 @@
                 if (!el.title) el.title = iso;
             });
         }
-
-        /**
-         * Gmail-style global keyboard shortcuts.
-         *
-         * Single keys: j/k navigate, s star, x discard, etc. Two-key sequences
-         * use a "g" prefix (g d → Dashboard, g l → Library, ...) with a 1.5s
-         * timeout — matches Gmail behaviour. Listening on the document so
-         * HTMX swaps inside #review-container don't disconnect the binding.
-         *
-         * Page-specific actions (the four review buttons) target elements by
-         * id; a shortcut whose target id is missing is silently ignored, so
-         * "x" on the dashboard doesn't fire.
-         */
-        const _NAV_TARGETS = {
-            d: '/dashboard/ui',
-            l: '/library/ui',
-            r: '/highlights/ui/review',
-            f: '/highlights/ui/favorites',
-            x: '/highlights/ui/discarded',
-            m: '/highlights/ui/mastered',
-            a: '/highlights/ui/ask',
-            u: '/highlights/ui/duplicates',
-            i: '/import/ui',
-            s: '/settings/ui',
-            t: '/import/api-token',
-            v: '/highlights/ui/activity',
-        };
-        let _gPrefixOn = false;
-        let _gTimer = null;
-
-        function _kbd_isTextInput(t) {
-            if (!t) return false;
-            const tag = t.tagName || '';
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-            if (t.isContentEditable) return true;
-            return false;
-        }
-
-        function _kbd_clickIfPresent(id) {
-            const el = document.getElementById(id);
-            if (el) { el.click(); return true; }
-            return false;
-        }
-
-        // Move scroll focus across [id^="highlight-"] cards on list pages.
-        // Tracks the index implicitly: on first j/k, anchor to the card
-        // currently nearest the top of the viewport, then step by ±1. Resets
-        // when the user scrolls manually (mousewheel/keyboard arrow), so a
-        // mid-page scroll plus a fresh `j` re-anchors to where the user is.
-        let _kbd_listIndex = -1;
-        let _kbd_listResetPending = false;
-        function _kbd_findCurrentCardIndex() {
-            const cards = Array.from(document.querySelectorAll('[id^="highlight-"]'));
-            if (cards.length === 0) return { cards, idx: -1 };
-            // The "current" card is the last one whose top is at or above
-            // the viewport top + 80px buffer (sticky header). If none yet,
-            // we're above the first one — anchor to it.
-            const cutoff = 80;
-            let idx = -1;
-            for (let i = 0; i < cards.length; i++) {
-                if (cards[i].getBoundingClientRect().top <= cutoff) idx = i;
-                else break;
-            }
-            if (idx === -1) idx = 0;
-            return { cards, idx };
-        }
-        function _kbd_listStep(delta) {
-            if (_kbd_listIndex < 0 || _kbd_listResetPending) {
-                const { idx } = _kbd_findCurrentCardIndex();
-                if (idx < 0) return false;
-                _kbd_listIndex = idx;
-                _kbd_listResetPending = false;
-            }
-            const cards = Array.from(document.querySelectorAll('[id^="highlight-"]'));
-            if (cards.length === 0) return false;
-            const next = Math.max(0, Math.min(cards.length - 1, _kbd_listIndex + delta));
-            _kbd_listIndex = next;
-            const target = cards[next];
-            if (!target) return false;
-            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            // Brief outline so the user sees which card is "active".
-            target.classList.add('ring-2', 'ring-primary-400');
-            setTimeout(function () {
-                target.classList.remove('ring-2', 'ring-primary-400');
-            }, 700);
-            return true;
-        }
-        // Reset card-anchor when the user manually scrolls — that signals
-        // they've moved their attention away, so the next j/k should
-        // re-anchor based on viewport, not the stale index.
-        window.addEventListener('wheel', function () { _kbd_listResetPending = true; }, { passive: true });
-        window.addEventListener('touchmove', function () { _kbd_listResetPending = true; }, { passive: true });
-
-        function _kbd_clickPagination(direction) {
-            const sel = direction === 'next'
-                ? '[data-pagination-next]'
-                : '[data-pagination-prev]';
-            const link = document.querySelector(sel);
-            if (link && link.getAttribute('href')) {
-                window.location.href = link.getAttribute('href');
-                return true;
-            }
-            return false;
-        }
-
-        function _kbd_focusOrOpenSearch() {
-            const search = document.getElementById('global-search-input');
-            if (search && search.offsetParent !== null) {
-                // offsetParent === null means hidden (e.g. `hidden sm:block`
-                // collapses it on mobile). Only focus when actually visible.
-                search.focus();
-                search.select();
-                return;
-            }
-            // Mobile / narrow screens hide the global box — go to the
-            // dedicated search page so the shortcut works everywhere.
-            window.location.href = '/highlights/ui/search';
-        }
-
-        document.addEventListener('keydown', function (e) {
-            // IME composition guard: while a Japanese / Chinese / Korean
-            // IME is mid-conversion, keydown fires with key='Process' and
-            // keyCode 229. Stealing those breaks kana → kanji and similar
-            // composers — drop the event without preventDefault so the
-            // composer still receives it normally.
-            if (e.isComposing || e.keyCode === 229) return;
-            if (_kbd_isTextInput(e.target)) return;
-
-            // Cmd/Ctrl+K opens quick-search. Handled BEFORE the
-            // modifier-only skip below so we don't drop it. Other
-            // modifier combos still pass through to the browser/OS.
-            if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
-                e.preventDefault();
-                _kbd_focusOrOpenSearch();
-                return;
-            }
-            if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-            const help = document.getElementById('kbd-help-modal');
-
-            // Esc closes any open modal-style overlay we control.
-            if (e.key === 'Escape') {
-                if (help && !help.classList.contains('hidden')) {
-                    help.classList.add('hidden');
-                    e.preventDefault();
-                }
-                _gPrefixOn = false;
-                return;
-            }
-
-            // ? opens / toggles the help.
-            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-                if (help) help.classList.toggle('hidden');
-                e.preventDefault();
-                return;
-            }
-
-            // / → focus the global search box, or send the user to the
-            // search page if the inline box is hidden (mobile layout).
-            if (e.key === '/' && !_gPrefixOn) {
-                _kbd_focusOrOpenSearch();
-                e.preventDefault();
-                return;
-            }
-
-            // Two-key g+letter navigation.
-            if (_gPrefixOn) {
-                const dest = _NAV_TARGETS[e.key.toLowerCase()];
-                _gPrefixOn = false;
-                if (_gTimer) { clearTimeout(_gTimer); _gTimer = null; }
-                if (dest) {
-                    window.location.href = dest;
-                    e.preventDefault();
-                }
-                return;
-            }
-            if (e.key === 'g') {
-                _gPrefixOn = true;
-                _gTimer = setTimeout(function () { _gPrefixOn = false; }, 1500);
-                e.preventDefault();
-                return;
-            }
-
-            // Page-specific action keys — these click an action button if
-            // it's on the current page; missing = no-op (so j/k below get
-            // a chance on list pages).
-            switch (e.key) {
-                case 'e':
-                case ' ':
-                    if (_kbd_clickIfPresent('review-done-btn')) {
-                        e.preventDefault();
-                        return;
-                    }
-                    break;
-                case 's':
-                case 'f':
-                    if (_kbd_clickIfPresent('review-fav-btn')) {
-                        e.preventDefault();
-                        return;
-                    }
-                    break;
-                case 'x':
-                case 'd':
-                case '#':
-                    if (_kbd_clickIfPresent('review-discard-btn')) {
-                        e.preventDefault();
-                        return;
-                    }
-                    break;
-                case 'Enter':
-                    if (_kbd_clickIfPresent('review-edit-btn')) {
-                        e.preventDefault();
-                        return;
-                    }
-                    break;
-            }
-
-            // List navigation. j tries Done first (review page); if no
-            // review-done-btn exists we treat j as "next card" on lists.
-            if (e.key === 'j') {
-                if (_kbd_clickIfPresent('review-done-btn')) {
-                    e.preventDefault();
-                    return;
-                }
-                if (_kbd_listStep(1)) e.preventDefault();
-                return;
-            }
-            if (e.key === 'k') {
-                if (_kbd_listStep(-1)) e.preventDefault();
-                return;
-            }
-
-            // Pagination.
-            if (e.key === 'n') {
-                if (_kbd_clickPagination('next')) e.preventDefault();
-                return;
-            }
-            if (e.key === 'p') {
-                if (_kbd_clickPagination('prev')) e.preventDefault();
-                return;
-            }
-
-            // Random-highlight redirect ("Stumble"). Server picks one and
-            // 302s to its permalink. Useful from anywhere.
-            if (e.key === 'r') {
-                window.location.href = '/highlights/ui/random/go';
-                e.preventDefault();
-                return;
-            }
-        });
 
         // Progressive-enhancement dropzone for any <input type="file" data-dropzone>.
         // Wraps the input in an outer drop target, surfaces the chosen file name,
@@ -802,7 +569,6 @@
 
         // Re-initialize after HTMX swaps content
         document.addEventListener('htmx:afterSwap', initAll);
-        document.addEventListener('htmx:afterSettle', initAll);
     </script>
 </body>
 </html>

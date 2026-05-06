@@ -574,6 +574,7 @@ def _paginated_highlights(
         page = total_pages
     rows = session.exec(
         _select(Highlight)
+        .options(selectinload(Highlight.book))
         .where(base_filter)
         .order_by(Highlight.created_at.desc())
         .offset((page - 1) * page_size)
@@ -2143,4 +2144,3 @@ async def tags_autocomplete(session: Session = Depends(get_session)) -> PlainTex
     ).all()
     body = "\n".join(name for name, _ in rows)
     return PlainTextResponse(content=body)
-

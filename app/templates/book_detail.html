@@ -199,15 +199,19 @@
                     <div class="inline-flex items-center px-3 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-full text-sm">
                         <i data-lucide="tag" class="w-3 h-3 mr-1.5"></i>
                         <span>{{ tag.strip() }}</span>
-                        <button
-                            class="ml-2 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                        <form
                             hx-post="/library/ui/book/{{ book.id }}/remove-tag"
-                            hx-vals='{"tag": "{{ tag.strip() }}"}'
                             hx-target="#document-tags-section"
                             hx-swap="innerHTML"
-                            title="Remove tag">
-                            <i data-lucide="x" class="w-3 h-3"></i>
-                        </button>
+                            class="inline-flex items-center">
+                            <input type="hidden" name="tag" value="{{ tag.strip() }}">
+                            <button
+                                type="submit"
+                                class="ml-2 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                                title="Remove tag">
+                                <i data-lucide="x" class="w-3 h-3"></i>
+                            </button>
+                        </form>
                     </div>
                     {% endfor %}
                 {% endif %}

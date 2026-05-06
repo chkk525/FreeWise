@@ -8,17 +8,18 @@
 <!-- Daily Review Call-to-Action -->
 {% if total_highlights == 0 %}
 <div class="mb-8">
-    <div class="bg-gradient-to-br from-yellow-400 to-amber-800 text-amber-50 rounded-2xl p-6 sm:p-10 text-center shadow-xl border border-amber-700/30">
+    <div class="mn-card p-6 sm:p-10 text-center">
         <div class="flex justify-center mb-4">
-            <i data-lucide="book-open" class="w-16 h-16 text-amber-200"></i>
+            <i data-lucide="book-open" class="w-16 h-16 text-gray-900 dark:text-white"></i>
         </div>
-        <h2 class="text-2xl sm:text-3xl font-semibold mb-3 text-amber-50">
+        <h2 class="text-2xl sm:text-3xl font-semibold mb-3 text-text-1 inline-flex items-center gap-2">
+            <span class="mn-stamp-bar align-middle"></span>
             {{ t("No Highlights Available") }}
         </h2>
-        <p class="text-lg mb-6 text-amber-100/90">
+        <p class="text-lg mb-6 text-text-2">
             {{ t("Please import some highlights to get started.") }}
         </p>
-        <a href="/import/ui" class="inline-flex items-center gap-2 bg-amber-100 text-amber-900 px-6 py-3 rounded-lg font-semibold hover:bg-amber-50 transition-all shadow-md">
+        <a href="/import/ui" class="mn-btn-primary">
             <i data-lucide="upload" class="w-5 h-5"></i>
             {{ t("Import Highlights") }}
         </a>
@@ -26,22 +27,23 @@
 </div>
 {% elif active_highlights < daily_review_count and not reviewed_today %}
 <div class="mb-8">
-    <div class="bg-gradient-to-br from-yellow-400 to-amber-800 text-amber-50 rounded-2xl p-6 sm:p-10 text-center shadow-xl border border-amber-700/30">
+    <div class="mn-card p-6 sm:p-10 text-center">
         <div class="flex justify-center mb-4">
-            <i data-lucide="zap" class="w-16 h-16 text-amber-200"></i>
+            <i data-lucide="zap" class="w-16 h-16 text-gray-900 dark:text-white"></i>
         </div>
-        <h2 class="text-2xl sm:text-3xl font-semibold mb-3 text-amber-50">
+        <h2 class="text-2xl sm:text-3xl font-semibold mb-3 text-text-1 inline-flex items-center gap-2">
+            <span class="mn-stamp-bar align-middle"></span>
             {{ t("Only") }} {{ active_highlights }} {{ t("Highlight Available") if active_highlights == 1 else t("Highlights Available") }}
         </h2>
-        <p class="text-lg mb-6 text-amber-100/90">
+        <p class="text-lg mb-6 text-text-2">
             {{ t("Please import more highlights to get the full experience.") }}
         </p>
         <div class="flex gap-4 justify-center flex-wrap">
-            <a href="/highlights/ui/review" class="inline-flex items-center gap-2 bg-amber-100 text-amber-900 px-6 py-3 rounded-lg font-semibold hover:bg-amber-50 transition-all shadow-md">
+            <a href="/highlights/ui/review" class="mn-btn-primary">
                 <i data-lucide="book-open" class="w-5 h-5"></i>
                 {{ t("Start Review") }}
             </a>
-            <a href="/import/ui" class="inline-flex items-center gap-2 bg-amber-100/20 text-amber-50 px-6 py-3 rounded-lg font-semibold border-2 border-amber-200/50 hover:bg-amber-100/30 transition-all">
+            <a href="/import/ui" class="mn-btn-secondary">
                 <i data-lucide="upload" class="w-5 h-5"></i>
                 {{ t("Import More") }}
             </a>
@@ -51,31 +53,38 @@
 {% elif not reviewed_today %}
 <div class="mb-8">
     <a href="/highlights/ui/review" class="block no-underline">
-        <div class="bg-gradient-to-br from-yellow-400 to-amber-800 text-amber-50 rounded-2xl p-6 sm:p-10 text-center shadow-xl border border-amber-700/30 hover:-translate-y-1 hover:shadow-2xl transition-all cursor-pointer">
+        <div class="mn-card p-6 sm:p-10 text-center transition-colors cursor-pointer hover:border-gray-400 dark:hover:border-gray-500">
             <div class="flex justify-center mb-4">
-                <i data-lucide="book-open" class="w-16 h-16 text-amber-200"></i>
+                <i data-lucide="book-open" class="w-16 h-16 text-gray-900 dark:text-white"></i>
             </div>
-            <h2 class="text-2xl sm:text-3xl font-semibold mb-3 text-amber-50">
+            <h2 class="text-2xl sm:text-3xl font-semibold mb-3 text-text-1 inline-flex items-center gap-2">
+                <span class="mn-stamp-bar align-middle"></span>
                 {{ t("Start Your Daily Review") }}
             </h2>
-            <p class="text-xl text-amber-100/90">
+            <p class="text-xl text-text-2">
                 {{ daily_review_count }} {{ t("highlight waiting for you") if daily_review_count == 1 else t("highlights waiting for you") }}
             </p>
         </div>
     </a>
 </div>
 {% else %}
-<div class="mb-8 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border-2 border-emerald-700 dark:border-emerald-800 rounded-2xl p-5 sm:p-8 text-center shadow-lg">
+{# "Done for today" celebration. The status icon uses --success (green is
+   semantic, allowed) but headline + body are neutral text-1 — the page's
+   yellow stamp budget still belongs to actionable CTAs, not the
+   confirmation. The CTA itself drops to a ghost pill since the work is
+   already done; clicking it is optional. #}
+<div class="mb-8 mn-card p-5 sm:p-8 text-center">
     <div class="flex justify-center mb-4">
-        <i data-lucide="check-circle" class="w-16 h-16 text-emerald-700 dark:text-emerald-600"></i>
+        <i data-lucide="check-circle" class="w-16 h-16 text-success"></i>
     </div>
-    <h2 class="text-2xl sm:text-3xl font-bold text-emerald-900 dark:text-emerald-100 mb-2">
+    <h2 class="text-subheading text-text-1 mb-2 inline-flex items-center gap-2">
+        <span class="mn-stamp-bar align-middle"></span>
         {{ t("Great Job!") }}
     </h2>
-    <p class="text-emerald-800 dark:text-emerald-300 text-lg mb-6">
+    <p class="text-text-2 text-lg mb-6">
         {{ t("You already reviewed") }} {{ highlights_reviewed_count }} {{ t("highlights today") }}
     </p>
-    <a href="/highlights/ui/review" class="inline-flex items-center gap-2 bg-emerald-800 dark:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium hover:bg-emerald-900 dark:hover:bg-emerald-800 transition-colors shadow-md">
+    <a href="/highlights/ui/review" class="mn-btn-ghost">
         <i data-lucide="book-open" class="w-5 h-5"></i>
         {{ t("Review More") }}
     </a>
@@ -88,16 +97,16 @@
           hx-target="#quick-capture-result"
           hx-swap="outerHTML"
           hx-on::after-request="if(event.detail.successful) this.reset()"
-          class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+          class="mn-card p-4">
         <label class="block">
             <span class="sr-only">Quick capture</span>
             <div class="flex items-start gap-2">
-                <i data-lucide="pencil-line" class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-1"></i>
+                <i data-lucide="pencil-line" class="w-5 h-5 text-gray-700 dark:text-gray-300 shrink-0 mt-1"></i>
                 <textarea name="text" rows="2" maxlength="8191"
                           placeholder="Quick capture: a thought, a quote, a reminder…"
                           class="flex-1 px-2 py-1.5 bg-transparent focus:outline-none text-gray-900 dark:text-white resize-none"></textarea>
                 <button type="submit"
-                        class="inline-flex items-center gap-1 px-3 py-1 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 self-start mt-1">
+                        class="mn-btn-primary min-h-0 px-4 py-1.5 text-sm shrink-0 self-start mt-1">
                     Save
                 </button>
             </div>
@@ -113,17 +122,17 @@
           hx-target="#dashboard-ask-answer"
           hx-swap="outerHTML"
           hx-indicator="#dashboard-ask-spinner"
-          class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+          class="mn-card p-4">
         <label class="block">
             <span class="sr-only">Ask your library</span>
             <div class="flex items-center gap-2">
-                <i data-lucide="sparkles" class="w-5 h-5 text-amber-500 shrink-0"></i>
+                <i data-lucide="sparkles" class="w-5 h-5 text-gray-700 dark:text-gray-300 shrink-0"></i>
                 <input type="text" name="question"
                        placeholder="Ask your library… (e.g. what did I learn about stoicism?)"
                        class="flex-1 px-2 py-1.5 bg-transparent focus:outline-none text-gray-900 dark:text-white">
                 <input type="hidden" name="top_k" value="6">
                 <button type="submit"
-                        class="inline-flex items-center gap-1 px-3 py-1 text-sm rounded-lg bg-primary-600 hover:bg-primary-700 text-white shrink-0">
+                        class="mn-btn-secondary min-h-0 px-4 py-1.5 text-sm shrink-0">
                     Ask
                     <span id="dashboard-ask-spinner" class="htmx-indicator">
                         <i data-lucide="loader" class="w-3 h-3 animate-spin"></i>
@@ -325,7 +334,7 @@
             Complete a review session and your streak will start showing up here.
         </p>
         <a href="/highlights/ui/review"
-           class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+           class="mn-btn-primary min-h-0 px-4 py-2 text-sm">
             <i data-lucide="play" class="w-4 h-4"></i>
             <span>Start a review session</span>
         </a>
@@ -336,33 +345,33 @@
 <!-- Streak Cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
     <!-- Current Streak Card -->
-    <div class="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border-2 border-emerald-500 dark:border-emerald-700 rounded-xl p-8 text-center shadow-lg">
+    <div class="mn-card p-8 text-center">
         <div class="flex justify-center mb-4">
-            <i data-lucide="zap" class="w-12 h-12 text-emerald-600 dark:text-emerald-400"></i>
+            <i data-lucide="zap" class="w-12 h-12 text-gray-800 dark:text-gray-100"></i>
         </div>
-        <div class="text-4xl sm:text-5xl font-bold text-emerald-700 dark:text-emerald-400 mb-2">
+        <div class="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-2">
             {{ current_streak }}
         </div>
-        <div class="text-emerald-800 dark:text-emerald-300 text-lg font-semibold">
+        <div class="text-text-1 text-lg font-semibold">
             {{ t("Current Streak") }}
         </div>
-        <div class="text-emerald-600 dark:text-emerald-500 text-sm mt-2">
+        <div class="text-text-3 text-sm mt-2">
             {{ t('day' if current_streak == 1 else 'days') }} {{ t("in a row") }}
         </div>
     </div>
     
     <!-- Longest Streak Card -->
-    <div class="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-2 border-amber-500 dark:border-amber-700 rounded-xl p-8 text-center shadow-lg">
+    <div class="mn-card p-8 text-center">
         <div class="flex justify-center mb-4">
-            <i data-lucide="trophy" class="w-12 h-12 text-amber-600 dark:text-amber-400"></i>
+            <i data-lucide="trophy" class="w-12 h-12 text-gray-800 dark:text-gray-100"></i>
         </div>
-        <div class="text-4xl sm:text-5xl font-bold text-amber-700 dark:text-amber-400 mb-2">
+        <div class="text-4xl sm:text-5xl font-bold text-gray-900 dark:text-white mb-2">
             {{ longest_streak }}
         </div>
-        <div class="text-amber-800 dark:text-amber-300 text-lg font-semibold">
+        <div class="text-text-1 text-lg font-semibold">
             {{ t("Longest Streak") }}
         </div>
-        <div class="text-amber-600 dark:text-amber-500 text-sm mt-2">
+        <div class="text-text-3 text-sm mt-2">
             {{ t("Personal best") }}
         </div>
     </div>
@@ -400,9 +409,9 @@
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
     <!-- Total Books Card -->
     <a href="/library/ui" class="no-underline group">
-        <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center transition-all group-hover:-translate-y-1 group-hover:border-amber-700 group-hover:shadow-lg cursor-pointer">
+        <div class="mn-card p-6 text-center transition-colors group-hover:border-gray-400 dark:group-hover:border-gray-500 cursor-pointer">
             <div class="flex justify-center mb-3">
-                <i data-lucide="book" class="w-12 h-12 text-amber-800 dark:text-amber-600"></i>
+                <i data-lucide="book" class="w-12 h-12 text-gray-800 dark:text-gray-100"></i>
             </div>
             <div class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">
                 {{ total_books }}
@@ -415,9 +424,9 @@
     
     <!-- Total Highlights Card -->
     <a href="/library/ui" class="no-underline group">
-        <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center transition-all group-hover:-translate-y-1 group-hover:border-amber-500 group-hover:shadow-lg cursor-pointer">
+        <div class="mn-card p-6 text-center transition-colors group-hover:border-gray-400 dark:group-hover:border-gray-500 cursor-pointer">
             <div class="flex justify-center mb-3">
-                <i data-lucide="lightbulb" class="w-12 h-12 text-amber-500"></i>
+                <i data-lucide="lightbulb" class="w-12 h-12 text-gray-800 dark:text-gray-100"></i>
             </div>
             <div class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">
                 {{ total_highlights }}
@@ -430,9 +439,9 @@
     
     <!-- Favorites Card -->
     <a href="/highlights/ui/favorites" class="no-underline group">
-        <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center transition-all group-hover:-translate-y-1 group-hover:border-yellow-500 group-hover:shadow-lg cursor-pointer">
+        <div class="mn-card p-6 text-center transition-colors group-hover:border-gray-400 dark:group-hover:border-gray-500 cursor-pointer">
             <div class="flex justify-center mb-3">
-                <i data-lucide="star" class="w-12 h-12 text-yellow-500 dark:text-yellow-400"></i>
+                <i data-lucide="star" class="w-12 h-12 text-gray-800 dark:text-gray-100"></i>
             </div>
             <div class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">
                 {{ total_favorited }}
@@ -445,9 +454,9 @@
     
     <!-- Discarded Card -->
     <a href="/highlights/ui/discarded" class="no-underline group">
-        <div class="bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-6 text-center transition-all group-hover:-translate-y-1 group-hover:border-rose-400 group-hover:shadow-lg cursor-pointer">
+        <div class="mn-card p-6 text-center transition-colors group-hover:border-gray-400 dark:group-hover:border-gray-500 cursor-pointer">
             <div class="flex justify-center mb-3">
-                <i data-lucide="trash-2" class="w-12 h-12 text-rose-500 dark:text-rose-400"></i>
+                <i data-lucide="trash-2" class="w-12 h-12 text-gray-800 dark:text-gray-100"></i>
             </div>
             <div class="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-2">
                 {{ total_discarded }}
@@ -468,7 +477,7 @@
             Latest Kindle import
         </h3>
         <form method="post" action="/import/kindle/scan-now">
-            <button type="submit" class="inline-flex items-center gap-2 bg-amber-700 hover:bg-amber-800 dark:bg-amber-700 dark:hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors">
+            <button type="submit" class="mn-btn-secondary min-h-0 px-4 py-2 text-sm">
                 <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                 Scan now
             </button>

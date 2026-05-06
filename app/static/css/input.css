@@ -3,16 +3,49 @@
 @tailwind utilities;
 
 :root {
-  --bg-color: #ffffff;
-  --text-color: #1f2937;
-  --border-color: #e5e7eb;
-  --highlight-bg: #f9fafb;
-  --header-border: #e5e7eb;
-  --link-color: #3b82f6;
-  --muted-text: #6b7280;
-  --success-bg: #d1fae5;
-  --success-border: #a7f3d0;
-  --success-text: #065f46;
+  --background: #FFFFFF;
+  --surface1: #F8F8F8;
+  --surface2: #F4F4F4;
+  --surface3: #EAEAEA;
+  --border: #EAEAEA;
+  --border-visible: #CCCCCC;
+  --text1: #000000;
+  --text2: #4D4D4D;
+  --text3: #7C7D7E;
+  --text4: #999999;
+  --accent: #EEFF00;
+  --accent-bg: #FCFFCC;
+  --accent-strong: #B5C200;
+  --success: #3F9E55;
+  --success-bg: #EDF8EE;
+  --warning: #C99729;
+  --warning-bg: #FBF3DC;
+  --error: #D93B3F;
+  --error-bg: #FDECEC;
+  --font-display: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Roboto Mono', ui-monospace, 'SF Mono', monospace;
+  --radius-input: 8px;
+  --radius-chip: 4px;
+  --radius-component: 16px;
+  --radius-container: 24px;
+  --radius-pill: 999px;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-medium: 180ms;
+
+  --bg-color: var(--background);
+  --text-color: var(--text1);
+  --border-color: var(--border);
+  --highlight-bg: var(--surface1);
+  --header-border: var(--border);
+  --link-color: var(--text1);
+  --muted-text: var(--text3);
+  --success-border: var(--success);
+  --success-text: var(--success);
+  /* Heatmap ramp stays GREEN — functional information, not chrome.
+     handsoff.md §7 #1: the brand explicitly does not override semantic
+     status colors. Don't "harmonise" this with the brand yellow. */
   --heatmap-empty: #ebedf0;
   --heatmap-scale-1: #c7e9c0;
   --heatmap-scale-2: #7bcf6e;
@@ -20,20 +53,35 @@
   --heatmap-scale-4: #0d5f1d;
   --heatmap-reviewed: #10b981;
   --heatmap-stroke: #d0d7de;
-  --heatmap-label-bg: #ffffff;
+  --heatmap-label-bg: var(--background);
 }
 
 [data-theme="dark"], .dark {
-  --bg-color: #111827;
-  --text-color: #f3f4f6;
-  --border-color: #374151;
-  --highlight-bg: #1f2937;
-  --header-border: #374151;
-  --link-color: #60a5fa;
-  --muted-text: #9ca3af;
-  --success-bg: #064e3b;
-  --success-border: #065f46;
-  --success-text: #a7f3d0;
+  --background: #000000;
+  --surface1: #1D1E1F;
+  --surface2: #333333;
+  --surface3: #4D4D4D;
+  --border: #333333;
+  --border-visible: #4D4D4D;
+  --text1: #FFFFFF;
+  --text2: #CCCCCC;
+  --text3: #999999;
+  --text4: #7C7D7E;
+  --accent: #EEFF00;
+  --accent-bg: #2E3100;
+  --accent-strong: #EEFF00;
+  --success-bg: rgba(63, 158, 85, 0.16);
+  --warning-bg: rgba(201, 151, 41, 0.18);
+  --error-bg: rgba(217, 59, 63, 0.16);
+  --bg-color: var(--background);
+  --text-color: var(--text1);
+  --border-color: var(--border);
+  --highlight-bg: var(--surface1);
+  --header-border: var(--border);
+  --link-color: var(--text1);
+  --muted-text: var(--text3);
+  --success-border: var(--success);
+  --success-text: var(--success);
   --heatmap-empty: #161b22;
   --heatmap-scale-1: #0e4429;
   --heatmap-scale-2: #006d32;
@@ -41,21 +89,34 @@
   --heatmap-scale-4: #39d353;
   --heatmap-reviewed: #34d399;
   --heatmap-stroke: #30363d;
-  --heatmap-label-bg: #1f2937;
+  --heatmap-label-bg: var(--surface1);
 }
 
 @media (prefers-color-scheme: dark) {
   [data-theme="auto"] {
-    --bg-color: #111827;
-    --text-color: #f3f4f6;
-    --border-color: #374151;
-    --highlight-bg: #1f2937;
-    --header-border: #374151;
-    --link-color: #60a5fa;
-    --muted-text: #9ca3af;
-    --success-bg: #064e3b;
-    --success-border: #065f46;
-    --success-text: #a7f3d0;
+    --background: #000000;
+    --surface1: #1D1E1F;
+    --surface2: #333333;
+    --surface3: #4D4D4D;
+    --border: #333333;
+    --border-visible: #4D4D4D;
+    --text1: #FFFFFF;
+    --text2: #CCCCCC;
+    --text3: #999999;
+    --text4: #7C7D7E;
+    --accent-bg: #2E3100;
+    --success-bg: rgba(63, 158, 85, 0.16);
+    --warning-bg: rgba(201, 151, 41, 0.18);
+    --error-bg: rgba(217, 59, 63, 0.16);
+    --bg-color: var(--background);
+    --text-color: var(--text1);
+    --border-color: var(--border);
+    --highlight-bg: var(--surface1);
+    --header-border: var(--border);
+    --link-color: var(--text1);
+    --muted-text: var(--text3);
+    --success-border: var(--success);
+    --success-text: var(--success);
     --heatmap-empty: #161b22;
     --heatmap-scale-1: #0e4429;
     --heatmap-scale-2: #006d32;
@@ -63,12 +124,14 @@
     --heatmap-scale-4: #39d353;
     --heatmap-reviewed: #34d399;
     --heatmap-stroke: #30363d;
-    --heatmap-label-bg: #1f2937;
+    --heatmap-label-bg: var(--surface1);
   }
 }
 
 /* Responsive root font-size: shrinks all rem-based Tailwind utilities on
-   smaller viewports so the UI feels proportional on mobile.
+   smaller viewports so the UI feels proportional on mobile. Preserved
+   from the pre-redesign state per handsoff.md §3.2 — fork-specific
+   decision that works well on the QNAP-served PWA on phones.
    Mobile (<640px): 14px  |  sm (640-767px): 15px  |  md+ (≥768px): 16px */
 html {
   font-size: 14px;
@@ -81,15 +144,179 @@ html {
 }
 
 body {
-  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  background: var(--background);
+  color: var(--text1);
+  font-family: var(--font-body);
+  letter-spacing: 0;
 }
 
+/* Reading-mode highlight bodies keep Crimson Pro — see fonts.css for the
+   rationale. handsoff.md §3.2: this is a deliberate fork-specific
+   exception to the brand's anti-serif rule. Do not switch to Inter. */
 .highlight-text {
   font-family: 'Crimson Pro', Georgia, serif;
 }
 
 .title-font {
-  font-family: 'Libre Baskerville', 'Crimson Pro', Georgia, serif;
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+@layer base {
+  h1, h2, h3 {
+    color: var(--text1);
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  h4, h5, h6, p, li, label, input, textarea, select, button {
+    font-family: var(--font-body);
+  }
+
+  input, textarea, select {
+    border-radius: var(--radius-input);
+  }
+
+  input:focus, textarea:focus, select:focus {
+    outline: 2px solid var(--text1);
+    outline-offset: 0;
+    box-shadow: none;
+  }
+
+  code, kbd, pre {
+    font-family: var(--font-mono);
+  }
+}
+
+@layer components {
+  .mn-card {
+    background: var(--surface1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-component);
+    box-shadow: none;
+  }
+
+  .mn-btn,
+  .mn-btn-primary,
+  .mn-btn-secondary,
+  .mn-btn-ghost,
+  .mn-btn-danger {
+    align-items: center;
+    border-radius: var(--radius-pill);
+    display: inline-flex;
+    font-weight: 700;
+    gap: 0.5rem;
+    min-height: 44px;
+    padding: 0.65rem 1.25rem;
+    transition: background-color var(--duration-medium) var(--ease-out),
+      color var(--duration-medium) var(--ease-out),
+      border-color var(--duration-medium) var(--ease-out),
+      transform var(--duration-fast) var(--ease-out);
+  }
+
+  .mn-btn-primary {
+    background: var(--accent);
+    border: 1px solid var(--text1);
+    color: #000;
+  }
+
+  .mn-btn-primary:hover {
+    background: var(--text1);
+    color: var(--accent);
+  }
+
+  .mn-btn-secondary {
+    background: var(--text1);
+    border: 1px solid var(--text1);
+    color: var(--background);
+  }
+
+  .mn-btn-ghost {
+    background: transparent;
+    color: var(--text1);
+  }
+
+  .mn-btn-danger {
+    background: var(--error);
+    border: 1px solid var(--error);
+    color: #fff;
+  }
+
+  .mn-stamp-bar {
+    background: var(--accent);
+    display: inline-block;
+    height: 18px;
+    margin-right: 8px;
+    width: 4px;
+  }
+}
+
+@layer utilities {
+  .minna-skin [class*="shadow"],
+  .minna-skin [class*="hover:shadow"] {
+    box-shadow: none !important;
+  }
+
+  .minna-skin [class*="bg-gradient-to"] {
+    background-image: none !important;
+  }
+
+  .minna-skin .rounded-xl,
+  .minna-skin .rounded-2xl {
+    border-radius: var(--radius-component) !important;
+  }
+
+  .minna-skin .rounded-lg {
+    border-radius: var(--radius-input) !important;
+  }
+
+  .minna-skin button[class*="bg-"],
+  .minna-skin a[class*="bg-"][href],
+  .minna-skin input[type="submit"][class*="bg-"] {
+    border-radius: var(--radius-pill) !important;
+    box-shadow: none !important;
+    font-weight: 700;
+  }
+
+  .minna-skin .bg-white,
+  .minna-skin .dark\:bg-gray-800,
+  .minna-skin .dark\:bg-gray-900 {
+    background-color: var(--surface1) !important;
+  }
+
+  .minna-skin .bg-gray-50,
+  .minna-skin .bg-gray-100,
+  .minna-skin .bg-gray-200,
+  .minna-skin .dark\:bg-gray-700 {
+    background-color: var(--surface2) !important;
+  }
+
+  .minna-skin .border-gray-200,
+  .minna-skin .border-gray-300,
+  .minna-skin .dark\:border-gray-700,
+  .minna-skin .dark\:border-gray-600 {
+    border-color: var(--border) !important;
+  }
+
+  .minna-skin .text-blue-600,
+  .minna-skin .text-blue-700,
+  .minna-skin .text-blue-800,
+  .minna-skin .text-purple-600,
+  .minna-skin .text-purple-700,
+  .minna-skin .dark\:text-blue-300,
+  .minna-skin .dark\:text-blue-400,
+  .minna-skin .dark\:text-purple-300,
+  .minna-skin .dark\:text-purple-400 {
+    color: var(--text2) !important;
+  }
+
+  .minna-skin .bg-blue-50,
+  .minna-skin .bg-blue-100,
+  .minna-skin .bg-purple-50,
+  .minna-skin .dark\:bg-blue-900\/20,
+  .minna-skin .dark\:bg-purple-900\/20 {
+    background-color: var(--surface2) !important;
+  }
 }
 
 /* ── Custom component overrides ─────────────────────────────────────────────

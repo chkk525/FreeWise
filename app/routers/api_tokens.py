@@ -20,14 +20,14 @@ import hashlib
 import logging
 import secrets
 from typing import Optional
-from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import Session, select
 
 from app.db import get_session, get_settings
 from app.models import ApiToken
+from app.security import check_same_origin
 from app.template_filters import make_templates
 
 logger = logging.getLogger(__name__)
@@ -46,42 +46,6 @@ DEFAULT_TOKEN_USER_ID = 1
 # so a token created from this UI is immediately usable for every existing
 # /api/v2/* endpoint. Refine the UI later to let users pick a narrower set.
 DEFAULT_TOKEN_SCOPES = "kindle:import,highlights:read,highlights:write,books:read"
-
-
-def _check_same_origin(request: Request) -> None:
-    """Reject POSTs whose Origin (or fallback Referer) is not same-host.
-
-    Cloudflare Access sits in front of FreeWise; the upstream FastAPI app
-    has no auth of its own. Without an Origin/Referer check, a victim's
-    Access session could be ridden by any cross-origin page that POSTs to
-    /import/api-token to mint a token. Mirrors the pattern in
-    safaribooks-web's `_check_origin` (`webapp/app.py`).
-    """
-    origin = request.headers.get("origin")
-    referer = request.headers.get("referer")
-    request_host = request.url.netloc
-    candidate = origin or referer
-    if not candidate:
-        # Some browsers strip Origin on same-origin form posts. We allow that
-        # ONLY when the request is same-host AND uses POST from a non-CORS
-        # context. Same-host check via the request URL itself.
-        return
-    parsed = urlparse(candidate)
-    candidate_host = parsed.netloc
-    if not candidate_host:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cross-origin request rejected: malformed Origin/Referer",
-        )
-    if candidate_host != request_host:
-        logger.warning(
-            "api-token CSRF: origin=%s referer=%s does not match host=%s",
-            origin, referer, request_host,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cross-origin request rejected",
-        )
 
 
 def _list_tokens(session: Session) -> list[ApiToken]:
@@ -128,7 +92,7 @@ async def create_api_token(
     cannot be retrieved later. Token format is ``fw_<64hex>`` so the prefix
     is recognisable in operator logs.
     """
-    _check_same_origin(request)
+    check_same_origin(request)
     settings = get_settings(session)
     label = name.strip() or "unnamed"
     raw_token = _generate_raw_token()
@@ -170,7 +134,7 @@ async def revoke_api_token(
     session: Session = Depends(get_session),
 ) -> RedirectResponse:
     """Delete an API token by id. Same CSRF check as creation."""
-    _check_same_origin(request)
+    check_same_origin(request)
     row = session.get(ApiToken, token_id)
     if row is not None:
         session.delete(row)

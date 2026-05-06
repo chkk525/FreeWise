@@ -5,6 +5,6 @@
     "tailwindcss": "^3.4.10"
   },
   "scripts": {
-    "build:css": "tailwindcss -c tailwind.config.js -i app/static/css/input.css -o app/static/css/tailwind.css --minify"
+    "build:css": "mkdir -p /tmp/freewise-tailwind && npm exec --prefix /tmp/freewise-tailwind --yes --package tailwindcss@3.4.19 -- tailwindcss -c tailwind.config.js -i app/static/css/input.css -o app/static/css/tailwind.css --minify"
   }
 }

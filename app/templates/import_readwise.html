@@ -236,24 +236,24 @@
             progressBar.style.width = '90%';
             progressText.textContent = 'Server is importing… (this can take a minute)';
         };
+        function replaceDocumentFromHtml(html) {
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            document.title = doc.title || document.title;
+            document.body.replaceChildren(...Array.from(doc.body.childNodes));
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
         xhr.onload = () => {
             progressBar.style.width = '100%';
             if (xhr.status >= 200 && xhr.status < 300) {
                 progressText.textContent = 'Import complete!';
-                // Replace the page with the server-rendered response
-                // (which includes the success/error summary).
-                document.open();
-                document.write(xhr.responseText);
-                document.close();
+                replaceDocumentFromHtml(xhr.responseText);
             } else {
                 progressText.textContent = `Import failed (HTTP ${xhr.status}). See response below.`;
                 progressBar.style.background = '#dc2626';
                 submitBtn.disabled = false;
                 submitBtn.style.opacity = '1';
-                // Render the server's error page in place.
-                document.open();
-                document.write(xhr.responseText || `<pre>HTTP ${xhr.status}</pre>`);
-                document.close();
+                replaceDocumentFromHtml(xhr.responseText || `<pre>HTTP ${xhr.status}</pre>`);
             }
         };
         xhr.onerror = () => {
