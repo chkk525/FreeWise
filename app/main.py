@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -248,6 +249,10 @@ _STREAK_BEARING_PATHS: tuple[str, ...] = (
     "/",
 )
 
+_STREAK_CACHE_TTL_SECONDS = float(os.getenv("FREEWISE_STREAK_CACHE_TTL", "10"))
+_streak_cache_value = 0
+_streak_cache_expires_at = 0.0
+
 
 @app.middleware("http")
 async def inject_streak(request: Request, call_next):
@@ -263,11 +268,22 @@ async def inject_streak(request: Request, call_next):
     """
     request.state.streak = 0
     path = request.url.path
-    needs_streak = any(path.startswith(p) or path == p for p in _STREAK_BEARING_PATHS)
+    needs_streak = (
+        request.headers.get("hx-request") != "true"
+        and any(path.startswith(p) or path == p for p in _STREAK_BEARING_PATHS)
+    )
     if needs_streak:
+        global _streak_cache_value, _streak_cache_expires_at
+        now = time.monotonic()
+        if now < _streak_cache_expires_at:
+            request.state.streak = _streak_cache_value
+            return await call_next(request)
         try:
             with Session(get_engine()) as s:
-                request.state.streak = get_current_streak(s)
+                streak = get_current_streak(s)
+                request.state.streak = streak
+                _streak_cache_value = streak
+                _streak_cache_expires_at = now + _STREAK_CACHE_TTL_SECONDS
         except Exception:
             pass
     return await call_next(request)

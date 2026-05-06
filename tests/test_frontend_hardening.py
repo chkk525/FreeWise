@@ -75,6 +75,15 @@ def test_base_page_loads_shared_keyboard_shortcuts_once():
     assert "review-done-btn" not in html
 
 
+def test_shared_scripts_are_deferred():
+    html = (ROOT / "app/templates/base.html").read_text()
+    partial = (ROOT / "app/templates/_keyboard_shortcuts.html").read_text()
+
+    assert '<script src="/static/vendor/htmx/htmx.min.js" defer></script>' in html
+    assert '<script src="/static/vendor/lucide/lucide.min.js" defer></script>' in html
+    assert '<script src="/static/js/keyboard-shortcuts.js" defer></script>' in partial
+
+
 def test_keyboard_shortcuts_js_contains_review_actions():
     js = (ROOT / "app/static/js/keyboard-shortcuts.js").read_text()
 

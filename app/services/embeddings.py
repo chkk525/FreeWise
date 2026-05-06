@@ -135,7 +135,9 @@ def top_k_similar(
     if not candidates:
         return []
 
-    # Build a (N, D) matrix in one shot. ``frombuffer`` is zero-copy.
+    # Build a (N, D) matrix in one contiguous buffer. Joining the packed
+    # float32 blobs keeps the hot path in C and avoids one Python-level
+    # ``np.frombuffer`` + row assignment per candidate.
     n = len(candidates)
     expected = dim * 4
     bad = [cid for cid, blob in candidates if len(blob) != expected]
@@ -143,9 +145,10 @@ def top_k_similar(
         raise ValueError(
             f"{len(bad)} candidate vector(s) have wrong byte length for dim={dim}"
         )
-    matrix = np.empty((n, dim), dtype=np.float32)
-    for i, (_, blob) in enumerate(candidates):
-        matrix[i] = np.frombuffer(blob, dtype=np.float32)
+    matrix = np.frombuffer(
+        b"".join(blob for _, blob in candidates),
+        dtype=np.float32,
+    ).reshape(n, dim)
     target_vec = np.frombuffer(target, dtype=np.float32)
     if target_vec.shape[0] != dim:
         raise ValueError(
