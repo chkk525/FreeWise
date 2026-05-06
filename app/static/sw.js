@@ -1,5 +1,9 @@
-// FreeWise Service Worker — network-first for dynamic content, cache-first for static assets
-const CACHE = 'freewise-v4';
+// FreeWise Service Worker — network-first for dynamic content, cache-first for static assets.
+// Bump CACHE on any change to a precached file (fonts.css, vendored libs) to
+// force-evict stale copies on the QNAP/Cloudflare-fronted deploy. v5 adds
+// Crimson Pro back to fonts.css (Minna restoration); v6 expects Inter +
+// Noto Sans JP under /static/fonts/minna/.
+const CACHE = 'freewise-v6';
 
 // Vendor/font files that never change — served cache-first for offline support
 const PRECACHE = [

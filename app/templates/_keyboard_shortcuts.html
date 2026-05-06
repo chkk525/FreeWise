@@ -1,60 +1,66 @@
-<!-- Global keyboard shortcuts help modal (Gmail-style) -->
-<div id="kbd-help-modal" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+<!-- Global keyboard shortcuts help modal (Gmail-style). Modal chassis is
+     Minna §7: 24px radius (rounded-container), flat 1px ring shadow (no
+     blur), 32px padding. Vertical-bar prefix on the title carries the
+     brand signature into the dialog. -->
+<div id="kbd-help-modal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
      onclick="if(event.target===this)this.classList.add('hidden')">
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg p-6 max-h-[80vh] overflow-y-auto">
+    <div class="bg-surface-1 rounded-container w-full max-w-lg p-8 max-h-[80vh] overflow-y-auto" style="box-shadow: 0 0 0 1px var(--border-visible);">
         <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Keyboard shortcuts</h2>
+            <h2 class="text-subheading text-text-1 flex items-center gap-2"><span class="vbar"></span>Keyboard shortcuts</h2>
             <button onclick="document.getElementById('kbd-help-modal').classList.add('hidden')"
-                    aria-label="Close" class="p-1 text-gray-500 hover:text-gray-900 dark:hover:text-white">
+                    aria-label="Close" class="p-1 text-text-3 hover:text-text-1 transition-colors">
                 <i data-lucide="x" class="w-5 h-5"></i>
             </button>
         </div>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Gmail-style: press <kbd class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-xs">g</kbd> then a letter to navigate.</p>
+        <p class="text-sm text-text-2 mb-4">Gmail-style: press <kbd class="kbd">g</kbd> then a letter to navigate.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
             <div>
-                <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Navigate</h3>
+                <h3 class="font-semibold text-text-1 mt-3 mb-2">Navigate</h3>
                 <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">d</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Dashboard</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">l</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Library</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">r</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Review</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Favorites</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">x</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discarded</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">m</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Mastered</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">a</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Ask (RAG)</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">u</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Duplicates</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Import</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Settings</dd>
-                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">t</kbd></dt><dd class="text-gray-700 dark:text-gray-300">API tokens</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">d</kbd></dt><dd class="text-text-2">Dashboard</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">l</kbd></dt><dd class="text-text-2">Library</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">r</kbd></dt><dd class="text-text-2">Review</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">f</kbd></dt><dd class="text-text-2">Favorites</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">x</kbd></dt><dd class="text-text-2">Discarded</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">m</kbd></dt><dd class="text-text-2">Mastered</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">a</kbd></dt><dd class="text-text-2">Ask (RAG)</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">u</kbd></dt><dd class="text-text-2">Duplicates</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd></dt><dd class="text-text-2">Import</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd class="text-text-2">Settings</dd>
+                    <dt><kbd class="kbd">g</kbd> <kbd class="kbd">t</kbd></dt><dd class="text-text-2">API tokens</dd>
                 </dl>
             </div>
             <div>
-                <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Review (on /highlights/ui/review)</h3>
+                <h3 class="font-semibold text-text-1 mt-3 mb-2">Review (on /highlights/ui/review)</h3>
                 <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                    <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">e</kbd> / <kbd class="kbd">Space</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Done - next</dd>
-                    <dt><kbd class="kbd">s</kbd> / <kbd class="kbd">f</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Star (toggle favorite)</dd>
-                    <dt><kbd class="kbd">x</kbd> / <kbd class="kbd">d</kbd> / <kbd class="kbd">#</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Discard</dd>
-                    <dt><kbd class="kbd">Enter</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Edit highlight</dd>
+                    <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">e</kbd> / <kbd class="kbd">Space</kbd></dt><dd class="text-text-2">Done — next</dd>
+                    <dt><kbd class="kbd">s</kbd> / <kbd class="kbd">f</kbd></dt><dd class="text-text-2">Star (toggle favorite)</dd>
+                    <dt><kbd class="kbd">x</kbd> / <kbd class="kbd">d</kbd> / <kbd class="kbd">#</kbd></dt><dd class="text-text-2">Discard</dd>
+                    <dt><kbd class="kbd">Enter</kbd></dt><dd class="text-text-2">Edit highlight</dd>
                 </dl>
-                <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Lists</h3>
+                <h3 class="font-semibold text-text-1 mt-3 mb-2">Lists</h3>
                 <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                    <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">k</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Next / previous highlight</dd>
-                    <dt><kbd class="kbd">n</kbd> / <kbd class="kbd">p</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Next / previous page</dd>
+                    <dt><kbd class="kbd">j</kbd> / <kbd class="kbd">k</kbd></dt><dd class="text-text-2">Next / previous highlight</dd>
+                    <dt><kbd class="kbd">n</kbd> / <kbd class="kbd">p</kbd></dt><dd class="text-text-2">Next / previous page</dd>
                 </dl>
-                <h3 class="font-semibold text-gray-700 dark:text-gray-300 mt-3 mb-2">Anywhere</h3>
+                <h3 class="font-semibold text-text-1 mt-3 mb-2">Anywhere</h3>
                 <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                    <dt><kbd class="kbd">/</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Focus search (or open search page)</dd>
-                    <dt><kbd class="kbd">Cmd/Ctrl</kbd> <kbd class="kbd">K</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Quick search</dd>
-                    <dt><kbd class="kbd">?</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Toggle this help</dd>
-                    <dt><kbd class="kbd">Esc</kbd></dt><dd class="text-gray-700 dark:text-gray-300">Close help / dismiss</dd>
+                    <dt><kbd class="kbd">/</kbd></dt><dd class="text-text-2">Focus search (or open search page)</dd>
+                    <dt><kbd class="kbd">Cmd/Ctrl</kbd> <kbd class="kbd">K</kbd></dt><dd class="text-text-2">Quick search</dd>
+                    <dt><kbd class="kbd">?</kbd></dt><dd class="text-text-2">Toggle this help</dd>
+                    <dt><kbd class="kbd">Esc</kbd></dt><dd class="text-text-2">Close help / dismiss</dd>
                 </dl>
             </div>
         </div>
-        <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">
+        <p class="mt-4 text-xs text-text-3">
             Shortcuts are ignored while typing in input fields.
         </p>
     </div>
 </div>
 <style>
-    .kbd { display:inline-block; padding:1px 6px; border:1px solid var(--border-visible); background:var(--surface2); border-radius:4px; font-family:var(--font-mono); font-size:11px; color:var(--text2); }
+    /* Keyboard chip — Minna chip chassis: 4px radius, 1px solid border-
+       visible, surface3 fill. Uses body font (mono is reserved for code,
+       not for UI labels per `mono_for_data: false`). */
+    .kbd { display: inline-block; padding: 1px 6px; border: 1px solid var(--border-visible); background: var(--surface3); border-radius: 4px; font-family: var(--font-body); font-size: 11px; font-weight: 600; color: var(--text2); }
 </style>
 <script src="/static/js/keyboard-shortcuts.js"></script>

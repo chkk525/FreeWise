@@ -27,81 +27,155 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="FreeWise">
+    {# Theme-color: pure white in light, true black in dark — Minna's
+       structural ramp. The two media variants let mobile browsers tint
+       the URL bar correctly without JS. #}
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
     <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
-    
+
     <style>
         /* Apply dark class when theme is dark */
         [data-theme="dark"] {
             color-scheme: dark;
         }
+        /* Yellow vertical bar (vbar) and stamp-dot signatures. .vbar is the
+           4x18 heading prefix. .vbar-sm is the 4x14 inline nav-link prefix.
+           .stamp-dot is the 9x9 black-bordered yellow dot used for bullet
+           lists and active markers. Black hairline is mandatory — that is
+           what makes the dot read as a stamp instead of a painted circle. */
+        .vbar { width: 4px; height: 18px; background: var(--accent); display: inline-block; flex-shrink: 0; }
+        .vbar-sm { width: 4px; height: 14px; background: var(--accent); display: inline-block; flex-shrink: 0; }
+        .stamp-dot { width: 9px; height: 9px; background: var(--accent); border: 1px solid var(--text1); border-radius: 999px; display: inline-block; flex-shrink: 0; }
     </style>
 </head>
-<body class="minna-skin bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+<body class="minna-skin bg-background text-text-1 transition-colors duration-medium">
+    {# Active-nav detection — match by URL prefix. Loose by design so any
+       /import/* (incl. /import/api-token) lights up the Import link, etc. #}
+    {% set _path = (request.url.path if request and request.url else '') %}
+    {% set is_dashboard = _path.startswith('/dashboard') or _path == '/' %}
+    {% set is_library   = _path.startswith('/library') %}
+    {% set is_import    = _path.startswith('/import') %}
+    {% set is_settings  = _path.startswith('/settings') %}
     <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <!-- Navigation Header -->
-        <div class="border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
+        <div class="border-b pb-4 mb-6" style="border-color: var(--border);">
             <nav class="flex items-center justify-between text-base gap-3">
+                {# Wordmark — yellow vertical bar prefix + "FreeWise". The
+                   bar is the brand's primary heading signature; placing it
+                   here means every page carries the stamp in chrome. #}
+                <a href="/dashboard/ui"
+                   class="flex items-center gap-2 flex-shrink-0 text-text-1 hover:opacity-80 transition-opacity"
+                   aria-label="FreeWise — Dashboard">
+                    <span class="vbar"></span>
+                    <span class="font-bold tracking-heading text-base sm:text-lg">FreeWise</span>
+                </a>
+
                 <!-- Nav links: icon-only on mobile, icon + label on sm+ -->
-                <div class="flex items-center gap-5 sm:gap-6">
-                    <a href="/dashboard/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                <div class="flex items-center gap-4 sm:gap-5">
+                    <a href="/dashboard/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_dashboard %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_dashboard %}aria-current="page"{% endif %}>
+                        {% if is_dashboard %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">Dashboard</span>
                     </a>
-                    <a href="/library/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                    <a href="/library/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_library %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_library %}aria-current="page"{% endif %}>
+                        {% if is_library %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="library" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">Library</span>
                     </a>
-                    <a href="/import/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                    <a href="/import/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_import %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_import %}aria-current="page"{% endif %}>
+                        {% if is_import %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="upload" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">Import</span>
                     </a>
-                    <a href="/settings/ui" class="flex items-center gap-1.5 text-gray-700 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                    <a href="/settings/ui"
+                       class="flex items-center gap-1.5 transition-colors {% if is_settings %}text-text-1 font-semibold{% else %}text-text-2 hover:text-text-1{% endif %}"
+                       {% if is_settings %}aria-current="page"{% endif %}>
+                        {% if is_settings %}<span class="vbar-sm"></span>{% endif %}
                         <i data-lucide="settings" class="w-5 h-5"></i>
                         <span class="hidden sm:inline">Settings</span>
                     </a>
                 </div>
-                <!-- Search box: full-text across all highlights. Press / to focus. -->
+
+                {# Search box — Minna input chassis: 8px radius (rounded-input),
+                   1px solid border-visible default, 2px black focus ring (NOT
+                   yellow). Compensating padding so the input doesn't jump on
+                   focus. Magnifier inherits from text-3. #}
                 <form method="get" action="/highlights/ui/search" class="flex-1 max-w-xs hidden sm:block">
                     <label class="relative block">
                         <span class="sr-only">Search highlights</span>
-                        <i data-lucide="search" class="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></i>
+                        <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-3 pointer-events-none"></i>
                         <input id="global-search-input" type="search" name="q"
                                placeholder="Search highlights…  (press /)"
                                value="{{ (request.query_params.get('q', '') if request and request.query_params is defined else '') }}"
-                               class="w-full pl-8 pr-2 py-1.5 text-sm rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500">
+                               class="w-full pl-8 pr-3 py-1.5 text-sm rounded-input bg-background text-text-1 placeholder:text-text-4 focus:outline-none transition-colors"
+                               style="border: 1px solid var(--border-visible);">
                     </label>
                 </form>
-                <!-- Theme toggle: cycles light → dark → auto. -->
+
+                {# Theme toggle — 3-segment pill track. Visual fidelity to the
+                   design preview's floating bar. The cycle endpoint
+                   (/settings/theme/toggle) advances light → dark → auto on
+                   any click, so each segment is the same POST; the active
+                   segment is stamped via aria-current + a black fill. #}
                 {% set _t = (settings.theme if settings and settings.theme else 'light') %}
-                <button type="button"
-                        hx-post="/settings/theme/toggle"
-                        hx-swap="none"
-                        title="Theme: {{ _t }} (click to cycle)"
-                        aria-label="Toggle theme (current: {{ _t }})"
-                        class="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                    {% if _t == 'dark' %}
-                    <i data-lucide="moon" class="w-5 h-5"></i>
-                    {% elif _t == 'auto' %}
-                    <i data-lucide="monitor" class="w-5 h-5"></i>
-                    {% else %}
-                    <i data-lucide="sun" class="w-5 h-5"></i>
-                    {% endif %}
-                </button>
-                <!-- Streak indicator: always pinned to the far right -->
+                <div role="group" aria-label="Theme: {{ _t }} (click any segment to cycle)"
+                     class="inline-flex items-center gap-0 p-0.5 rounded-pill bg-surface-1 flex-shrink-0"
+                     style="border: 1px solid var(--border);">
+                    <button type="button"
+                            hx-post="/settings/theme/toggle"
+                            hx-swap="none"
+                            title="Light"
+                            aria-label="Light theme"
+                            {% if _t == 'light' %}aria-current="true"{% endif %}
+                            class="flex items-center justify-center w-7 h-7 rounded-pill transition-colors {% if _t == 'light' %}bg-text-1 text-background{% else %}text-text-3 hover:text-text-1{% endif %}">
+                        <i data-lucide="sun" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button"
+                            hx-post="/settings/theme/toggle"
+                            hx-swap="none"
+                            title="Dark"
+                            aria-label="Dark theme"
+                            {% if _t == 'dark' %}aria-current="true"{% endif %}
+                            class="flex items-center justify-center w-7 h-7 rounded-pill transition-colors {% if _t == 'dark' %}bg-text-1 text-background{% else %}text-text-3 hover:text-text-1{% endif %}">
+                        <i data-lucide="moon" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button"
+                            hx-post="/settings/theme/toggle"
+                            hx-swap="none"
+                            title="Auto"
+                            aria-label="Auto theme (follow OS)"
+                            {% if _t == 'auto' %}aria-current="true"{% endif %}
+                            class="flex items-center justify-center w-7 h-7 rounded-pill transition-colors {% if _t == 'auto' %}bg-text-1 text-background{% else %}text-text-3 hover:text-text-1{% endif %}">
+                        <i data-lucide="monitor" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- Streak indicator — uses --warning semantic token (status
+                     color is allowed an exception to the no-second-accent
+                     rule because it carries information, not chrome). -->
                 <div class="flex items-center gap-1.5 flex-shrink-0">
                     {% set streak = request.state.streak | default(0) %}
                     <i data-lucide="zap"
-                       class="w-6 h-6 zap-filled {% if streak >= 1 %}text-amber-500{% else %}text-gray-400 dark:text-gray-600{% endif %}"></i>
+                       class="w-6 h-6 zap-filled {% if streak >= 1 %}text-warning{% else %}text-text-4{% endif %}"></i>
                     {% if streak > 1 %}
-                    <span class="text-sm font-semibold text-amber-500 dark:text-amber-400">{{ streak }}</span>
+                    <span class="text-sm font-semibold text-warning">{{ streak }}</span>
                     {% endif %}
                 </div>
             </nav>
         </div>
-        
-        <!-- Page Title -->
+
+        <!-- Page Title — capped at text-heading (32px) per Minna's no-display-
+             shouting rule for product UI. .title-font alias still works
+             (now points at Inter via input.css). -->
         <div class="mb-8">
-            <h2 class="text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 dark:text-white title-font">
+            <h2 class="text-heading text-text-1">
                 {% block heading %}FreeWise{% endblock %}
             </h2>
         </div>
@@ -136,27 +210,29 @@
     
     {% include "_keyboard_shortcuts.html" %}
     <style>
-        /* Toast notifications: fixed bottom-right column, animated in/out. */
+        /* Toast notifications — bank-grade, no blur. Status tags follow Minna
+           §6: tinted bg + matching foreground + 1px solid border in the same
+           hue. The accent (#EEFF00) is reserved for primary actions, so
+           toasts never carry the brand stamp. Both modes use semantic vars
+           so dark theme switching is automatic. */
         #toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none; }
-        .toast { pointer-events: auto; min-width: 240px; max-width: 360px; padding: 0.625rem 0.875rem; border-radius: 16px; box-shadow: none; display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; opacity: 0; transform: translateY(8px); transition: opacity 180ms ease, transform 180ms ease; }
+        .toast { pointer-events: auto; min-width: 240px; max-width: 360px; padding: 0.625rem 0.875rem; border-radius: 8px; box-shadow: none; display: flex; align-items: center; gap: 0.5rem; font-size: 13px; line-height: 1.55; opacity: 0; transform: translateY(8px); transition: opacity 180ms cubic-bezier(0.2,0,0,1), transform 180ms cubic-bezier(0.2,0,0,1); }
         .toast.show { opacity: 1; transform: translateY(0); }
-        .toast-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
-        .toast-error   { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-        .toast-info    { background: var(--surface1); color: var(--text1); border: 1px solid var(--border-visible); }
-        @media (prefers-color-scheme: dark) {
-            .toast-success { background: #064e3b; color: #d1fae5; border-color: #047857; }
-            .toast-error   { background: #7f1d1d; color: #fee2e2; border-color: #b91c1c; }
-            .toast-info    { background: var(--surface1); color: var(--text1); border-color: var(--border-visible); }
-        }
+        .toast-success { background: var(--success-bg); color: var(--success); border: 1px solid var(--success); }
+        .toast-error   { background: var(--error-bg);   color: var(--error);   border: 1px solid var(--error); }
+        .toast-info    { background: var(--surface2);   color: var(--text1);   border: 1px solid var(--border-visible); }
     </style>
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
     <!-- Global HTMX progress bar: animates while any HTMX request is in flight. -->
     <div id="htmx-progress" aria-hidden="true"></div>
     <style>
-        /* Top-of-page progress bar for in-flight HTMX requests. */
-        #htmx-progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: var(--accent); z-index: 70; opacity: 0; transition: width 240ms ease, opacity 200ms ease; pointer-events: none; }
+        /* Top-of-page progress bar — single black bar tipped with the yellow
+           stamp at the leading edge so the wait still feels signature-aware
+           without becoming a chromatic decoration. Every motion uses the
+           single ease-out curve. */
+        #htmx-progress { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: linear-gradient(90deg, var(--text1) 0%, var(--text1) 95%, var(--accent) 100%); z-index: 70; opacity: 0; transition: width 240ms cubic-bezier(0.2,0,0,1), opacity 200ms cubic-bezier(0.2,0,0,1); pointer-events: none; }
         #htmx-progress.active { opacity: 1; width: 80%; transition: width 8s cubic-bezier(.05,.85,.2,.99), opacity 80ms ease; }
-        #htmx-progress.done   { width: 100%; opacity: 0; transition: width 200ms ease, opacity 320ms ease 180ms; }
+        #htmx-progress.done   { width: 100%; opacity: 0; transition: width 200ms cubic-bezier(0.2,0,0,1), opacity 320ms cubic-bezier(0.2,0,0,1) 180ms; }
         /* Per-element in-flight feedback: dim + disable pointer + spinner. */
         .htmx-request { opacity: 0.55; pointer-events: none; cursor: wait; }
         .htmx-request.htmx-request { /* HTMX adds this twice when nested; keep specificity */ }

@@ -68,17 +68,23 @@
     </a>
 </div>
 {% else %}
+{# "Done for today" celebration. The status icon uses --success (green is
+   semantic, allowed) but headline + body are neutral text-1 — the page's
+   yellow stamp budget still belongs to actionable CTAs, not the
+   confirmation. The CTA itself drops to a ghost pill since the work is
+   already done; clicking it is optional. #}
 <div class="mb-8 mn-card p-5 sm:p-8 text-center">
     <div class="flex justify-center mb-4">
-        <i data-lucide="check-circle" class="w-16 h-16 text-emerald-700 dark:text-emerald-600"></i>
+        <i data-lucide="check-circle" class="w-16 h-16 text-success"></i>
     </div>
-    <h2 class="text-2xl sm:text-3xl font-bold text-emerald-900 dark:text-emerald-100 mb-2">
+    <h2 class="text-subheading text-text-1 mb-2 inline-flex items-center gap-2">
+        <span class="mn-stamp-bar align-middle"></span>
         Great Job!
     </h2>
-    <p class="text-emerald-800 dark:text-emerald-300 text-lg mb-6">
+    <p class="text-text-2 text-lg mb-6">
         You already reviewed {{ highlights_reviewed_count }} highlights today
     </p>
-    <a href="/highlights/ui/review" class="mn-btn-primary">
+    <a href="/highlights/ui/review" class="mn-btn-ghost">
         <i data-lucide="book-open" class="w-5 h-5"></i>
         Review More
     </a>

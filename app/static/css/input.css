@@ -43,12 +43,15 @@
   --muted-text: var(--text3);
   --success-border: var(--success);
   --success-text: var(--success);
+  /* Heatmap ramp stays GREEN — functional information, not chrome.
+     handsoff.md §7 #1: the brand explicitly does not override semantic
+     status colors. Don't "harmonise" this with the brand yellow. */
   --heatmap-empty: #ebedf0;
-  --heatmap-scale-1: #FCFFCC;
-  --heatmap-scale-2: #EEFF66;
-  --heatmap-scale-3: #D6E600;
-  --heatmap-scale-4: #8B9500;
-  --heatmap-reviewed: var(--accent);
+  --heatmap-scale-1: #c7e9c0;
+  --heatmap-scale-2: #7bcf6e;
+  --heatmap-scale-3: #2e9f3f;
+  --heatmap-scale-4: #0d5f1d;
+  --heatmap-reviewed: #10b981;
   --heatmap-stroke: #d0d7de;
   --heatmap-label-bg: var(--background);
 }
@@ -80,11 +83,11 @@
   --success-border: var(--success);
   --success-text: var(--success);
   --heatmap-empty: #161b22;
-  --heatmap-scale-1: #2E3100;
-  --heatmap-scale-2: #5C6300;
-  --heatmap-scale-3: #B5C200;
-  --heatmap-scale-4: #EEFF00;
-  --heatmap-reviewed: var(--accent);
+  --heatmap-scale-1: #0e4429;
+  --heatmap-scale-2: #006d32;
+  --heatmap-scale-3: #26a641;
+  --heatmap-scale-4: #39d353;
+  --heatmap-reviewed: #34d399;
   --heatmap-stroke: #30363d;
   --heatmap-label-bg: var(--surface1);
 }
@@ -115,18 +118,29 @@
     --success-border: var(--success);
     --success-text: var(--success);
     --heatmap-empty: #161b22;
-    --heatmap-scale-1: #2E3100;
-    --heatmap-scale-2: #5C6300;
-    --heatmap-scale-3: #B5C200;
-    --heatmap-scale-4: #EEFF00;
-    --heatmap-reviewed: var(--accent);
+    --heatmap-scale-1: #0e4429;
+    --heatmap-scale-2: #006d32;
+    --heatmap-scale-3: #26a641;
+    --heatmap-scale-4: #39d353;
+    --heatmap-reviewed: #34d399;
     --heatmap-stroke: #30363d;
     --heatmap-label-bg: var(--surface1);
   }
 }
 
+/* Responsive root font-size: shrinks all rem-based Tailwind utilities on
+   smaller viewports so the UI feels proportional on mobile. Preserved
+   from the pre-redesign state per handsoff.md §3.2 — fork-specific
+   decision that works well on the QNAP-served PWA on phones.
+   Mobile (<640px): 14px  |  sm (640-767px): 15px  |  md+ (≥768px): 16px */
 html {
-  font-size: 16px;
+  font-size: 14px;
+}
+@media (min-width: 640px) {
+  html { font-size: 15px; }
+}
+@media (min-width: 768px) {
+  html { font-size: 16px; }
 }
 
 body {
@@ -136,8 +150,11 @@ body {
   letter-spacing: 0;
 }
 
+/* Reading-mode highlight bodies keep Crimson Pro — see fonts.css for the
+   rationale. handsoff.md §3.2: this is a deliberate fork-specific
+   exception to the brand's anti-serif rule. Do not switch to Inter. */
 .highlight-text {
-  font-family: var(--font-body);
+  font-family: 'Crimson Pro', Georgia, serif;
 }
 
 .title-font {
