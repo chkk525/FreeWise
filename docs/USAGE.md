@@ -3,6 +3,9 @@
 Single-page reference for everything the fork adds on top of upstream
 `wardeiling/FreeWise`. For the upstream feature list see `README.md`.
 
+For a practical learning and memory-retention workflow using FreeWise with
+LLMs, Claude Code, and Notion, see [`LEARNING_WORKFLOW.md`](LEARNING_WORKFLOW.md).
+
 > Most surfaces are token-gated under `/api/v2/*`. Get a token from
 > `/import/api-token` (web UI) or `freewise auth login`. HTML routes
 > under `/highlights/ui/*`, `/library/ui/*`, `/dashboard/ui` rely on
