@@ -86,6 +86,10 @@ class Highlight(SQLModel, table=True):
     # Distinct from is_discarded ("never want to see this again"):
     # mastered rows still appear in library / search / exports.
     is_mastered: bool = Field(default=False, index=True)
+    # is_reread_target = "I want to read this book again." Surfaced by the
+    # Echoes dashboard widget; orthogonal to is_favorited (which is about
+    # the highlight itself, not the book it came from).
+    is_reread_target: bool = Field(default=False, index=True)
     next_review: Optional[datetime] = Field(default=None, index=True)
     last_reviewed_at: Optional[datetime] = Field(default=None, index=True)
     review_count: int = Field(default=0)
@@ -164,7 +168,11 @@ class Settings(SQLModel, table=True):
     daily_review_count: int = Field(default=5)
     highlight_recency: int = Field(default=5)  # 0=prefer older, 5=neutral, 10=prefer newer
     theme: str = Field(default="light")
-    
+    # UI language. "en" = English (default), "ja" = 日本語. Drives the
+    # `t` Jinja filter and the <html lang="…"> attribute. Adding more
+    # languages = add a key to app.i18n.TRANSLATIONS and an option here.
+    language: str = Field(default="en")
+
     def __repr__(self) -> str:
         return f"Settings(id={self.id}, daily_review_count={self.daily_review_count}, highlight_recency={self.highlight_recency})"
 
@@ -185,3 +193,30 @@ class ReviewSession(SQLModel, table=True):
     
     def __repr__(self) -> str:
         return f"ReviewSession(id={self.id}, date={self.session_date}, reviewed={self.highlights_reviewed}/{self.target_count})"
+
+
+class ReviewLog(SQLModel, table=True):
+    """Append-only log of user actions on highlights.
+
+    Captured automatically via a SQLAlchemy ``before_flush`` listener
+    (see :mod:`app.services.review_log`) so every action surface
+    (HTML/HTMX, JSON API, /api/v2, bulk routes) records without each
+    handler having to remember. Reads support the dashboard's recent-
+    activity widget and the ``GET /api/v2/review-log`` endpoint.
+
+    ``action`` is a free-form short label rather than an enum so the
+    set can grow without a schema migration. Today's vocabulary:
+    ``done``, ``favorite``, ``unfavorite``, ``discard``, ``restore``,
+    ``master``, ``unmaster``. Append new verbs as features land.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    highlight_id: int = Field(foreign_key="highlight.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    action: str = Field(index=True)
+    at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        index=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"ReviewLog(id={self.id}, hl={self.highlight_id}, {self.action!r}, at={self.at})"

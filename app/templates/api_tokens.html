@@ -72,18 +72,18 @@
                     {% if t.token_prefix %}<code>{{ t.token_prefix }}…</code> · {% endif %}
                     Created
                     {% if t.created_at %}
-                    <time data-iso="{{ t.created_at.isoformat() }}Z">{{ t.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</time>
+                    <time data-iso="{{ t.created_at.isoformat() }}Z">{{ t.created_at | localfmt('%Y-%m-%d %H:%M') }} UTC</time>
                     {% else %}unknown{% endif %}
                     {% if t.last_used_at %}
-                        · last used <time data-iso="{{ t.last_used_at.isoformat() }}Z">{{ t.last_used_at.strftime('%Y-%m-%d %H:%M') }} UTC</time>
+                        · last used <time data-iso="{{ t.last_used_at.isoformat() }}Z">{{ t.last_used_at | localfmt('%Y-%m-%d %H:%M') }} UTC</time>
                     {% else %}
                         · never used
                     {% endif %}
                 </div>
             </div>
             <form method="post" action="/import/api-token/{{ t.id }}/delete"
-                  onsubmit="return confirm('Revoke token \'{{ t.name }}\'? Any client using it will fail immediately.');"
-                  class="shrink-0">
+                  data-confirm-revoke="Revoke token '{{ t.name }}'? Any client using it will fail immediately."
+                  class="shrink-0 confirm-form">
                 <button type="submit"
                         class="px-3 py-1 rounded border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 text-xs hover:bg-red-50 dark:hover:bg-red-900/30">
                     Revoke
@@ -96,4 +96,21 @@
     <p class="text-sm text-gray-500 dark:text-gray-400">No tokens yet.</p>
     {% endif %}
 </div>
+<script>
+    document.addEventListener('submit', async function (e) {
+        const form = e.target.closest('form.confirm-form');
+        if (!form) return;
+        const msg = form.dataset.confirmRevoke;
+        if (!msg) return;
+        if (form.dataset.confirmDone === '1') return;  // re-submit after confirm
+        e.preventDefault();
+        const ok = window.confirmAction
+            ? await window.confirmAction(msg, { okLabel: 'Revoke' })
+            : confirm(msg);
+        if (ok) {
+            form.dataset.confirmDone = '1';
+            form.submit();
+        }
+    });
+</script>
 {% endblock %}

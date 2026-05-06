@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block title %}Activity — FreeWise{% endblock %}
+
+{% block heading %}Activity{% endblock %}
+
+{% block content %}
+{# Static class strings — Tailwind's JIT content scanner needs to see
+   the literal class names. Don't replace with `bg-{{ color }}-100`
+   interpolation. #}
+{% set _VERB_STYLE = {
+    'done':       {'icon': 'check',
+                   'pill_active': 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border-emerald-300 dark:border-emerald-600',
+                   'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-emerald-300',
+                   'badge': 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300',
+                   'verb':  'text-emerald-700 dark:text-emerald-300'},
+    'favorite':   {'icon': 'star',
+                   'pill_active': 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-200 border-yellow-300 dark:border-yellow-600',
+                   'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-yellow-300',
+                   'badge': 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300',
+                   'verb':  'text-yellow-700 dark:text-yellow-300'},
+    'unfavorite': {'icon': 'star-off',
+                   'pill_active': 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-400 dark:border-gray-500',
+                   'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-gray-400',
+                   'badge': 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+                   'verb':  'text-gray-700 dark:text-gray-300'},
+    'discard':    {'icon': 'trash-2',
+                   'pill_active': 'bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-200 border-rose-300 dark:border-rose-600',
+                   'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-rose-300',
+                   'badge': 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300',
+                   'verb':  'text-rose-700 dark:text-rose-300'},
+    'restore':    {'icon': 'rotate-ccw',
+                   'pill_active': 'bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200 border-sky-300 dark:border-sky-600',
+                   'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-sky-300',
+                   'badge': 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300',
+                   'verb':  'text-sky-700 dark:text-sky-300'},
+    'master':     {'icon': 'sparkles',
+                   'pill_active': 'bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-200 border-violet-300 dark:border-violet-600',
+                   'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-violet-300',
+                   'badge': 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300',
+                   'verb':  'text-violet-700 dark:text-violet-300'},
+    'unmaster':   {'icon': 'undo',
+                   'pill_active': 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-400 dark:border-gray-500',
+                   'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-gray-400',
+                   'badge': 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+                   'verb':  'text-gray-700 dark:text-gray-300'},
+} %}
+{% set _DEFAULT_STYLE = {'icon': 'circle',
+                         'pill_active': 'bg-gray-200 text-gray-800 border-gray-400',
+                         'pill_idle':   'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700',
+                         'badge': 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
+                         'verb':  'text-gray-700 dark:text-gray-300'} %}
+<div class="max-w-3xl mx-auto px-4">
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        Newest first. Each row is one action — favorite, discard, master, … — captured automatically the moment a highlight changes state.
+    </p>
+
+    {# ── Verb filter pills ──────────────────────────────────────────── #}
+    <div class="flex flex-wrap gap-2 mb-6 text-sm">
+        <a href="/highlights/ui/activity"
+           class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-colors
+                  {% if not action %}bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100{% else %}bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:border-gray-400{% endif %}">
+            All
+        </a>
+        {% for verb in available_actions %}
+        {% set style = _VERB_STYLE.get(verb, _DEFAULT_STYLE) %}
+        <a href="/highlights/ui/activity?action={{ verb }}"
+           class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs border transition-colors
+                  {{ style.pill_active if action == verb else style.pill_idle }}">
+            {{ verb }}
+        </a>
+        {% endfor %}
+        <span class="ml-auto self-center text-xs text-gray-500 dark:text-gray-400">
+            {{ total }} entr{{ 'ies' if total != 1 else 'y' }}
+        </span>
+    </div>
+
+    {% if grouped %}
+    <div class="space-y-8">
+        {% for day, entries in grouped %}
+        <section>
+            <h2 class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                {{ day.strftime('%A, %B %d, %Y') }}
+            </h2>
+            <ul class="space-y-3">
+                {% for e in entries %}
+                {% set style = _VERB_STYLE.get(e.action, _DEFAULT_STYLE) %}
+                <li class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 flex items-start gap-3">
+                    <span class="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center {{ style.badge }}">
+                        <i data-lucide="{{ style.icon }}" class="w-3.5 h-3.5"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                            <span class="font-medium {{ style.verb }}">{{ e.action }}</span>
+                            <span class="ml-1">{{ e.at.strftime('%H:%M') }}</span>
+                            {% if e.book_title %}
+                            <span class="ml-2">
+                                — {% if e.book_id %}<a href="/library/ui/book/{{ e.book_id }}" class="hover:underline">{% endif %}<em>{{ e.book_title }}</em>{% if e.book_id %}</a>{% endif %}{% if e.book_author %}, {{ e.book_author }}{% endif %}
+                            </span>
+                            {% endif %}
+                        </p>
+                        <a href="/highlights/ui/h/{{ e.highlight_id }}" class="block text-sm text-gray-900 dark:text-gray-100 hover:opacity-80">
+                            {{ e.text[:240] }}{% if e.text|length > 240 %}…{% endif %}
+                        </a>
+                        {% if e.note %}
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400 italic">📝 {{ e.note[:160] }}{% if e.note|length > 160 %}…{% endif %}</p>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endfor %}
+    </div>
+
+    {# ── Pagination ─────────────────────────────────────────────────── #}
+    {% if total_pages > 1 %}
+    {% set base_qs = ('action=' ~ action ~ '&') if action else '' %}
+    <div class="flex items-center justify-between mt-8 text-sm">
+        {% if page > 1 %}
+        <a href="/highlights/ui/activity?{{ base_qs }}page={{ page - 1 }}" data-pagination-prev rel="prev" class="text-blue-600 dark:text-blue-400 hover:underline">← Newer</a>
+        {% else %}
+        <span class="text-gray-400 dark:text-gray-500">← Newer</span>
+        {% endif %}
+        <span class="text-xs text-gray-500 dark:text-gray-400">page {{ page }} / {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a href="/highlights/ui/activity?{{ base_qs }}page={{ page + 1 }}" data-pagination-next rel="next" class="text-blue-600 dark:text-blue-400 hover:underline">Older →</a>
+        {% else %}
+        <span class="text-gray-400 dark:text-gray-500">Older →</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-8 text-center">
+        <i data-lucide="activity" class="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600"></i>
+        <p class="text-gray-600 dark:text-gray-400 mb-2">
+            {% if action %}
+                No <span class="font-medium">{{ action }}</span> actions yet.
+            {% else %}
+                No activity yet — head over to <a href="/highlights/ui/review" class="text-primary-600 dark:text-primary-400 hover:underline">review</a> to start the log.
+            {% endif %}
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

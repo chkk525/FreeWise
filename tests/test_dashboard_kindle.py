@@ -35,6 +35,13 @@ def _render_dashboard(**overrides) -> str:
         loader=FileSystemLoader("app/templates"),
         autoescape=select_autoescape(["html"]),
     )
+    # Mirror what app.template_filters.register() attaches to the prod
+    # env so the bypass path also exercises filters/globals like `t`.
+    from app.template_filters import register as _register
+    class _Wrap:
+        def __init__(self, env):
+            self.env = env
+    _register(_Wrap(env))
     template = env.get_template("dashboard.html")
     base_ctx = {
         "request": _stub_request(),

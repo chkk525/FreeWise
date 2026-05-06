@@ -3,12 +3,13 @@ import tempfile
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import text
 from sqlmodel import Session, select, func
 from starlette.background import BackgroundTask
 
 from app.db import get_engine, get_session, get_settings
+from app.i18n import LANGUAGES
 from app.models import Settings, Highlight
 from app.template_filters import make_templates
 
@@ -21,45 +22,58 @@ templates = make_templates()
 
 # ============ HTML/HTMX Endpoints ============
 
+_FLASH_MESSAGES = {
+    "saved": "Settings saved successfully!",
+    "reset": "Library reset — all data has been permanently deleted and settings restored to defaults.",
+}
+
+
 @router.get("/ui", response_class=HTMLResponse)
 async def ui_settings(
     request: Request,
-    session: Session = Depends(get_session)
+    saved: int = 0,
+    reset: int = 0,
+    session: Session = Depends(get_session),
 ):
     """Render settings page with form."""
     settings = get_settings(session)
     highlights_count_stmt = select(func.count(Highlight.id))
     highlights_count = session.exec(highlights_count_stmt).one()
+    flash = None
+    if saved:
+        flash = _FLASH_MESSAGES["saved"]
+    elif reset:
+        flash = _FLASH_MESSAGES["reset"]
     return templates.TemplateResponse(request, "settings.html", {"settings": settings,
-        "highlights_count": highlights_count})
+        "highlights_count": highlights_count,
+        "available_languages": LANGUAGES,
+        "success_message": flash})
 
 
-@router.post("/ui", response_class=HTMLResponse)
+@router.post("/ui")
 async def update_settings_ui(
     request: Request,
     daily_review_count: int = Form(...),
     highlight_recency: int = Form(...),
     theme: str = Form(...),
-    session: Session = Depends(get_session)
+    language: str = Form("en"),
+    session: Session = Depends(get_session),
 ):
-    """Update settings from form submission."""
+    """Update settings, then redirect (PRG) so a refresh doesn't re-submit."""
     settings = get_settings(session)
-    
+
     settings.daily_review_count = max(1, min(15, daily_review_count))
     settings.highlight_recency = max(0, min(10, highlight_recency))
     settings.theme = theme
-    
+    # Reject unknown language codes — fall back to English so a user
+    # can't lock themselves into an unsupported locale via crafted POST.
+    valid_langs = {code for code, _ in LANGUAGES}
+    settings.language = language if language in valid_langs else "en"
+
     session.add(settings)
     session.commit()
-    session.refresh(settings)
-    
-    highlights_count_stmt = select(func.count(Highlight.id))
-    highlights_count = session.exec(highlights_count_stmt).one()
-    
-    # Return updated form with success message
-    return templates.TemplateResponse(request, "settings.html", {"settings": settings,
-        "highlights_count": highlights_count,
-        "success_message": "Settings saved successfully!"})
+
+    return RedirectResponse(url="/settings/ui?saved=1", status_code=303)
 
 
 @router.post("/theme/toggle")
@@ -83,9 +97,9 @@ async def toggle_theme(session: Session = Depends(get_session)):
     )
 
 
-@router.post("/reset-library", response_class=HTMLResponse)
+@router.post("/reset-library")
 async def reset_library(request: Request):
-    """Permanently drop and recreate every table, then reinitialise default settings."""
+    """Drop + recreate every table, then PRG-redirect to /settings/ui."""
     from sqlmodel import SQLModel, Session
     from app.db import get_engine
 
@@ -94,10 +108,9 @@ async def reset_library(request: Request):
     SQLModel.metadata.create_all(engine)
 
     with Session(engine) as s:
-        fresh_settings = get_settings(s)
-        return templates.TemplateResponse(request, "settings.html", {"settings": fresh_settings,
-            "highlights_count": 0,
-            "success_message": "Library reset — all data has been permanently deleted and settings restored to defaults."})
+        get_settings(s)  # ensure default row exists post-reset
+
+    return RedirectResponse(url="/settings/ui?reset=1", status_code=303)
 
 
 @router.post("/backup.db")

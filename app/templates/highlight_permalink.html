@@ -35,13 +35,17 @@
     {% include "_highlight_row.html" %}
 
     {# Related highlights — lazy-loaded via HTMX so the page renders fast
-       even when the cosine matmul takes a few hundred ms. #}
-    <div class="mt-6"
+       even when the cosine matmul takes a few hundred ms. min-h reserves
+       enough space for the typical 3-card response so the page below
+       (book link, "back to library", etc.) doesn't jump when the partial
+       lands. #}
+    <div class="mt-6 min-h-[200px]"
          hx-get="/highlights/ui/h/{{ highlight.id }}/related"
          hx-trigger="load"
          hx-swap="outerHTML">
-        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm">
-            <p class="text-sm text-gray-500 dark:text-gray-400">Loading related highlights…</p>
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-sm flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
+            <i data-lucide="loader-2" class="w-4 h-4 animate-spin" aria-hidden="true"></i>
+            <p class="text-sm">Loading related highlights…</p>
         </div>
     </div>
 

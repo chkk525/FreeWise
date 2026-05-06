@@ -154,20 +154,35 @@ class Client:
         return r.status_code, (r.text[:200] if r.status_code >= 400 else "")
 
     def search(self, q: str, *, page: int = 1, page_size: int = 50,
-               include_discarded: bool = False, tag: str | None = None) -> dict:
+               include_discarded: bool = False, tag: str | None = None,
+               favorited: bool | None = None,
+               mastered: bool | None = None) -> dict:
         params: dict[str, Any] = {
             "q": q, "page": page, "page_size": page_size,
             "include_discarded": str(include_discarded).lower(),
         }
         if tag:
             params["tag"] = tag
+        if favorited is not None:
+            params["favorited"] = "true" if favorited else "false"
+        if mastered is not None:
+            params["mastered"] = "true" if mastered else "false"
         return self._request("GET", "/api/v2/highlights/search", params=params)
 
     def list_highlights(self, *, page: int = 1, page_size: int = 50,
-                        book_id: int | None = None) -> dict:
+                        book_id: int | None = None,
+                        favorited: bool | None = None,
+                        discarded: bool | None = None,
+                        mastered: bool | None = None) -> dict:
         params: dict[str, Any] = {"page": page, "page_size": page_size}
         if book_id is not None:
             params["book_id"] = book_id
+        if favorited is not None:
+            params["favorited"] = "true" if favorited else "false"
+        if discarded is not None:
+            params["discarded"] = "true" if discarded else "false"
+        if mastered is not None:
+            params["mastered"] = "true" if mastered else "false"
         return self._request("GET", "/api/v2/highlights/", params=params)
 
     def get_highlight(self, highlight_id: int) -> dict:
@@ -266,10 +281,14 @@ class Client:
             json={"text": text},
         )
 
-    def list_books(self, *, page: int = 1, page_size: int = 50) -> dict:
-        return self._request(
-            "GET", "/api/v2/books/", params={"page": page, "page_size": page_size},
-        )
+    def list_books(self, *, page: int = 1, page_size: int = 50,
+                   author: str | None = None, q: str | None = None) -> dict:
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if author is not None:
+            params["author"] = author
+        if q is not None and q.strip():
+            params["q"] = q.strip()
+        return self._request("GET", "/api/v2/books/", params=params)
 
     def list_authors(self, *, page: int = 1, page_size: int = 50,
                      q: str | None = None) -> dict:

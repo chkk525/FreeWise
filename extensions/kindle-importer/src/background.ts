@@ -1,6 +1,17 @@
 import { loadSettings } from './lib/storage';
 
-const NOTEBOOK_URL = 'https://read.amazon.com/kp/notebook';
+// Amazon redirects to whatever path is current — historically `/kp/notebook`,
+// at present `/notebook`. They also openid-bounce through `/ap/signin` when
+// the browser session needs a fresh handshake, even for already-logged-in
+// users. The regex below accepts both notebook paths on every regional
+// `read.amazon.<TLD>` domain.
+const NOTEBOOK_URL = 'https://read.amazon.com/notebook';
+const NOTEBOOK_URL_RE = /^https:\/\/read\.amazon\.[a-z.]+\/(?:kp\/)?notebook(?:[/?#]|$)/i;
+// Pages that are clearly the sign-in flow — we surface "login required"
+// only when the tab has actually settled here, never on transient
+// in-flight URLs (which would cause a false positive during the openid
+// callback round-trip).
+const SIGN_IN_URL_RE = /^https:\/\/(?:www\.)?amazon\.[a-z.]+\/ap\/signin/i;
 const TAB_LOAD_TIMEOUT_MS = 60_000;
 
 // -1 is a "claim" sentinel held while chrome.tabs.create is awaiting; once
@@ -13,6 +24,17 @@ let currentSyncTab: number | null = null;
 let currentPort: chrome.runtime.Port | null = null;
 let tabUpdateHandler: Parameters<typeof chrome.tabs.onUpdated.addListener>[0] | null = null;
 let collectedErrors: { book_title: string; reason: string }[] = [];
+
+// chrome.runtime.sendMessage rejects with "Could not establish connection.
+// Receiving end does not exist." whenever the popup is closed at the
+// moment we broadcast — which is most of the time, since Chrome closes
+// popups on focus loss. We never want to act on that reject (state is
+// already mirrored to chrome.storage.local for the next popup open), so
+// swallow it. `void` only discards the return value; the promise still
+// rejects and shows up as an unhandled error in the SW console.
+function broadcast(msg: unknown): void {
+  chrome.runtime.sendMessage(msg).catch(() => {});
+}
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'sync_now') {
@@ -38,7 +60,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener((msg) => {
     if (msg?.type === 'progress') {
-      void chrome.runtime.sendMessage({
+      broadcast({
         type: 'progress',
         current: msg.current,
         total: msg.total,
@@ -46,12 +68,24 @@ chrome.runtime.onConnect.addListener((port) => {
     } else if (msg?.type === 'book_error') {
       collectedErrors.push({ book_title: msg.book_title, reason: msg.reason });
     } else if (msg?.type === 'done') {
+      // Mirror the scrape summary into the SW console — the content script
+      // already logs to the page console, but if the user is reading SW
+      // logs they'd otherwise see only the upload result.
+      const env = msg.payload as { books?: { highlights?: unknown[] }[] };
+      const bookCount = env?.books?.length ?? 0;
+      const hlCount = (env?.books ?? []).reduce(
+        (n, b) => n + (Array.isArray(b.highlights) ? b.highlights.length : 0),
+        0,
+      );
+      console.info(
+        `[FreeWise] scrape done: ${bookCount} books / ${hlCount} highlights → uploading`,
+      );
       void onScrapeComplete(msg.payload).catch((e) => {
-        void chrome.runtime.sendMessage({ type: 'error', reason: String(e) });
+        void broadcastTerminal({ type: 'error', reason: String(e) });
         cleanup();
       });
     } else if (msg?.type === 'error') {
-      void chrome.runtime.sendMessage({ type: 'error', reason: msg.reason });
+      void broadcastTerminal({ type: 'error', reason: msg.reason });
       cleanup();
     } else if (msg?.type === 'aborted') {
       cleanup();
@@ -70,23 +104,24 @@ async function startSync(): Promise<void> {
   // active sync), ignore the new request. The SYNC_PENDING sentinel closes
   // the TOCTOU window between the null check and chrome.tabs.create resolving.
   if (currentSyncTab !== null) {
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'Sync already in progress.',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'Sync already in progress.' });
     return;
   }
   currentSyncTab = SYNC_PENDING;
 
   collectedErrors = [];
-  void chrome.runtime.sendMessage({ type: 'tab_opening' });
+  broadcast({ type: 'tab_opening' });
 
   let tab: chrome.tabs.Tab;
   try {
-    tab = await chrome.tabs.create({ url: NOTEBOOK_URL, active: false });
+    // Foreground tab. Amazon's notebook lazy-loads the book list with an
+    // IntersectionObserver gated on real visibility; a background tab leaves
+    // the list empty and the scrape comes back with zero books. The tab
+    // auto-closes on cleanup, so the user only sees a flash.
+    tab = await chrome.tabs.create({ url: NOTEBOOK_URL, active: true });
   } catch (err) {
     currentSyncTab = null;
-    void chrome.runtime.sendMessage({
+    void broadcastTerminal({
       type: 'error',
       reason: `tab.create failed: ${String(err)}`,
     });
@@ -94,10 +129,7 @@ async function startSync(): Promise<void> {
   }
   if (!tab.id) {
     currentSyncTab = null;
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'tab.create returned no id',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'tab.create returned no id' });
     return;
   }
   currentSyncTab = tab.id;
@@ -111,9 +143,22 @@ async function startSync(): Promise<void> {
   ): void => {
     if (updatedId !== tabId) return;
     if (info.status === 'complete' && t.url) {
-      if (!t.url.startsWith('https://read.amazon.com/kp/notebook')) {
-        void chrome.runtime.sendMessage({ type: 'login_required' });
+      // Only treat the tab as "login required" when it has actually settled
+      // on Amazon's sign-in page. Earlier we tripped on every non-notebook
+      // URL, which false-positived during the OpenID round-trip (Amazon
+      // bounces through intermediate URLs even for already-logged-in users).
+      if (SIGN_IN_URL_RE.test(t.url)) {
+        console.warn(`[FreeWise] tab landed at sign-in page ${t.url}`);
+        void broadcastTerminal({ type: 'login_required' });
         cleanup();
+        return;
+      }
+      // If the tab settled somewhere unexpected (neither notebook nor
+      // sign-in), log it but don't kill the sync — the content script
+      // either fires (if it's a notebook URL covered by the manifest) or
+      // never connects (timeout handler will catch it).
+      if (!NOTEBOOK_URL_RE.test(t.url)) {
+        console.warn(`[FreeWise] tab landed at unexpected URL ${t.url}`);
       }
     }
   };
@@ -122,10 +167,7 @@ async function startSync(): Promise<void> {
 
   setTimeout(() => {
     if (currentSyncTab !== null && Date.now() - start > TAB_LOAD_TIMEOUT_MS) {
-      void chrome.runtime.sendMessage({
-        type: 'error',
-        reason: 'Tab did not finish loading within 60s',
-      });
+      void broadcastTerminal({ type: 'error', reason: 'Tab did not finish loading within 60s' });
       cleanup();
     }
   }, TAB_LOAD_TIMEOUT_MS + 1000);
@@ -150,10 +192,7 @@ type ImportResult = {
 async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
   const settings = await loadSettings();
   if (!settings) {
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'No server configured. Open settings first.',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'No server configured. Open settings first.' });
     cleanup();
     return;
   }
@@ -174,7 +213,7 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
       body: compressed,
     });
   } catch (err) {
-    void chrome.runtime.sendMessage({
+    void broadcastTerminal({
       type: 'error',
       reason: `FreeWise unreachable: ${String(err)}`,
     });
@@ -183,16 +222,13 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
   }
 
   if (response.status === 401) {
-    void chrome.runtime.sendMessage({
-      type: 'error',
-      reason: 'Token rejected (401)',
-    });
+    void broadcastTerminal({ type: 'error', reason: 'Token rejected (401)' });
     cleanup();
     return;
   }
   if (!response.ok) {
     const text = await response.text();
-    void chrome.runtime.sendMessage({
+    void broadcastTerminal({
       type: 'error',
       reason: `HTTP ${response.status}: ${text.slice(0, 200)}`,
     });
@@ -200,11 +236,48 @@ async function onScrapeComplete(payload: ImportEnvelope): Promise<void> {
     return;
   }
 
-  const result = (await response.json()) as ImportResult;
+  // The endpoint normally returns JSON, but a fronting proxy (Cloudflare
+  // Access, an auth wall, a generic "site not found" page) can return 200
+  // OK with an HTML body. Catching that here gives a meaningful error
+  // instead of a SyntaxError from JSON.parse.
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const text = await response.text();
+    const isCfAccess =
+      response.headers.get('cf-mitigated') !== null ||
+      response.headers.get('cf-access-jwt-assertion') !== null ||
+      /cloudflare\s*access/i.test(text) ||
+      /<title>[^<]*just a moment/i.test(text);
+    const hint = isCfAccess
+      ? 'Cloudflare Access is blocking the API. Either point the extension at a non-tunneled URL (e.g. http://192.168.0.171:8063), or exclude /api/v2/* from your Access policy / use a service token.'
+      : `Server returned ${contentType || 'no content-type'} (expected JSON). First 200 chars: ${text.slice(0, 200)}`;
+    void broadcastTerminal({ type: 'error', reason: hint });
+    cleanup();
+    return;
+  }
+
+  let result: ImportResult;
+  try {
+    result = (await response.json()) as ImportResult;
+  } catch (err) {
+    void broadcastTerminal({
+      type: 'error',
+      reason: `Could not parse server response as JSON: ${String(err)}`,
+    });
+    cleanup();
+    return;
+  }
   if (collectedErrors.length > 0) {
     result.errors = (result.errors ?? []).concat(collectedErrors);
   }
-  void chrome.runtime.sendMessage({ type: 'sync_complete', result });
+  // Persist before broadcasting: Chrome popups close as soon as the user
+  // clicks anywhere outside them, so a sync that completes after the popup
+  // has closed loses its message. Storing the outcome lets the next popup
+  // render show "Last sync: …" instead of leaving the user wondering.
+  await chrome.storage.local.set({
+    last_sync: { at: Date.now(), result },
+  });
+  broadcast({ type: 'sync_complete', result });
   cleanup();
 }
 
@@ -216,6 +289,26 @@ async function gzipString(s: string): Promise<ArrayBuffer> {
     new Blob([s]).stream().pipeThrough(new CompressionStream('gzip'))
   );
   return await stream.arrayBuffer();
+}
+
+// Broadcast a terminal status (error / login_required) AND mirror it into
+// chrome.storage.local so the next popup open can re-display it. Chrome
+// closes the popup the moment focus leaves it, which during a tab-switch
+// or alt-tab is most of the time — without this, errors evaporate
+// silently and users assume the import "did nothing".
+async function broadcastTerminal(
+  msg:
+    | { type: 'error'; reason: string }
+    | { type: 'login_required' },
+): Promise<void> {
+  broadcast(msg);
+  try {
+    await chrome.storage.local.set({
+      last_sync: { at: Date.now(), terminal: msg },
+    });
+  } catch {
+    /* storage write is best-effort — never let it mask the original error */
+  }
 }
 
 function cleanup(): void {

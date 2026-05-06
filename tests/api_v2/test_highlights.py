@@ -188,3 +188,136 @@ def test_list_highlights_filter_by_book(client, db):
     assert body["count"] == 1
     assert body["results"][0]["text"] == "h1"
     assert body["results"][0]["title"] == "A"
+
+
+def _seed_three_states(db, make_highlight):
+    """Helper: one favorited, one discarded, one mastered, one plain."""
+    plain = make_highlight(text="plain row")
+    fav = make_highlight(text="fav row", is_favorited=True)
+    disc = make_highlight(text="disc row", is_discarded=True)
+    mas = make_highlight(text="mas row")
+    mas.is_mastered = True
+    db.add(mas)
+    db.commit()
+    db.refresh(mas)
+    return {"plain": plain, "fav": fav, "disc": disc, "mas": mas}
+
+
+def test_list_highlights_favorited_only(client, db, make_highlight):
+    headers = _auth_headers(db)
+    rows = _seed_three_states(db, make_highlight)
+    resp = client.get("/api/v2/highlights/?favorited=true", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["results"][0]["id"] == rows["fav"].id
+    assert body["results"][0]["is_favorited"] is True
+
+
+def test_list_highlights_favorited_false_excludes_favorites(client, db, make_highlight):
+    headers = _auth_headers(db)
+    rows = _seed_three_states(db, make_highlight)
+    resp = client.get("/api/v2/highlights/?favorited=false", headers=headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    ids = {r["id"] for r in body["results"]}
+    assert rows["fav"].id not in ids
+    # plain + disc + mas all excluded from favorites set
+    assert {rows["plain"].id, rows["disc"].id, rows["mas"].id}.issubset(ids)
+
+
+def test_list_highlights_discarded_only(client, db, make_highlight):
+    headers = _auth_headers(db)
+    rows = _seed_three_states(db, make_highlight)
+    resp = client.get("/api/v2/highlights/?discarded=true", headers=headers)
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["results"][0]["id"] == rows["disc"].id
+
+
+def test_list_highlights_mastered_only(client, db, make_highlight):
+    headers = _auth_headers(db)
+    rows = _seed_three_states(db, make_highlight)
+    resp = client.get("/api/v2/highlights/?mastered=true", headers=headers)
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["results"][0]["id"] == rows["mas"].id
+    assert body["results"][0]["is_mastered"] is True
+
+
+def test_list_highlights_filters_combine(client, db, make_highlight):
+    """favorited=true AND mastered=false should keep favorites that
+    aren't also mastered."""
+    headers = _auth_headers(db)
+    fav_only = make_highlight(text="fav", is_favorited=True)
+    fav_and_mas = make_highlight(text="fav+mas", is_favorited=True)
+    fav_and_mas.is_mastered = True
+    db.add(fav_and_mas)
+    db.commit()
+
+    resp = client.get(
+        "/api/v2/highlights/?favorited=true&mastered=false", headers=headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["results"][0]["id"] == fav_only.id
+
+
+def test_list_highlights_pagination_preserves_filter(client, db, make_highlight):
+    headers = _auth_headers(db)
+    for i in range(75):
+        make_highlight(text=f"f{i}", is_favorited=True)
+    resp = client.get("/api/v2/highlights/?favorited=true&page_size=50", headers=headers)
+    body = resp.json()
+    assert body["count"] == 75
+    assert body["next"] and "favorited=true" in body["next"]
+    assert "page=2" in body["next"]
+
+
+# ── /api/v2/books/ filters ───────────────────────────────────────────────
+
+
+def test_list_books_filter_by_author_exact(client, db, make_highlight, make_book):
+    headers = _auth_headers(db)
+    a = make_book(title="Solo by A", author="Author A")
+    b = make_book(title="Solo by B", author="Author B")
+    make_highlight(book=a)
+    make_highlight(book=b)
+
+    resp = client.get(
+        "/api/v2/books/?author=Author+A", headers=headers
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] == 1
+    assert body["results"][0]["author"] == "Author A"
+
+
+def test_list_books_filter_substring(client, db, make_highlight, make_book):
+    """?q= should match against title or author, case-insensitive."""
+    headers = _auth_headers(db)
+    a = make_book(title="The Stoic Way", author="Marcus")
+    b = make_book(title="Other Book", author="Marcus")
+    c = make_book(title="Unrelated", author="Other Author")
+    make_highlight(book=a); make_highlight(book=b); make_highlight(book=c)
+
+    # Title hit
+    body = client.get("/api/v2/books/?q=stoic", headers=headers).json()
+    assert {r["title"] for r in body["results"]} == {"The Stoic Way"}
+
+    # Author hit (matches both Marcus books)
+    body = client.get("/api/v2/books/?q=marcus", headers=headers).json()
+    assert {r["title"] for r in body["results"]} == {"The Stoic Way", "Other Book"}
+
+
+def test_list_books_pagination_preserves_q(client, db, make_highlight, make_book):
+    headers = _auth_headers(db)
+    for i in range(60):
+        b = make_book(title=f"Stoic Book {i}", author="X")
+        make_highlight(book=b)
+    body = client.get(
+        "/api/v2/books/?q=stoic&page_size=50", headers=headers
+    ).json()
+    assert body["count"] == 60
+    assert "q=stoic" in (body["next"] or "")

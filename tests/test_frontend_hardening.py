@@ -61,7 +61,7 @@ def test_review_page_loads_keyboard_shortcuts_shell():
     html = (ROOT / "app/templates/review.html").read_text()
     partial = (ROOT / "app/templates/_keyboard_shortcuts.html").read_text()
 
-    assert '_keyboard_shortcuts.html' in html
+    assert 'extends "base.html"' in html
     assert "/static/js/keyboard-shortcuts.js" in partial
 
 
@@ -71,7 +71,8 @@ def test_base_page_loads_shared_keyboard_shortcuts_once():
 
     assert html.count('_keyboard_shortcuts.html') == 1
     assert partial.count("/static/js/keyboard-shortcuts.js") == 1
-    assert "document.addEventListener('keydown'" not in html
+    assert "_NAV_TARGETS" not in html
+    assert "review-done-btn" not in html
 
 
 def test_keyboard_shortcuts_js_contains_review_actions():

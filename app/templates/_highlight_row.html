@@ -13,19 +13,28 @@
     <div class="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
         <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ highlight.book.title }}</h3>
         {% if highlight.book.author %}
-        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">by {{ highlight.book.author }}</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ t("by") }} {{ highlight.book.author }}</p>
         {% endif %}
     </div>
     {% endif %}
     
     <div class="font-serif text-lg leading-relaxed text-gray-900 dark:text-gray-100">
-        {{ highlight.text }}
+        {# `snippet_html` is populated by FTS5-MATCH search results — already
+           HTML-escaped + <mark>-wrapped by app.services.search_snippet, so
+           rendering with `| safe` is intentional. Other callers (library,
+           dashboard random card, etc.) leave it None and fall back to the
+           plain text rendering. #}
+        {% if snippet_html is defined and snippet_html %}
+            {{ snippet_html | safe }}
+        {% else %}
+            {{ highlight.text }}
+        {% endif %}
     </div>
     
     <!-- Page Number (if exists) -->
     {% if highlight.location_type == "page" and highlight.location %}
     <div class="mt-3 text-sm text-gray-600 dark:text-gray-400">
-        (Page {{ highlight.location }})
+        ({{ t("Page") }} {{ highlight.location }})
     </div>
     {% endif %}
     
@@ -48,12 +57,12 @@
             <i data-lucide="tag" class="w-3 h-3"></i>
             <a href="/highlights/ui/tag/{{ tag.name|urlencode }}"
                class="hover:underline"
-               title="See all highlights tagged #{{ tag.name }}">{{ tag.name }}</a>
+               title="{{ t('See all highlights tagged') }} #{{ tag.name }}">{{ tag.name }}</a>
             <input type="hidden" name="tag" value="{{ tag.name }}">
             <button type="submit"
                     class="ml-0.5 text-blue-500 hover:text-red-600 dark:text-blue-300 dark:hover:text-red-400"
-                    title="Remove tag"
-                    data-toast-success="Tag removed">
+                    title="{{ t('Remove tag') }}"
+                    data-toast-success="{{ t('Tag removed') }}">
                 <i data-lucide="x" class="w-3 h-3"></i>
             </button>
         </form>
@@ -62,11 +71,14 @@
               hx-post="/highlights/{{ highlight.id }}/tags/add"
               hx-target="#highlight-{{ highlight.id }}"
               hx-swap="outerHTML"
-              class="inline-flex items-center gap-1 px-2 py-0.5 bg-white dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 rounded-full text-xs text-gray-600 dark:text-gray-400 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
-              data-toast-success="Tag added">
+              {# Skip submit + suppress the success toast when the user
+                 hits Enter on an empty field — otherwise the toast claims
+                 "Tag added" while the server creates nothing. #}
+              hx-on::before-request="if(!this.querySelector('[name=new_tag]').value.trim()){event.preventDefault();return false;}"
+              data-toast-success="{{ t('Tag added') }}">
             <i data-lucide="plus" class="w-3 h-3"></i>
-            <input type="text" name="new_tag" placeholder="Add tag"
-                   maxlength="64" autocomplete="off"
+            <input type="text" name="new_tag" placeholder="{{ t('Add tag') }}"
+                   maxlength="64" autocomplete="off" required
                    class="bg-transparent focus:outline-none w-20 placeholder-gray-400 dark:placeholder-gray-500">
         </form>
     </div>
@@ -81,8 +93,8 @@
                 hx-vals='{"favorite": "{{ "false" if highlight.is_favorited else "true" }}"}'
                 hx-target="#highlight-{{ highlight.id }}"
                 hx-swap="outerHTML"
-                data-toast-success="{{ 'Unfavorited' if highlight.is_favorited else 'Favorited' }}"
-                title="Toggle favorite">
+                data-toast-success="{{ ('Unfavorited' if highlight.is_favorited else 'Favorited') | t }}"
+                title="{{ t('Toggle favorite') }}">
                 <i data-lucide="star" class="w-4 h-4 {% if highlight.is_favorited %}fill-current{% endif %}"></i>
             </button>
             {% endif %}
@@ -92,13 +104,13 @@
                 hx-get="/highlights/{{ highlight.id }}/edit"
                 hx-target="#highlight-{{ highlight.id }}"
                 hx-swap="outerHTML"
-                title="Edit highlight">
+                title="{{ t('Edit highlight') }}">
                 <i data-lucide="pencil" class="w-4 h-4"></i>
             </button>
             {% endif %}
             <a href="/highlights/ui/h/{{ highlight.id }}"
                class="p-2 rounded-lg text-gray-400 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all"
-               title="Open permalink (shareable URL for this highlight)">
+               title="{{ t('Open permalink (shareable URL for this highlight)') }}">
                 <i data-lucide="link" class="w-4 h-4"></i>
             </a>
             <button type="button"
@@ -108,17 +120,31 @@
                     data-author="{{ (highlight.book.author or '') if highlight.book else '' }}"
                     data-title="{{ (highlight.book.title or '') if highlight.book else '' }}"
                     onclick="window.copyQuote(this)"
-                    title="Copy as quote (text + author/title)">
+                    title="{{ t('Copy as quote (text + author/title)') }}">
                 <i data-lucide="clipboard" class="w-4 h-4"></i>
             </button>
+            {% if not highlight.is_discarded %}
+            <button
+                class="p-2 rounded-lg transition-all {% if highlight.is_reread_target %}text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30{% else %}text-gray-400 dark:text-gray-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20{% endif %}"
+                hx-post="/highlights/{{ highlight.id }}/reread"
+                hx-target="#highlight-{{ highlight.id }}"
+                hx-swap="outerHTML"
+                data-toast-success="{{ ('Removed from “read again”' if highlight.is_reread_target else 'Added to “read again”') | t }}"
+                title="{{ ('Read this book again' if not highlight.is_reread_target else 'Re-read this') | t }}"
+                aria-label="Toggle re-read flag"
+                aria-pressed="{{ 'true' if highlight.is_reread_target else 'false' }}">
+                <i data-lucide="book-open" class="w-4 h-4 {% if highlight.is_reread_target %}fill-current{% endif %}"></i>
+            </button>
+            {% endif %}
             {% if not highlight.is_discarded %}
             <button
                 class="p-2 rounded-lg transition-all {% if highlight.is_mastered %}text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30{% else %}text-gray-400 dark:text-gray-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20{% endif %}"
                 hx-post="/highlights/{{ highlight.id }}/master"
                 hx-target="#highlight-{{ highlight.id }}"
                 hx-swap="outerHTML"
-                data-toast-success="{{ 'Unmastered — back in review' if highlight.is_mastered else 'Mastered — excluded from review' }}"
-                title="{{ 'Unmark mastered (return to review queue)' if highlight.is_mastered else 'Mark mastered (excluded from review)' }}">
+                hx-confirm="{{ ('Are you sure?') | t }}"
+                data-toast-success="{{ ('Unmastered — back in review' if highlight.is_mastered else 'Mastered — excluded from review') | t }}"
+                title="{{ ('Unmark mastered (return to review queue)' if highlight.is_mastered else 'Mark mastered (excluded from review)') | t }}">
                 <i data-lucide="graduation-cap" class="w-4 h-4 {% if highlight.is_mastered %}fill-current{% endif %}"></i>
             </button>
             {% endif %}
@@ -128,9 +154,9 @@
                 hx-post="/highlights/{{ highlight.id }}/discard"
                 hx-target="#highlight-{{ highlight.id }}"
                 hx-swap="outerHTML"
-                hx-confirm="Are you sure you want to {{ 'restore' if highlight.is_discarded else 'discard' }} this highlight?"
-                data-toast-success="{{ 'Restored' if highlight.is_discarded else 'Discarded' }}"
-                title="{{ 'Restore' if highlight.is_discarded else 'Discard' }} highlight">
+                hx-confirm="{{ ('Are you sure?') | t }}"
+                data-toast-success="{{ ('Restored' if highlight.is_discarded else 'Discarded') | t }}"
+                title="{{ ('Restore highlight' if highlight.is_discarded else 'Discard highlight') | t }}">
                 {% if highlight.is_discarded %}
                 <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                 {% else %}
@@ -143,9 +169,9 @@
             <span class="text-xs text-gray-500 dark:text-gray-400">
                 {% if highlight.created_at %}
                     <i data-lucide="calendar" class="w-3 h-3 inline-block"></i>
-                    <time data-iso="{{ highlight.created_at.isoformat() }}Z" data-format="date">{{ highlight.created_at.strftime('%b %d, %Y') }}</time>
+                    <time data-iso="{{ highlight.created_at.isoformat() }}Z" data-format="date">{{ highlight.created_at | localfmt('%b %d, %Y') }}</time>
                 {% else %}
-                    <em>Date unknown</em>
+                    <em>{{ t("Date unknown") }}</em>
                 {% endif %}
             </span>
         </div>

@@ -119,6 +119,31 @@ class TestLibraryBookSearch:
         assert "Filtering by query" in resp.text
 
 
+class TestLibraryTagFilter:
+    """GET /library/ui?tag=foo — narrow listing to books with tag foo."""
+
+    def test_tag_filter_narrows_results(self, client, make_book):
+        make_book(title="Sci Pick", document_tags="scifi")
+        make_book(title="Hist Pick", document_tags="history")
+        resp = client.get("/library/ui", params={"tag": "scifi"})
+        assert "Sci Pick" in resp.text
+        assert "Hist Pick" not in resp.text
+
+    def test_tag_filter_uses_csv_boundary(self, client, make_book):
+        # Boundary match prevents "sci" from matching "scifi" — important
+        # for users with closely-named tags.
+        make_book(title="Exact Sci", document_tags="sci")
+        make_book(title="Sci-fi Book", document_tags="scifi")
+        resp = client.get("/library/ui", params={"tag": "sci"})
+        assert "Exact Sci" in resp.text
+        assert "Sci-fi Book" not in resp.text
+
+    def test_tag_filter_matches_within_csv(self, client, make_book):
+        make_book(title="Multi Tagged", document_tags="alpha, beta, gamma")
+        resp = client.get("/library/ui", params={"tag": "beta"})
+        assert "Multi Tagged" in resp.text
+
+
 class TestAuthorSummaryCard:
     """The author-filtered library page shows a stats summary card."""
 
@@ -614,3 +639,62 @@ class TestAuthorsIndex:
         r = client.get("/library/ui")
         assert r.status_code == 200
         assert 'href="/library/ui/authors"' in r.text
+
+
+class TestLibrarySortPersistence:
+    """Cookie-backed persistence of sort/order across visits (PR-G)."""
+
+    def test_explicit_sort_writes_cookie(self, client, make_book, make_highlight):
+        a = make_book(title="A")
+        make_highlight(book=a, text="x")
+        r = client.get("/library/ui?sort=title&order=asc")
+        assert r.status_code == 200
+        # Starlette's TestClient stores cookies on the client across requests.
+        assert client.cookies.get("fw_lib_sort") == "title"
+        assert client.cookies.get("fw_lib_order") == "asc"
+
+    def test_bare_visit_reuses_cookie(self, client, make_book, make_highlight):
+        a = make_book(title="A")
+        make_highlight(book=a, text="x")
+        # First, prime the cookie with an explicit choice.
+        client.get("/library/ui?sort=title&order=asc")
+        # Then visit /library/ui with no params — server should read cookie.
+        r = client.get("/library/ui")
+        assert r.status_code == 200
+        # Header for "Title" gets a chevron-up indicator because we sorted asc.
+        # Easier signal: the next-click URL on the Title column flips to desc.
+        assert "/library/ui?sort=title&order=desc" in r.text
+
+    def test_explicit_param_overrides_cookie(self, client, make_book, make_highlight):
+        a = make_book(title="A")
+        make_highlight(book=a, text="x")
+        client.cookies.set("fw_lib_sort", "title")
+        client.cookies.set("fw_lib_order", "asc")
+        r = client.get("/library/ui?sort=author&order=desc")
+        assert r.status_code == 200
+        # Response Set-Cookie writes the new explicit choice back. Use the
+        # raw Set-Cookie headers to dodge httpx's multi-cookie conflict.
+        set_cookies = r.headers.get_list("set-cookie")
+        assert any("fw_lib_sort=author" in c for c in set_cookies)
+        assert any("fw_lib_order=desc" in c for c in set_cookies)
+
+    def test_invalid_cookie_falls_back_to_default(self, client):
+        client.cookies.set("fw_lib_sort", "not_a_sort")
+        client.cookies.set("fw_lib_order", "sideways")
+        r = client.get("/library/ui")
+        assert r.status_code == 200
+        # Must not crash; response writes normalized defaults back.
+        set_cookies = r.headers.get_list("set-cookie")
+        assert any("fw_lib_sort=highlight_count" in c for c in set_cookies)
+        assert any("fw_lib_order=desc" in c for c in set_cookies)
+
+
+class TestMobileSearchIcon:
+    """Mobile-only search icon in the global nav (PR-G)."""
+
+    def test_search_icon_present_on_dashboard(self, client):
+        r = client.get("/dashboard/ui")
+        assert r.status_code == 200
+        # Icon is hidden on >=sm via `sm:hidden`; the link itself must exist.
+        assert 'href="/highlights/ui/search"' in r.text
+        assert 'sm:hidden' in r.text

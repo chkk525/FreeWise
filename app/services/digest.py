@@ -211,3 +211,58 @@ def build_digest(session: Session, user_id: int = 1) -> Digest:
         text_body=_render_text(pick, history, health),
         html_body=_render_html(pick, history, health),
     )
+
+
+def today_picks(
+    session: Session,
+    *,
+    count: int = 10,
+    user_id: int = 1,
+    today: Optional[date] = None,
+) -> list[Highlight]:
+    """Return ``count`` deterministic highlights for ``today`` (default: today).
+
+    Same seed scheme as ``_today_pick`` so the single-pick endpoint and the
+    new web digest stay aligned. The seed is sha256(ISO date); we step
+    through it 8 bytes at a time and take ``int % len(ids)``, skipping
+    indices we've already drawn so the result is a sample without
+    replacement. ``today`` is exposed only for tests (next-day must
+    yield a distinct ordering).
+    """
+    when = today or date.today()
+    ids = session.exec(
+        select(Highlight.id)
+        .where(Highlight.user_id == user_id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(Highlight.id.asc())
+    ).all()
+    if not ids:
+        return []
+    n = min(count, len(ids))
+    digest = hashlib.sha256(when.isoformat().encode()).digest()
+    picked: list[int] = []
+    seen: set[int] = set()
+    cursor = 0
+    salt = 0
+    while len(picked) < n:
+        if cursor + 8 > len(digest):
+            # Re-stir the seed so we can pick more than 4 indices.
+            salt += 1
+            digest = hashlib.sha256(
+                f"{when.isoformat()}#{salt}".encode()
+            ).digest()
+            cursor = 0
+        idx = int.from_bytes(digest[cursor:cursor + 8], "big") % len(ids)
+        cursor += 8
+        if idx in seen:
+            continue
+        seen.add(idx)
+        picked.append(ids[idx])
+    rows = list(session.exec(
+        select(Highlight)
+        .options(selectinload(Highlight.book))
+        .where(Highlight.id.in_(picked))
+    ).all())
+    # Preserve the seed's pick order, not the DB's id order.
+    by_id = {h.id: h for h in rows}
+    return [by_id[i] for i in picked if i in by_id]

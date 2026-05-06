@@ -70,6 +70,7 @@
             {% set enable_bulk_select = True %}
             <div class="space-y-4">
                 {% for highlight in highlights %}
+                    {% set snippet_html = (snippets_by_id or {}).get(highlight.id) %}
                     {% include "_highlight_row.html" %}
                 {% endfor %}
             </div>

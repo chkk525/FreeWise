@@ -63,6 +63,31 @@ def autolink(text: str | None) -> Markup:
     return Markup("".join(parts))
 
 
+def localfmt(dt, fmt: str = "%b %d, %Y") -> str:
+    """Format a UTC datetime in the user's local timezone (JST for this fork).
+
+    Models store ``datetime.now(UTC).replace(tzinfo=None)`` — UTC time as a
+    naïve value. Templates were rendering that with bare ``strftime``,
+    so the date "next to" a UTC midnight rolled over a day before the
+    JS timestamp formatter (which uses the browser's locale and
+    correctly converts UTC → JST). Result was a flicker between
+    server-rendered "Apr 29" and JS-rendered "Apr 30" on every page
+    load. This filter brings the static fallback into the same TZ the
+    JS uses, eliminating the flicker.
+
+    Single-user fork: the locale is hard-coded to Asia/Tokyo. If a
+    future user wants a different TZ this becomes a settings lookup.
+    """
+    if dt is None:
+        return ""
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Asia/Tokyo")).strftime(fmt)
+
+
 def register(templates) -> None:
     """Attach all custom filters to a ``Jinja2Templates`` instance.
 
@@ -70,7 +95,31 @@ def register(templates) -> None:
     new code should prefer ``make_templates()`` which builds and
     registers in one call.
     """
+    from jinja2 import pass_context
+
+    from app.i18n import DEFAULT_LANGUAGE, t as _t
+
+    @pass_context
+    def t_global(ctx, key: str) -> str:
+        """Translate via the template's `settings.language`.
+
+        Wired as a Jinja global so templates can write the natural
+        ``{{ t("Library") }}`` instead of ``{{ "Library" | t(settings.language) }}``
+        every time. The decorator gives us access to the rendering
+        context, which already carries the singleton settings row on
+        every route.
+        """
+        settings = ctx.get("settings")
+        lang = getattr(settings, "language", None) or DEFAULT_LANGUAGE
+        return _t(key, lang)
+
     templates.env.filters["autolink"] = autolink
+    templates.env.filters["localfmt"] = localfmt
+    # Both forms supported: `{{ t("Library") }}` and `{{ "Library" | t }}`.
+    # The filter form is handy in chained expressions; the global form
+    # is what the templates use for the bulk of UI strings.
+    templates.env.filters["t"] = t_global
+    templates.env.globals["t"] = t_global
 
 
 def make_templates(directory: str = "app/templates"):

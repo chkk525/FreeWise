@@ -5,7 +5,7 @@ import math
 import random
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, Cookie
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -634,6 +634,7 @@ async def ui_search(
 
     conditions = [Highlight.is_discarded == False]  # noqa: E712
 
+    fts_match_query: Optional[str] = None
     if q_clean:
         from app.db import FTS5_AVAILABLE
         # Trigram FTS5 needs at least one full 3-char trigram; for shorter
@@ -644,13 +645,13 @@ async def ui_search(
         if FTS5_AVAILABLE and len(q_clean) >= 3:
             from sqlalchemy import text as sa_text
             escaped = q_clean.replace('"', '""')
-            match_query = f'"{escaped}"'
+            fts_match_query = f'"{escaped}"'
             conditions.append(
                 Highlight.id.in_(
                     sa_text(
                         "SELECT rowid FROM highlight_fts "
                         "WHERE highlight_fts MATCH :match"
-                    ).bindparams(match=match_query)
+                    ).bindparams(match=fts_match_query)
                 )
             )
         else:
@@ -682,6 +683,19 @@ async def ui_search(
             session, base_filter, page=page, page_size=page_size,
         )
     )
+
+    # Hit-context snippets: only available on the FTS5 MATCH path.
+    # Empty dict on LIKE-fallback or non-FTS sessions; the template
+    # falls back to plain highlight.text rendering.
+    snippets_by_id: dict[int, str] = {}
+    if fts_match_query and rows:
+        from app.services.search_snippet import fetch_snippets
+        snippets_by_id = fetch_snippets(
+            session,
+            rowids=[h.id for h in rows],
+            match_query=fts_match_query,
+        )
+
     return templates.TemplateResponse(
         request, "search.html",
         {
@@ -689,6 +703,7 @@ async def ui_search(
             "q": q_clean,
             "active_filters": active_filters,
             "highlights": rows,
+            "snippets_by_id": snippets_by_id,
             "page": page,
             "page_size": page_size,
             "total": total,
@@ -760,6 +775,74 @@ async def ui_discarded(
             "total_pages": total_pages,
             "showing_first": showing_first,
             "showing_last": showing_last,
+        },
+    )
+
+
+_TIMELINE_ACTIONS = (
+    "done", "favorite", "unfavorite",
+    "discard", "restore", "master", "unmaster",
+)
+_TIMELINE_PAGE_SIZE = 50
+
+
+@router.get("/ui/activity", response_class=HTMLResponse)
+async def ui_activity(
+    request: Request,
+    action: Optional[str] = None,
+    page: int = 1,
+    session: Session = Depends(get_session),
+):
+    """Newest-first timeline of every review-log action.
+
+    Surfaces the same data as ``GET /api/v2/review-log`` but as a
+    scannable HTML page grouped by date. Optional ``?action=`` chip
+    filters to a single verb (favorite, discard, master, …).
+    """
+    from app.services.review_log import (
+        timeline_entries,
+        timeline_total,
+    )
+
+    settings = get_settings(session)
+    page = max(1, int(page))
+    page_size = _TIMELINE_PAGE_SIZE
+    action_filter = action if action in _TIMELINE_ACTIONS else None
+
+    total = timeline_total(session, action=action_filter)
+    rows = timeline_entries(
+        session,
+        action=action_filter,
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    total_pages = max(1, math.ceil(total / page_size)) if total else 1
+
+    # Group hydrated entries by local date for the date-header layout.
+    grouped: list[tuple[date, list]] = []
+    current_day: Optional[date] = None
+    bucket: list = []
+    for r in rows:
+        d = r.at.date()
+        if d != current_day:
+            if bucket:
+                grouped.append((current_day, bucket))
+            current_day = d
+            bucket = []
+        bucket.append(r)
+    if bucket and current_day is not None:
+        grouped.append((current_day, bucket))
+
+    return templates.TemplateResponse(
+        request, "activity.html",
+        {
+            "settings": settings,
+            "grouped": grouped,
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "action": action_filter,
+            "available_actions": _TIMELINE_ACTIONS,
         },
     )
 
@@ -1186,6 +1269,30 @@ async def ui_random(
     return templates.TemplateResponse(
         request, "_random_highlight.html", {"highlight": h, "is_today": False},
     )
+
+
+@router.get("/ui/random/go")
+async def ui_random_go(
+    session: Session = Depends(get_session),
+):
+    """302-redirect to one random non-discarded highlight's permalink.
+
+    Bound to the `r` keyboard shortcut. The companion `/ui/random` route
+    returns an HTMX partial used by the dashboard widget; this one
+    redirects to a full permalink page so a key press feels like a
+    Stumble-style "show me something" navigation. If the library is
+    empty we fall back to the dashboard rather than 404, since the
+    user pressed a navigation key.
+    """
+    h = session.exec(
+        select(Highlight.id)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+        .order_by(func.random())
+        .limit(1)
+    ).first()
+    if h is None:
+        return RedirectResponse(url="/dashboard/ui", status_code=303)
+    return RedirectResponse(url=f"/highlights/ui/h/{h}", status_code=303)
 
 
 @router.get("/ui/today", response_class=HTMLResponse)
@@ -1774,6 +1881,59 @@ async def toggle_master_html(
             detail="Cannot master a discarded highlight. Restore it first.",
         )
     highlight.is_mastered = not highlight.is_mastered
+    session.add(highlight)
+    session.commit()
+    session.refresh(highlight)
+
+    if context == "book":
+        return render_book_highlights_sections(request, highlight.book_id, session)
+    return templates.TemplateResponse(
+        request, "_highlight_row.html", {"highlight": highlight},
+    )
+
+
+@router.post("/{id}/touch", response_class=HTMLResponse)
+async def touch_highlight(
+    request: Request,
+    id: int,
+    session: Session = Depends(get_session),
+):
+    """Record a "I just looked at this" acknowledgment.
+
+    Bumps last_reviewed_at + review_count without any side effect on
+    favorite/discard/mastered state. Used by the Echoes widget's
+    "読み返した" button so a card the user has acknowledged stops
+    being surfaced as "neglected" on the next dashboard load.
+
+    Returns 204 — caller has nothing to swap; the toast already
+    confirmed the action visually.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    highlight.last_reviewed_at = datetime.now(UTC).replace(tzinfo=None)
+    highlight.review_count = (highlight.review_count or 0) + 1
+    session.add(highlight)
+    session.commit()
+    return Response(status_code=204)
+
+
+@router.post("/{id}/reread", response_class=HTMLResponse)
+async def toggle_reread_html(
+    request: Request,
+    id: int,
+    context: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    """Toggle is_reread_target — "I want to read this book again."
+
+    Independent of mastery + favorite. The dashboard Echoes widget
+    aggregates flagged highlights by book to suggest a re-read.
+    """
+    highlight = session.get(Highlight, id)
+    if highlight is None:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+    highlight.is_reread_target = not highlight.is_reread_target
     session.add(highlight)
     session.commit()
     session.refresh(highlight)

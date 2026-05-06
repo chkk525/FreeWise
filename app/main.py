@@ -1,8 +1,8 @@
 import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.template_filters import make_templates
@@ -21,15 +21,18 @@ from app.routers import (
     importer,
     library,
     dashboard,
+    digest,
     export,
     api_tokens,
 )
 from app.routers import kindle_cookie as kindle_cookie_router
 from app.api_v2 import router as api_v2_router
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.middleware.gzip_request import GzipRequestMiddleware
 from app.security import check_same_origin
 from app.services import kindle_import_watcher
+from app.services.review_log import install_listener as install_review_log_listener
 
 
 _log = logging.getLogger(__name__)
@@ -44,6 +47,7 @@ async def lifespan(app: FastAPI):
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
     ensure_schema_migrations(engine)
+    install_review_log_listener()
 
     # Initialize default settings if not exists
     with Session(engine) as session:
@@ -121,6 +125,11 @@ def _maybe_start_kindle_scheduler():
 
 app = FastAPI(title="FreeWise", lifespan=lifespan)
 app.add_middleware(GzipRequestMiddleware)
+# Compress responses ≥1 KiB. Most HTML pages are 50–250 KiB and gzip
+# typically cuts them by 80%. Skipping tiny payloads avoids burning CPU
+# on already-tiny HTMX swap fragments. Starlette sets Vary: Accept-
+# Encoding automatically.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^chrome-extension://[a-z0-9]+$",
@@ -143,6 +152,91 @@ async def reject_cross_origin_html_writes(request: Request, call_next):
         except HTTPException as exc:
             return PlainTextResponse(str(exc.detail), status_code=exc.status_code)
     return await call_next(request)
+
+
+_STATUS_LABELS: dict[int, str] = {
+    400: "Bad Request",
+    401: "Sign in required",
+    403: "Forbidden",
+    404: "Page not found",
+    405: "Method not allowed",
+    422: "Could not understand the request",
+    500: "Internal Server Error",
+}
+
+
+def _wants_html(request: Request) -> bool:
+    """Decide whether to render the branded error page or fall back to JSON.
+
+    Rule of thumb:
+    - A real browser navigation sends `Accept: text/html, …` — render HTML.
+    - HTMX swaps set `HX-Request: true` and the surrounding page is HTML —
+      render HTML so the partial slot fills with a sensible message.
+    - Everything else (curl, the FastAPI TestClient with the default
+      `Accept: */*`, the CLI, the Chrome extension, /api/* / /export/*)
+      gets JSON so machine clients can parse the failure cleanly.
+
+    A typo'd HTML URL is the case we want to upgrade — the FastAPI
+    default of `{"detail":"Not Found"}` looks like the site is broken.
+    """
+    # API surfaces always speak JSON regardless of what the client says
+    # in Accept — the CLI, extension, and MCP all hit /api/* and need
+    # machine-readable errors, and /export/* is consumed by file
+    # downloaders that have no use for HTML.
+    path = request.url.path
+    if path.startswith("/api/") or path.startswith("/export/"):
+        return False
+    if request.headers.get("hx-request") == "true":
+        return True
+    accept = request.headers.get("accept", "")
+    return "text/html" in accept
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Render branded HTML for clicked URLs; fall through to FastAPI's default
+    JSON shape for API/programmatic clients (so curl, the CLI, and the
+    Chrome extension still see structured errors)."""
+    if not _wants_html(request):
+        # Re-raise so FastAPI's default JSON handler runs.
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None) or {},
+        )
+    label = _STATUS_LABELS.get(exc.status_code, "Error")
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "status_code": exc.status_code,
+            "status_label": label,
+            "detail": exc.detail if isinstance(exc.detail, str) else None,
+        },
+        status_code=exc.status_code,
+    )
+
+
+@app.exception_handler(500)
+async def internal_error_handler(request: Request, exc: Exception):
+    if not _wants_html(request):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=500, content={"detail": "Internal Server Error"},
+        )
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "status_code": 500,
+            "status_label": _STATUS_LABELS[500],
+            "detail": None,
+        },
+        status_code=500,
+    )
 
 
 _STREAK_BEARING_PATHS: tuple[str, ...] = (
@@ -189,13 +283,16 @@ _SECURITY_HEADERS = {
     # Conservative CSP: app uses inline <script> in api_tokens.html copy
     # button + several htmx data attrs, so we permit 'unsafe-inline' for now.
     # A future tightening pass should add per-script nonces.
+    # Cloudflare auto-injects beacon.min.js from static.cloudflareinsights.com
+    # on the public origin; allowlist it (script + connect) so the page
+    # doesn't throw a CSP violation on every load.
     "Content-Security-Policy": (
         "default-src 'self'; "
         "img-src 'self' data: https:; "
         "style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; "
         "font-src 'self' data:; "
-        "connect-src 'self'; "
+        "connect-src 'self' https://cloudflareinsights.com https://*.cloudflareinsights.com; "
         "frame-ancestors 'none'; "
         "base-uri 'self'"
     ),
@@ -207,6 +304,33 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     for k, v in _SECURITY_HEADERS.items():
         response.headers.setdefault(k, v)
+    return response
+
+
+# Long-lived cache for vendored JS/CSS/fonts that never change at a given
+# path; short-lived for tailwind.css (rebuilds on deploy); no-cache for
+# sw.js so the browser always sees the latest service worker. Reduces the
+# 379 KB lucide.min.js round-trip on every navigation to one per year per
+# device. Cloudflare's edge cache + browser cache both honor this.
+_STATIC_CACHE_RULES: tuple[tuple[str, str], ...] = (
+    ("/static/sw.js", "no-cache"),
+    ("/static/css/tailwind.css", "public, max-age=300, must-revalidate"),
+    ("/static/vendor/", "public, max-age=31536000, immutable"),
+    ("/static/fonts/", "public, max-age=31536000, immutable"),
+    ("/static/favicons/", "public, max-age=86400"),
+    ("/static/", "public, max-age=3600"),  # default for anything else under /static
+)
+
+
+@app.middleware("http")
+async def add_static_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/"):
+        for prefix, value in _STATIC_CACHE_RULES:
+            if path == prefix or path.startswith(prefix):
+                response.headers.setdefault("Cache-Control", value)
+                break
     return response
 
 
@@ -268,6 +392,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Include routers
 app.include_router(dashboard.router)
+app.include_router(digest.router)
 app.include_router(highlights.router)
 app.include_router(settings.router)
 app.include_router(importer.router)

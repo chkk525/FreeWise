@@ -305,6 +305,59 @@ def test_tag_remove(http_client, auth_token, capsys):
     assert ", a" not in out
 
 
+def test_recent_favorited_filter(http_client, auth_token, capsys):
+    _add_highlight("plain row")
+    _add_highlight("starred", is_favorited=True)
+    rc, out, _ = _run(
+        ["recent", "--favorited", "--limit", "10"], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "starred" in out
+    assert "plain row" not in out
+
+
+def test_recent_no_favorited_excludes(http_client, auth_token, capsys):
+    _add_highlight("regular")
+    _add_highlight("starred", is_favorited=True)
+    rc, out, _ = _run(
+        ["recent", "--no-favorited", "--limit", "10"], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "regular" in out
+    assert "starred" not in out
+
+
+def test_search_favorited_filter(http_client, auth_token, capsys):
+    h1 = _add_highlight("alpha plain")
+    h2 = _add_highlight("alpha starred", is_favorited=True)
+    rc, out, _ = _run(
+        ["search", "alpha", "--favorited"], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "alpha starred" in out
+    assert "alpha plain" not in out
+
+
+def test_books_author_filter(http_client, auth_token, capsys):
+    """`freewise books --author "X"` calls /api/v2/books/?author=X."""
+    from sqlmodel import Session
+    from conftest import _test_engine
+    from app.models import Book, Highlight
+    with Session(_test_engine) as s:
+        a = Book(title="A by Target", author="Target Author")
+        b = Book(title="B by Other", author="Other Author")
+        s.add_all([a, b]); s.commit(); s.refresh(a); s.refresh(b)
+        s.add(Highlight(book_id=a.id, user_id=1, text="x"))
+        s.add(Highlight(book_id=b.id, user_id=1, text="y"))
+        s.commit()
+    rc, out, _ = _run(
+        ["books", "--author", "Target Author"], http_client, auth_token, capsys,
+    )
+    assert rc == 0
+    assert "A by Target" in out
+    assert "B by Other" not in out
+
+
 def test_search_with_tag_filter(http_client, auth_token, capsys):
     h1 = _add_highlight("alpha quote")
     _add_highlight("alpha other")

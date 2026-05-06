@@ -201,12 +201,49 @@ Big-ticket items needing user decision:
 
 - **A3** Email digest — needs SMTP credentials
 - **A7** PWA offline review — multi-hour Service Worker investigation
-- **B1** FTS5 search migration — Japanese tokenizer choice (default `unicode61`
-  doesn't segment CJK)
 
-Smaller autonomous-safe ideas:
-- Tag rename / merge utilities
-- Author rename utility (typo fix)
-- Reading log endpoint (which highlights were viewed when)
-- Daily digest static page (`/digest/today`)
-- Per-book stats panel on book detail page
+(B1 — FTS5 Japanese tokenizer — was already shipped in commit `0d2c21a`
+on `unicode61` → `trigram`; removed from this list 2026-05-04.)
+
+### K.3 — prune QNAP daily Kindle scraper cron
+
+Once the Chrome extension has been the primary import path for a full
+week without dogfood incidents (≈ from the day PR #1 was merged), the
+QNAP daily entry in `/etc/config/crontab` can be dropped. Keep the
+monthly entry as a backstop for when the user is travelling without
+the laptop.
+
+```sh
+# On QNAP (as admin)
+crontab -l | grep -v 'kindle_cron.sh'   # confirm what's there
+# Edit /etc/config/crontab and remove the daily line
+# Reload: /etc/init.d/crond.sh restart
+```
+
+### Shipped since the last edit of this file
+
+- Tag rename / merge utilities — `/api/v2/tags/{name}/{rename,merge}`,
+  `freewise tag rename` / `freewise tag merge`, MCP `freewise_tag_*`
+- Author rename utility — `/api/v2/authors/rename`,
+  `freewise author rename`, MCP `freewise_author_rename`
+- Per-book stats (Insights panel) — `/library/ui/book/{id}` shows avg
+  highlight length, date range, last-reviewed, total reviews,
+  mastered fraction, top 3 tags within the book
+- Daily digest page — `/digest/today` renders a deterministic-per-day
+  set of 10 picks + on-this-day + library health, behind CF Access.
+  Cache-Control is `private, max-age=1800`.
+- Reading log persistence — durable `reviewlog` table populated by a
+  SQLAlchemy `before_flush` listener. Powers the dashboard "Past 7
+  days" sparkline and `GET /api/v2/review-log`.
+- Search snippet highlighting — `/highlights/ui/search` and
+  `GET /api/v2/highlights/search` show FTS5 hit-context snippets with
+  `<mark>` around each match. Sentinel-then-escape pattern keeps
+  user-pasted HTML safe.
+
+### Still open (smaller autonomous-safe ideas)
+
+- Reading log endpoint (which highlights were viewed when) —
+  `review_sessions` is in-memory only; making it durable + queryable
+  would surface engagement-over-time data.
+- Daily digest static page (`/digest/today`) — deterministic-per-day
+  sampler; cacheable. Renders without auth.

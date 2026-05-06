@@ -1,95 +1,44 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="{{ settings.theme if settings else 'light' }}">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily Review - FreeWise</title>
-    
-    <!-- Local CSS -->
-    <link rel="stylesheet" href="/static/css/fonts.css">
-    <link rel="stylesheet" href="/static/css/tailwind.css">
-    
-    <!-- Favicons & PWA -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
-    <link rel="manifest" href="/static/favicons/site.webmanifest">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="FreeWise">
-    <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');</script>
-    
-    <!-- Local JS -->
-    <script src="/static/vendor/htmx/htmx.min.js"></script>
-    <script src="/static/vendor/lucide/lucide.min.js"></script>
-    
-    <style>
-        .title-font {
-            font-family: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
-        }
-    </style>
-</head>
-<body class="minna-skin bg-gray-50 dark:bg-gray-900 min-h-screen flex flex-col">
-    <!-- Back Button (Top Left) -->
-    <div class="absolute top-6 left-6 z-10">
-        <a href="/dashboard/ui" class="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
-            <i data-lucide="arrow-left" class="w-5 h-5"></i>
-            <span class="text-sm font-medium hidden sm:inline">Dashboard</span>
-        </a>
-    </div>
+{% extends "base.html" %}
 
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col items-center justify-start px-4 pt-6 pb-8">
-        <div id="review-container" class="w-full max-w-3xl">
-            {% if total > 0 %}
-                {% include "_review_card.html" %}
-            {% elif total_active_highlights == 0 %}
-                {# Brand-new user: nothing to review because nothing imported yet. #}
-                <div class="text-center">
-                    <div class="mb-6">
-                        <i data-lucide="book-open" class="w-20 h-20 mx-auto text-amber-500"></i>
-                    </div>
-                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">No highlights yet</h2>
-                    <p class="text-gray-600 dark:text-gray-400 mb-6">
-                        Import some highlights from Readwise, Kindle, Meebook, or a custom CSV to start your review streak.
-                    </p>
-                    <a href="/import/ui" class="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg transition-colors">
-                        <i data-lucide="upload" class="w-5 h-5"></i>
-                        <span>Import highlights</span>
-                    </a>
+{% block title %}{{ t("Daily Review - FreeWise") }}{% endblock %}
+
+{% block heading %}{{ t("Daily Review") }}{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center pt-2 pb-8">
+    <div id="review-container" class="w-full max-w-3xl">
+        {% if total > 0 %}
+            {% include "_review_card.html" %}
+        {% elif total_active_highlights == 0 %}
+            {# Brand-new user: nothing to review because nothing imported yet. #}
+            <div class="text-center">
+                <div class="mb-6">
+                    <i data-lucide="book-open" class="w-20 h-20 mx-auto text-amber-500"></i>
                 </div>
-            {% else %}
-                <div class="text-center">
-                    <div class="mb-6">
-                        <i data-lucide="check-circle" class="w-20 h-20 mx-auto text-green-500"></i>
-                    </div>
-                    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">All Done!</h2>
-                    <p class="text-gray-600 dark:text-gray-400 mb-6">
-                        No highlights available for review today. Great job staying on top of things!
-                    </p>
-                    <a href="/dashboard/ui" class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg transition-colors">
-                        <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                        <span>Back to Dashboard</span>
-                    </a>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ t("No highlights yet") }}</h2>
+                <p class="text-gray-600 dark:text-gray-400 mb-6">
+                    {{ t("Import some highlights from Readwise, Kindle, Meebook, or a custom CSV to start your review streak.") }}
+                </p>
+                <a href="/import/ui" class="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg transition-colors">
+                    <i data-lucide="upload" class="w-5 h-5"></i>
+                    <span>{{ t("Import highlights") }}</span>
+                </a>
+            </div>
+        {% else %}
+            <div class="text-center">
+                <div class="mb-6">
+                    <i data-lucide="check-circle" class="w-20 h-20 mx-auto text-green-500"></i>
                 </div>
-            {% endif %}
-        </div>
+                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-3">{{ t("All Done!") }}</h2>
+                <p class="text-gray-600 dark:text-gray-400 mb-6">
+                    {{ t("No highlights available for review today. Great job staying on top of things!") }}
+                </p>
+                <a href="/dashboard/ui" class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg transition-colors">
+                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                    <span>{{ t("Back to Dashboard") }}</span>
+                </a>
+            </div>
+        {% endif %}
     </div>
-
-    {% include "_keyboard_shortcuts.html" %}
-
-    <script>
-        function initLucideIcons() {
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initLucideIcons);
-        } else {
-            initLucideIcons();
-        }
-
-        document.addEventListener('htmx:afterSwap', initLucideIcons);
-    </script>
-</body>
-</html>
+</div>
+{% endblock %}

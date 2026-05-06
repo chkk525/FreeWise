@@ -328,6 +328,35 @@ def ensure_schema_migrations(engine=None) -> None:
                 )
             )
 
+        # ── Highlight.is_reread_target (PR-E "Echoes") ───────────────────
+        # User flags individual highlights with 📖 "もう一度読みたい". The
+        # Echoes widget aggregates them by book and surfaces a card when
+        # at least one highlight in that book has the flag set.
+        if hl_cols and "is_reread_target" not in hl_cols:
+            _log.info("migration: adding highlight.is_reread_target column")
+            conn.execute(
+                text("ALTER TABLE highlight ADD COLUMN is_reread_target BOOLEAN NOT NULL DEFAULT 0")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_highlight_is_reread_target "
+                    "ON highlight (is_reread_target)"
+                )
+            )
+
+        # ── Settings.language (i18n) ─────────────────────────────────────
+        # Single-user app, so the column lives on the singleton settings
+        # row; default 'en' so existing installs stay English until the
+        # user flips the toggle on /settings/ui.
+        settings_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(settings)")).all()
+        }
+        if settings_cols and "language" not in settings_cols:
+            _log.info("migration: adding settings.language column")
+            conn.execute(
+                text("ALTER TABLE settings ADD COLUMN language VARCHAR NOT NULL DEFAULT 'en'")
+            )
+
     # ── FTS5 substring index (U91) ───────────────────────────────────────
     # Trigram tokenizer works for any language including Japanese / Chinese
     # (no MeCab/ICU dependency). Queries < 3 chars must fall back to LIKE

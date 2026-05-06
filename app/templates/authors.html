@@ -56,7 +56,7 @@
                     <td class="text-right px-4 py-2 font-mono {% if a.favorited > 0 %}text-yellow-700 dark:text-yellow-400{% else %}text-gray-400 dark:text-gray-600{% endif %}">{{ a.favorited }}</td>
                     <td class="text-right px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
                         {% if a.last_at %}
-                        <time data-iso="{{ a.last_at.isoformat() }}Z" data-format="date">{{ a.last_at.strftime('%b %d, %Y') }}</time>
+                        <time data-iso="{{ a.last_at.isoformat() }}Z" data-format="date">{{ a.last_at | localfmt('%b %d, %Y') }}</time>
                         {% else %}—{% endif %}
                     </td>
                 </tr>
@@ -65,5 +65,9 @@
         </table>
     </div>
     {% endif %}
+
+    {% with pagination_label='authors' %}
+        {% include "_pagination_footer.html" %}
+    {% endwith %}
 </div>
 {% endblock %}

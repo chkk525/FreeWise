@@ -1,4 +1,20 @@
 # Router package exports
-from app.routers import highlights, settings, importer, library, dashboard, export
+from app.routers import (
+    dashboard,
+    digest,
+    export,
+    highlights,
+    importer,
+    library,
+    settings,
+)
 
-__all__ = ["highlights", "settings", "importer", "library", "dashboard", "export"]
+__all__ = [
+    "dashboard",
+    "digest",
+    "export",
+    "highlights",
+    "importer",
+    "library",
+    "settings",
+]

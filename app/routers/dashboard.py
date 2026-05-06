@@ -4,11 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 
 from app.db import get_session, get_settings, get_current_streak
 from app.models import Book, Highlight, Settings, ReviewSession
+from app.services.cold_books import cold_books as compute_cold_books
+from app.services.echoes import get_echoes
 from app.services.kindle_import_status import get_status as get_kindle_status
+from app.services.review_log import counts_by_day as review_log_counts_by_day
 from app.template_filters import make_templates
 
 
@@ -158,6 +161,38 @@ async def ui_dashboard(
             # 1..5 buckets for sm/base/lg/xl/2xl in the template.
             t["size"] = max(1, min(5, 1 + int(ratio * 4 + 0.5)))
 
+    activity_counts = review_log_counts_by_day(session, days=7)
+    activity_total = sum(c for _, c in activity_counts)
+    activity_max = max((c for _, c in activity_counts), default=0)
+
+    # Re-engagement surface: 5 books whose newest interaction is the
+    # oldest in the library — i.e. long-tail imports the user has drifted
+    # away from. Cheap query (one GROUP BY join) so it's safe inline.
+    # Naive UTC for arithmetic against ``last_touched_at`` rows, which
+    # are stored without tzinfo. ``datetime.now(UTC)`` keeps us off the
+    # deprecated ``utcnow()`` API.
+    _cold_now = datetime.now(UTC).replace(tzinfo=None)
+    cold_books_view = [
+        {
+            "id": entry.id,
+            "title": entry.title,
+            "author": entry.author,
+            "cover_image_url": entry.cover_image_url,
+            "active_highlights": entry.active_highlights,
+            "days_since": (
+                (_cold_now - entry.last_touched_at).days
+                if entry.last_touched_at is not None
+                else None
+            ),
+        }
+        for entry in compute_cold_books(session, limit=5)
+    ]
+
+    # Echoes — at most 3 cards drawn from anniversary / reread / neglect.
+    # Cheap query: ≤6 small SELECTs with random() ordering. Returns []
+    # gracefully when the library has no qualifying highlights.
+    echoes = get_echoes(session, limit=3)
+
     return templates.TemplateResponse(request, "dashboard.html", {"settings": settings,
         "daily_review_count": daily_review_count,
         "reviewed_today": reviewed_today,
@@ -176,7 +211,12 @@ async def ui_dashboard(
         "longest_streak": longest_streak,
         "tag_cloud": tag_cloud,
         "embedding_coverage": embedding_coverage,
-        "kindle_status": kindle_status})
+        "kindle_status": kindle_status,
+        "activity_counts": activity_counts,
+        "activity_total": activity_total,
+        "activity_max": activity_max,
+        "cold_books": cold_books_view,
+        "echoes": echoes})
 
 
 @router.get("/kindle/status")

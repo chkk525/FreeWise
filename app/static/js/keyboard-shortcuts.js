@@ -14,6 +14,7 @@
         i: '/import/ui',
         s: '/settings/ui',
         t: '/import/api-token',
+        v: '/highlights/ui/activity',
     };
 
     let gPrefixActive = false;
@@ -203,6 +204,11 @@
         }
         if (key === 'p') {
             if (clickPagination('prev')) e.preventDefault();
+            return;
+        }
+        if (key === 'r') {
+            window.location.href = '/highlights/ui/random/go';
+            e.preventDefault();
         }
     });
 }());

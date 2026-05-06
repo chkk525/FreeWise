@@ -10,6 +10,7 @@ import httpx
 
 from app.db import get_session, get_settings
 from app.models import Book, Highlight, Settings
+from app.services.book_stats import compute_book_stats
 from app.template_filters import make_templates
 
 
@@ -35,6 +36,7 @@ async def ui_library(
     page_size: int = DEFAULT_PAGE_SIZE,
     author: Optional[str] = None,
     q: Optional[str] = None,
+    tag: Optional[str] = None,
     session: Session = Depends(get_session)
 ):
     """Render library page with sortable + paginated table of books.
@@ -46,10 +48,25 @@ async def ui_library(
 
     Query params: sort (title|author|highlight_count|last_highlight),
     order (asc|desc), page (1-based), page_size (1..200).
+
+    Sort/order persistence: when the user clicks a column header we save
+    the choice in `fw_lib_sort` / `fw_lib_order` cookies. Subsequent
+    visits to /library/ui without explicit params reuse those values so
+    the user lands on their preferred view instead of the global default.
     """
     settings = get_settings(session)
 
     valid_sorts = {"title", "author", "highlight_count", "last_highlight"}
+    # Honour cookie-stored preference only when the URL didn't carry an
+    # explicit sort/order. This keeps shareable links deterministic.
+    if "sort" not in request.query_params:
+        cookie_sort = request.cookies.get("fw_lib_sort")
+        if cookie_sort in valid_sorts:
+            sort = cookie_sort
+    if "order" not in request.query_params:
+        cookie_order = request.cookies.get("fw_lib_order")
+        if cookie_order in ("asc", "desc"):
+            order = cookie_order
     if sort not in valid_sorts:
         sort = "highlight_count"
     if order not in ("asc", "desc"):
@@ -98,6 +115,17 @@ async def ui_library(
             | Book.author.like(pattern, escape="\\")
         )
 
+    # Optional document_tags filter. document_tags is a CSV string with
+    # optional whitespace ("alpha, beta, gamma"), so we strip spaces with
+    # SQL replace() before the boundary match. Wrapping the stored value
+    # in commas + matching ",foo," prevents "sci" from matching "scifi".
+    tag_clean = (tag or "").strip()
+    if tag_clean:
+        tag_escaped = tag_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        tag_pattern = f"%,{tag_escaped},%"
+        normalized = func.concat(",", func.replace(Book.document_tags, " ", ""), ",")
+        books_query = books_query.where(normalized.like(tag_pattern, escape="\\"))
+
     sort_col = {
         "title": Book.title,
         "author": Book.author,
@@ -116,6 +144,11 @@ async def ui_library(
             Book.title.like(pattern, escape="\\")
             | Book.author.like(pattern, escape="\\")
         )
+    if tag_clean:
+        tag_escaped = tag_clean.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        tag_pattern = f"%,{tag_escaped},%"
+        normalized = func.concat(",", func.replace(Book.document_tags, " ", ""), ",")
+        total_query = total_query.where(normalized.like(tag_pattern, escape="\\"))
     total = session.exec(total_query).one()
     if isinstance(total, tuple):
         total = total[0]
@@ -177,7 +210,7 @@ async def ui_library(
                 "last_highlight_at": stats_row[4],
             }
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "library.html",
         {
@@ -193,15 +226,28 @@ async def ui_library(
             "showing_last": showing_last,
             "author_filter": author_filter or None,
             "q_filter": q_clean or None,
+            "tag_filter": tag_clean or None,
             "author_summary": author_summary,
         },
     )
+    # Persist current sort/order so the next bare /library/ui visit lands
+    # on the user's preferred view. 1-year max-age — pure UX preference,
+    # nothing sensitive.
+    response.set_cookie(
+        "fw_lib_sort", sort, max_age=60 * 60 * 24 * 365, httponly=False, samesite="lax"
+    )
+    response.set_cookie(
+        "fw_lib_order", order, max_age=60 * 60 * 24 * 365, httponly=False, samesite="lax"
+    )
+    return response
 
 
 @router.get("/ui/authors", response_class=HTMLResponse)
 async def ui_authors(
     request: Request,
     sort: str = "highlights",
+    page: int = 1,
+    page_size: int = DEFAULT_PAGE_SIZE,
     session: Session = Depends(get_session),
 ):
     """List every author with book/highlight counts and last activity.
@@ -218,6 +264,8 @@ async def ui_authors(
     settings = get_settings(session)
     if sort not in {"highlights", "books", "name", "recent"}:
         sort = "highlights"
+    page = max(1, page)
+    page_size = max(1, min(MAX_PAGE_SIZE, page_size))
 
     from sqlmodel import case as sa_case
     stmt = (
@@ -245,7 +293,7 @@ async def ui_authors(
         stmt = stmt.order_by(func.max(Highlight.created_at).desc().nullslast(), Book.author.asc())
 
     rows = session.exec(stmt).all()
-    authors = [
+    all_authors = [
         {
             "name": r[0],
             "book_count": int(r[1] or 0),
@@ -256,14 +304,29 @@ async def ui_authors(
         for r in rows
     ]
 
+    total = len(all_authors)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    authors = all_authors[start:start + page_size]
+    showing_first = 0 if total == 0 else start + 1
+    showing_last = min(start + page_size, total)
+
     return templates.TemplateResponse(
         request, "authors.html",
         {
             "settings": settings,
             "authors": authors,
             "current_sort": sort,
-            "total_authors": len(authors),
-            "total_highlights": sum(a["highlight_count"] for a in authors),
+            "total_authors": total,
+            "total_highlights": sum(a["highlight_count"] for a in all_authors),
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "showing_first": showing_first,
+            "showing_last": showing_last,
         },
     )
 
@@ -294,10 +357,12 @@ async def ui_book_detail(
         )
     )
     highlights = session.exec(highlights_stmt).all()
-    
+    stats = compute_book_stats(session, book_id)
+
     return templates.TemplateResponse(request, "book_detail.html", {"settings": settings,
         "book": book,
-        "highlights": highlights})
+        "highlights": highlights,
+        "stats": stats})
 
 
 @router.post("/ui/book/{book_id}/cover/upload", response_class=HTMLResponse)
