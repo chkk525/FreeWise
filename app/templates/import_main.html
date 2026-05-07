@@ -6,92 +6,48 @@
 
 {% block content %}
 <div class="max-w-4xl mx-auto">
-    <p class="text-gray-600 dark:text-gray-400 mb-8">
+    <p class="text-text-2 mb-8">
         Choose your import source to get started
     </p>
-    
-    <!-- Source Selection Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <!-- Readwise Card -->
-        <a href="/import/ui/readwise" 
-           class="group bg-white dark:bg-gray-800 rounded-xl p-8 border-2 border-gray-200 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-400 hover:shadow-xl transition-all cursor-pointer">
-            <div class="text-center">
-                <div class="inline-flex items-center justify-center w-20 h-20 bg-primary-100 dark:bg-primary-900/30 rounded-full mb-4 group-hover:scale-110 transition-transform">
-                    <i data-lucide="book-open" class="w-10 h-10 text-primary-600 dark:text-primary-400"></i>
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Readwise</h3>
-                <p class="text-gray-600 dark:text-gray-400 mb-4">Import from Readwise CSV export</p>
-                <div class="flex items-center justify-center gap-2">
-                    <span class="inline-flex items-center px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs font-medium rounded-full">
-                        <i data-lucide="zap" class="w-3 h-3 mr-1"></i>
-                        Quick Import
-                    </span>
-                </div>
-            </div>
-        </a>
-        
-        <!-- Meebook Card -->
-        <a href="/import/ui/meebook" 
-           class="group bg-white dark:bg-gray-800 rounded-xl p-8 border-2 border-gray-200 dark:border-gray-700 hover:border-teal-500 dark:hover:border-teal-400 hover:shadow-xl transition-all cursor-pointer">
-            <div class="text-center">
-                <div class="inline-flex items-center justify-center w-20 h-20 bg-teal-100 dark:bg-teal-900/30 rounded-full mb-4 group-hover:scale-110 transition-transform">
-                    <i data-lucide="tablet-smartphone" class="w-10 h-10 text-teal-600 dark:text-teal-400"></i>
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Meebook</h3>
-                <p class="text-gray-600 dark:text-gray-400 mb-4">Import from Haoqing HTML export</p>
-                <div class="flex items-center justify-center gap-2">
-                    <span class="inline-flex items-center px-3 py-1 bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 text-xs font-medium rounded-full">
-                        <i data-lucide="file-code" class="w-3 h-3 mr-1"></i>
-                        HTML
-                    </span>
-                </div>
-            </div>
-        </a>
-        
-        <!-- Kindle Card -->
-        <a href="/import/ui/kindle"
-           class="group bg-white dark:bg-gray-800 rounded-xl p-8 border-2 border-gray-200 dark:border-gray-700 hover:border-orange-500 dark:hover:border-orange-400 hover:shadow-xl transition-all cursor-pointer">
-            <div class="text-center">
-                <div class="inline-flex items-center justify-center w-20 h-20 bg-orange-100 dark:bg-orange-900/30 rounded-full mb-4 group-hover:scale-110 transition-transform">
-                    <i data-lucide="book" class="w-10 h-10 text-orange-600 dark:text-orange-400"></i>
-                </div>
-                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Kindle</h3>
-                <p class="text-gray-600 dark:text-gray-400 mb-4">Import scraped Kindle notebook JSON</p>
-                <div class="flex items-center justify-center gap-2">
-                    <span class="inline-flex items-center px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs font-medium rounded-full">
-                        <i data-lucide="file-json" class="w-3 h-3 mr-1"></i>
-                        JSON
-                    </span>
-                </div>
-            </div>
-        </a>
 
-        <!-- Custom CSV Card -->
-        <a href="/import/ui/custom"
-           class="group bg-white dark:bg-gray-800 rounded-xl p-8 border-2 border-gray-200 dark:border-gray-700 hover:border-amber-500 dark:hover:border-amber-400 hover:shadow-xl transition-all cursor-pointer">
+    {# Per Minna's "no second chromatic accent" rule, every source card uses
+       the same neutral chassis — the lucide icon and the label disambiguate
+       the source. Hover lifts the border to text-1, never to a brand-blue
+       or rainbow tint. #}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {% set _import_sources = [
+            ('/import/ui/readwise', 'book-open',           'Readwise',   'Import from Readwise CSV export',          'zap',              'Quick Import'),
+            ('/import/ui/meebook',  'tablet-smartphone',   'Meebook',    'Import from Haoqing HTML export',          'file-code',        'HTML'),
+            ('/import/ui/kindle',   'book',                'Kindle',     'Import scraped Kindle notebook JSON',      'file-json',        'JSON'),
+            ('/import/ui/custom',   'file-spreadsheet',    'Custom CSV', 'Map your own CSV columns',                  'settings',         'Flexible'),
+        ] %}
+        {% for href, icon, title, subtitle, badge_icon, badge_label in _import_sources %}
+        <a href="{{ href }}"
+           class="group bg-surface-1 rounded-component p-8 border-2 hover:border-text-1 transition-colors cursor-pointer">
             <div class="text-center">
-                <div class="inline-flex items-center justify-center w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full mb-4 group-hover:scale-110 transition-transform">
-                    <i data-lucide="file-spreadsheet" class="w-10 h-10 text-amber-600 dark:text-amber-400"></i>
+                <div class="inline-flex items-center justify-center w-20 h-20 bg-surface-2 rounded-full mb-4 group-hover:scale-110 transition-transform">
+                    <i data-lucide="{{ icon }}" class="w-10 h-10 text-text-1"></i>
                 </div>
-                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Custom CSV</h3>
-                <p class="text-gray-600 dark:text-gray-400 mb-4">Map your own CSV columns</p>
+                <h3 class="text-xl font-bold text-text-1 mb-2">{{ title }}</h3>
+                <p class="text-text-2 mb-4">{{ subtitle }}</p>
                 <div class="flex items-center justify-center gap-2">
-                    <span class="inline-flex items-center px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-medium rounded-full">
-                        <i data-lucide="settings" class="w-3 h-3 mr-1"></i>
-                        Flexible
+                    <span class="inline-flex items-center px-3 py-1 bg-surface-2 text-text-1 text-xs font-medium rounded-full">
+                        <i data-lucide="{{ badge_icon }}" class="w-3 h-3 mr-1"></i>
+                        {{ badge_label }}
                     </span>
                 </div>
             </div>
         </a>
+        {% endfor %}
     </div>
-    
+
     <!-- Coming Soon Section (Optional) -->
-    <div class="mt-12 p-6 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg">
+    <div class="mt-12 p-6 bg-surface-2 border rounded-component">
         <div class="flex items-start gap-3">
-            <i data-lucide="sparkles" class="w-5 h-5 text-gray-400 dark:text-gray-600 flex-shrink-0 mt-0.5"></i>
+            <i data-lucide="sparkles" class="w-5 h-5 text-text-3 flex-shrink-0 mt-0.5"></i>
             <div>
-                <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">More sources coming soon</h4>
-                <p class="text-xs text-gray-600 dark:text-gray-400">We're working on adding direct imports from Apple Books and more reading platforms.</p>
+                <h4 class="text-sm font-semibold text-text-1 mb-2">More sources coming soon</h4>
+                <p class="text-xs text-text-2">We're working on adding direct imports from Apple Books and more reading platforms.</p>
             </div>
         </div>
     </div>
