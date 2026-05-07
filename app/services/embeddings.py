@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import os
 import struct
+import threading
+import time
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -67,6 +69,22 @@ def _env_embed_text_max_chars() -> int:
         return max(1, int(raw))
     except ValueError:
         return 1000
+
+
+def _env_semantic_duplicate_cache_ttl_seconds() -> float:
+    """TTL for process-local semantic duplicate results.
+
+    The full semantic-duplicate scan is intentionally heavy: it loads the
+    active embedding matrix and computes all pairwise similarities. A short
+    cache makes repeated page/API refreshes cheap while a DB fingerprint keeps
+    new imports, new embeddings, and discard/restore actions from serving stale
+    results.
+    """
+    raw = os.environ.get("FREEWISE_SEMANTIC_DUP_CACHE_TTL_SECONDS", "600")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 600.0
 
 
 def _embedding_input(text: str) -> str:
@@ -457,6 +475,93 @@ def backfill_embeddings(
 # ── Semantic near-duplicate detection ─────────────────────────────────────
 
 
+_SemanticDuplicateFingerprint = tuple[int, int, int, str]
+_SemanticDuplicateCacheKey = tuple[
+    int, str, int | None, float, int, int, _SemanticDuplicateFingerprint,
+]
+
+_semantic_duplicate_cache: dict[
+    _SemanticDuplicateCacheKey,
+    tuple[float, list[dict]],
+] = {}
+_semantic_duplicate_cache_lock = threading.Lock()
+_SEMANTIC_DUPLICATE_CACHE_MAX_ENTRIES = 32
+
+
+def clear_semantic_duplicate_cache() -> None:
+    """Clear process-local semantic duplicate results.
+
+    Most callers do not need this because cache keys include a cheap DB
+    fingerprint, but tests and future mutation-heavy workflows can force a
+    flush explicitly.
+    """
+    with _semantic_duplicate_cache_lock:
+        _semantic_duplicate_cache.clear()
+
+
+def _semantic_duplicate_fingerprint(
+    session, *, model_name: str, user_id: int | None,
+) -> _SemanticDuplicateFingerprint:
+    """Return a cheap freshness fingerprint for active embedded highlights."""
+    from sqlalchemy import func as sa_func
+    from sqlmodel import select
+
+    from app.models import Embedding, Highlight
+
+    stmt = (
+        select(
+            sa_func.count(Embedding.highlight_id),
+            sa_func.coalesce(sa_func.sum(Embedding.highlight_id), 0),
+            sa_func.coalesce(sa_func.sum(sa_func.length(Highlight.text)), 0),
+            sa_func.max(Embedding.created_at),
+        )
+        .join(Highlight, Highlight.id == Embedding.highlight_id)
+        .where(Embedding.model_name == model_name)
+        .where(Highlight.is_discarded == False)  # noqa: E712
+    )
+    if user_id is not None:
+        stmt = stmt.where(Highlight.user_id == user_id)
+    count, id_sum, text_len_sum, max_embedding_created_at = (
+        session.exec(stmt).one()
+    )
+    return (
+        int(count or 0),
+        int(id_sum or 0),
+        int(text_len_sum or 0),
+        str(max_embedding_created_at or ""),
+    )
+
+
+def _copy_duplicate_pairs(pairs: list[dict]) -> list[dict]:
+    """Return a shallow copy safe from caller mutation."""
+    return [dict(pair) for pair in pairs]
+
+
+def _store_semantic_duplicate_cache(
+    key: _SemanticDuplicateCacheKey, pairs: list[dict], *, ttl: float,
+) -> None:
+    """Store one cache result while pruning stale/old entries."""
+    now = time.monotonic()
+    with _semantic_duplicate_cache_lock:
+        expired = [
+            cache_key
+            for cache_key, (created_at, _) in _semantic_duplicate_cache.items()
+            if now - created_at > ttl
+        ]
+        for cache_key in expired:
+            _semantic_duplicate_cache.pop(cache_key, None)
+        if (
+            key not in _semantic_duplicate_cache
+            and len(_semantic_duplicate_cache) >= _SEMANTIC_DUPLICATE_CACHE_MAX_ENTRIES
+        ):
+            oldest_key = min(
+                _semantic_duplicate_cache,
+                key=lambda cache_key: _semantic_duplicate_cache[cache_key][0],
+            )
+            _semantic_duplicate_cache.pop(oldest_key, None)
+        _semantic_duplicate_cache[key] = (now, _copy_duplicate_pairs(pairs))
+
+
 def find_semantic_duplicates(
     session,  # sqlmodel Session
     *,
@@ -488,6 +593,23 @@ def find_semantic_duplicates(
     from app.models import Embedding, Highlight
 
     model_name = model or _env_model()
+    threshold = round(float(threshold), 6)
+    limit = int(limit)
+    chunk_size = int(chunk_size)
+    ttl = _env_semantic_duplicate_cache_ttl_seconds()
+    fingerprint = _semantic_duplicate_fingerprint(
+        session, model_name=model_name, user_id=user_id,
+    )
+    cache_key: _SemanticDuplicateCacheKey = (
+        id(session.get_bind()), model_name, user_id, threshold, limit,
+        chunk_size, fingerprint,
+    )
+    if ttl > 0:
+        now = time.monotonic()
+        with _semantic_duplicate_cache_lock:
+            cached = _semantic_duplicate_cache.get(cache_key)
+            if cached and now - cached[0] <= ttl:
+                return _copy_duplicate_pairs(cached[1])
 
     # Pull (id, vector, text) — we materialize text now so the result
     # rows can be returned without a second hydration pass.
@@ -501,6 +623,8 @@ def find_semantic_duplicates(
         base = base.where(Highlight.user_id == user_id)
     rows = session.exec(base).all()
     if len(rows) < 2:
+        if ttl > 0:
+            _store_semantic_duplicate_cache(cache_key, [], ttl=ttl)
         return []
 
     n = len(rows)
@@ -554,7 +678,7 @@ def find_semantic_duplicates(
     top.sort(key=lambda t: -t[0])
 
     id_to_text = {int(ids[i]): texts[i] for i in range(n)}
-    return [
+    pairs = [
         {
             "a_id": a_id, "b_id": b_id,
             "similarity": round(sim, 4),
@@ -563,6 +687,9 @@ def find_semantic_duplicates(
         }
         for sim, a_id, b_id in top
     ]
+    if ttl > 0:
+        _store_semantic_duplicate_cache(cache_key, pairs, ttl=ttl)
+    return pairs
 
 
 # ── RAG: retrieve-then-generate ────────────────────────────────────────────

@@ -332,6 +332,70 @@ def test_find_semantic_duplicates_caps_at_limit(db, make_highlight):
     assert pairs[0]["similarity"] >= pairs[1]["similarity"]
 
 
+def test_find_semantic_duplicates_reuses_cache_for_same_fingerprint(
+    db, make_highlight, monkeypatch,
+):
+    from app.models import Embedding
+    from app.services.embeddings import (
+        clear_semantic_duplicate_cache,
+        find_semantic_duplicates,
+    )
+
+    clear_semantic_duplicate_cache()
+    h_a = make_highlight(text="alpha")
+    h_b = make_highlight(text="alpha again")
+    db.add(Embedding(highlight_id=h_a.id, model_name="m", dim=2,
+                     vector=pack_vector([1.0, 0.0])))
+    db.add(Embedding(highlight_id=h_b.id, model_name="m", dim=2,
+                     vector=pack_vector([0.99, 0.01])))
+    db.commit()
+
+    first = find_semantic_duplicates(db, threshold=0.9, model="m")
+    assert len(first) == 1
+
+    import numpy as np
+
+    def fail_if_recomputed(*args, **kwargs):
+        raise AssertionError("semantic duplicate cache was not reused")
+
+    monkeypatch.setattr(np, "where", fail_if_recomputed)
+    second = find_semantic_duplicates(db, threshold=0.9, model="m")
+    assert second == first
+    assert second is not first
+
+
+def test_find_semantic_duplicates_cache_invalidates_when_embeddings_change(
+    db, make_highlight,
+):
+    from app.models import Embedding
+    from app.services.embeddings import (
+        clear_semantic_duplicate_cache,
+        find_semantic_duplicates,
+    )
+
+    clear_semantic_duplicate_cache()
+    h_a = make_highlight(text="alpha")
+    h_b = make_highlight(text="alpha again")
+    db.add(Embedding(highlight_id=h_a.id, model_name="m", dim=2,
+                     vector=pack_vector([1.0, 0.0])))
+    db.add(Embedding(highlight_id=h_b.id, model_name="m", dim=2,
+                     vector=pack_vector([0.99, 0.01])))
+    db.commit()
+
+    first = find_semantic_duplicates(db, threshold=0.9, model="m")
+    assert len(first) == 1
+
+    h_c = make_highlight(text="alpha third time")
+    db.add(Embedding(highlight_id=h_c.id, model_name="m", dim=2,
+                     vector=pack_vector([0.98, 0.02])))
+    db.commit()
+
+    second = find_semantic_duplicates(db, threshold=0.9, model="m")
+    pair_ids = {frozenset((p["a_id"], p["b_id"])) for p in second}
+    assert frozenset((h_a.id, h_c.id)) in pair_ids
+    assert len(second) > len(first)
+
+
 def test_find_semantic_duplicates_empty_when_no_embeddings(db, make_highlight):
     from app.services.embeddings import find_semantic_duplicates
     make_highlight(text="x")

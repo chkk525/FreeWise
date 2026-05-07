@@ -95,9 +95,23 @@ Production measurements after full backfill:
 
 - Related-highlight top-k: about 1 second
 - Full semantic duplicate page: about 50 seconds for 23k highlights
+- Repeated semantic duplicate calls with the same library fingerprint are served
+  from a process-local cache for 10 minutes by default
 
 The duplicate page computes all pairwise similarities, so it is expected to be
-much heavier than related-highlight lookup.
+much heavier than related-highlight lookup. The cache key includes the model,
+user, threshold, limit, chunk size, and an active-embedding fingerprint, so new
+imports, new embeddings, discard, and restore actions naturally trigger a fresh
+scan.
+
+To tune or disable the cache, set this in QNAP `.env.qnap` and recreate the
+container:
+
+```bash
+FREEWISE_SEMANTIC_DUP_CACHE_TTL_SECONDS=600
+```
+
+Use `0` to disable caching.
 
 ## Operational Risks
 
