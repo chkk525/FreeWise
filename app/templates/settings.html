@@ -6,10 +6,10 @@
 
 {% block content %}
 {% if success_message %}
-<div class="bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 p-4 mb-6 rounded">
+<div class="bg-surface-2 border-l-4 border-success p-4 mb-6 rounded">
     <div class="flex items-center gap-3">
-        <i data-lucide="check-circle" class="w-5 h-5 text-green-600 dark:text-green-400"></i>
-        <p class="text-green-700 dark:text-green-300">{{ success_message }}</p>
+        <i data-lucide="check-circle" class="w-5 h-5 text-success"></i>
+        <p class="text-text-1">{{ success_message }}</p>
     </div>
 </div>
 {% endif %}
@@ -17,19 +17,21 @@
 <!-- Settings Form -->
 <form method="post" action="/settings/ui" class="max-w-2xl space-y-8">
     <!-- Daily Review Count Setting -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <div class="bg-surface-1 rounded-component border p-6">
         <div class="flex items-start gap-4">
             <div class="pt-1">
-                <i data-lucide="zap" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <i data-lucide="zap" class="w-6 h-6 text-text-1"></i>
             </div>
             <div class="flex-1">
-                <label for="daily_review_count" class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <label for="daily_review_count" class="flex items-center gap-2 text-lg font-semibold text-text-1 mb-2">
                     {{ t("Daily Review Count") }}
-                    <span id="review-count-display" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-bold text-sm">
+                    {# Counter chip is the brand's yellow stamp moment for the
+                       current setting value — black-on-yellow per Minna. #}
+                    <span id="review-count-display" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-accent text-text-1 border border-text-1 font-bold text-sm">
                         {{ settings.daily_review_count }}
                     </span>
                 </label>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                <p class="text-sm text-text-2 mb-4">
                     {{ t("Number of highlights to show in your daily review session") }}
                 </p>
                 <input
@@ -40,32 +42,32 @@
                     min="1"
                     max="15"
                     step="1"
-                    style="accent-color: #2563eb;"
+                    style="accent-color: var(--text1);"
                     class="w-full cursor-pointer"
                     oninput="document.getElementById('review-count-display').textContent = this.value">
                 <div class="relative mt-1.5 h-4 select-none">
-                    <span style="position:absolute;left:0%;" class="text-xs text-gray-400 dark:text-gray-500">1</span>
-                    <span style="position:absolute;left:28.57%;transform:translateX(-50%);" class="text-xs text-gray-400 dark:text-gray-500">5</span>
-                    <span style="position:absolute;right:0%;" class="text-xs text-gray-400 dark:text-gray-500">15</span>
+                    <span style="position:absolute;left:0%;" class="text-xs text-text-3">1</span>
+                    <span style="position:absolute;left:28.57%;transform:translateX(-50%);" class="text-xs text-text-3">5</span>
+                    <span style="position:absolute;right:0%;" class="text-xs text-text-3">15</span>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Highlight Recency Setting -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <div class="bg-surface-1 rounded-component border p-6">
         <div class="flex items-start gap-4">
             <div class="pt-1">
-                <i data-lucide="bar-chart-2" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <i data-lucide="bar-chart-2" class="w-6 h-6 text-text-1"></i>
             </div>
             <div class="flex-1">
-                <label for="highlight_recency" class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <label for="highlight_recency" class="flex items-center gap-2 text-lg font-semibold text-text-1 mb-2">
                     {{ t("Highlight Recency") }}
-                    <span id="recency-display" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 font-bold text-sm">
+                    <span id="recency-display" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-accent text-text-1 border border-text-1 font-bold text-sm">
                         {{ settings.highlight_recency }}
                     </span>
                 </label>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                <p class="text-sm text-text-2 mb-4">
                     {{ t("Bias daily review toward older or more recent highlights") }}
                 </p>
                 <input
@@ -76,36 +78,36 @@
                     min="0"
                     max="10"
                     step="1"
-                    style="accent-color: #2563eb;"
+                    style="accent-color: var(--text1);"
                     class="w-full cursor-pointer"
                     oninput="document.getElementById('recency-display').textContent = this.value">
                 <div class="relative mt-1.5 h-4 select-none">
-                    <span style="position:absolute;left:0%;" class="text-xs text-gray-400 dark:text-gray-500">{{ t("Older") }}</span>
-                    <span style="position:absolute;left:50%;transform:translateX(-50%);" class="text-xs text-gray-400 dark:text-gray-500">{{ t("Neutral") }}</span>
-                    <span style="position:absolute;right:0%;" class="text-xs text-gray-400 dark:text-gray-500">{{ t("Newer") }}</span>
+                    <span style="position:absolute;left:0%;" class="text-xs text-text-3">{{ t("Older") }}</span>
+                    <span style="position:absolute;left:50%;transform:translateX(-50%);" class="text-xs text-text-3">{{ t("Neutral") }}</span>
+                    <span style="position:absolute;right:0%;" class="text-xs text-text-3">{{ t("Newer") }}</span>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Theme Setting -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <div class="bg-surface-1 rounded-component border p-6">
         <div class="flex items-start gap-4">
             <div class="pt-1">
-                <i data-lucide="palette" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <i data-lucide="palette" class="w-6 h-6 text-text-1"></i>
             </div>
             <div class="flex-1">
-                <label for="theme" class="block text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <label for="theme" class="block text-lg font-semibold text-text-1 mb-2">
                     {{ t("Theme") }}
                 </label>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                <p class="text-sm text-text-2 mb-4">
                     {{ t("Choose your preferred visual theme") }}
                 </p>
                 <select
                     id="theme"
                     name="theme"
                     required
-                    class="w-full max-w-xs px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all">
+                    class="w-full max-w-xs px-4 py-2 border rounded-input bg-surface-1 text-text-1 focus:outline-none focus:border-text-1 transition-all">
                     <option value="light" {% if settings.theme == "light" %}selected{% endif %}>
                         {{ t("Light") }}
                     </option>
@@ -121,23 +123,23 @@
     </div>
 
     <!-- Language Setting -->
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <div class="bg-surface-1 rounded-component border p-6">
         <div class="flex items-start gap-4">
             <div class="pt-1">
-                <i data-lucide="globe" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <i data-lucide="globe" class="w-6 h-6 text-text-1"></i>
             </div>
             <div class="flex-1">
-                <label for="language" class="block text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <label for="language" class="block text-lg font-semibold text-text-1 mb-2">
                     {{ t("Language") }}
                 </label>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                <p class="text-sm text-text-2 mb-4">
                     {{ t("UI language. Untranslated strings fall back to English.") }}
                 </p>
                 <select
                     id="language"
                     name="language"
                     required
-                    class="w-full max-w-xs px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all">
+                    class="w-full max-w-xs px-4 py-2 border rounded-input bg-surface-1 text-text-1 focus:outline-none focus:border-text-1 transition-all">
                     {% for code, label in available_languages %}
                     <option value="{{ code }}" {% if settings.language == code %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
@@ -148,11 +150,11 @@
 
     <!-- Save Button -->
     <div class="flex gap-3 pt-4">
-        <button type="submit" class="flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+        <button type="submit" class="inline-flex items-center gap-2 bg-accent text-text-1 border border-text-1 px-6 py-3 rounded-pill font-semibold transition-colors">
             <i data-lucide="save" class="w-5 h-5"></i>
             <span>{{ t("Save settings") }}</span>
         </button>
-        <a href="/dashboard/ui" class="flex items-center gap-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white px-6 py-3 rounded-lg font-semibold transition-colors">
+        <a href="/dashboard/ui" class="inline-flex items-center gap-2 bg-surface-1 hover:bg-surface-2 border text-text-1 px-6 py-3 rounded-pill font-semibold transition-colors">
             <i data-lucide="x" class="w-5 h-5"></i>
             <span>{{ t("Cancel") }}</span>
         </a>
@@ -160,24 +162,24 @@
 </form>
 
 <!-- API & Integrations Section -->
-<div class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
+<div class="mt-12 pt-8 border-t">
     <h3 class="text-2xl font-bold text-text-1 mb-6 inline-flex items-center gap-2"><span class="mn-stamp-bar align-middle"></span>{{ t("API & Integrations") }}</h3>
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+    <div class="bg-surface-1 rounded-component border p-6">
         <div class="flex items-start gap-4">
             <div class="pt-1">
-                <i data-lucide="key" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <i data-lucide="key" class="w-6 h-6 text-text-1"></i>
             </div>
             <div class="flex-1">
-                <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                <h4 class="text-lg font-semibold text-text-1 mb-1">
                     {{ t("API Tokens") }}
                 </h4>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                <p class="text-sm text-text-2 mb-4">
                     {{ t("Create + revoke bearer tokens for the Readwise-compatible") }}
                     <code>/api/v2</code> {{ t("endpoints. Use these to wire up the") }}
                     {{ t("Chrome extension or any third-party highlight client.") }}
                 </p>
                 <a href="/import/api-token"
-                   class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+                   class="inline-flex items-center gap-2 bg-accent text-text-1 border border-text-1 px-4 py-2 rounded-pill text-sm font-semibold transition-colors">
                     <i data-lucide="settings" class="w-4 h-4"></i>
                     <span>{{ t("Manage API tokens") }}</span>
                 </a>
@@ -187,97 +189,102 @@
 </div>
 
 <!-- Export Data Section -->
-<div class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
+<div class="mt-12 pt-8 border-t">
     <h3 class="text-2xl font-bold text-text-1 mb-6 inline-flex items-center gap-2"><span class="mn-stamp-bar align-middle"></span>{{ t("Export Data") }}</h3>
-    
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8">
+
+    <div class="bg-surface-1 rounded-component border p-8">
         <div class="flex items-start gap-4 mb-6">
             <div class="pt-1">
-                <i data-lucide="download" class="w-6 h-6 text-primary-600 dark:text-primary-400"></i>
+                <i data-lucide="download" class="w-6 h-6 text-text-1"></i>
             </div>
             <div class="flex-1">
-                <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <h4 class="text-lg font-semibold text-text-1 mb-2">
                     {{ t("Download CSV Export") }}
                 </h4>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                <p class="text-sm text-text-2 mb-6">
                     {{ t("Download all your highlights and metadata as a CSV file. The export includes highlight text, notes, ") }}
                     {{ t("book information, tags, favorite/discard status, and timestamps.") }}
                 </p>
 
                 <!-- Progress Bar (hidden by default) -->
-                <div id="export-progress-container" style="display: none;" class="mb-6 p-5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
+                <div id="export-progress-container" style="display: none;" class="mb-6 p-5 bg-surface-2 border rounded-component">
                     <div class="text-center mb-4">
-                        <i data-lucide="loader" class="w-8 h-8 mx-auto text-primary-600 dark:text-primary-400 animate-spin mb-3"></i>
-                        <p class="font-semibold text-gray-900 dark:text-white">{{ t("Exporting your highlights...") }}</p>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ t("Please wait while we generate your CSV file") }}</p>
+                        <i data-lucide="loader" class="w-8 h-8 mx-auto text-text-1 animate-spin mb-3"></i>
+                        <p class="font-semibold text-text-1">{{ t("Exporting your highlights...") }}</p>
+                        <p class="text-xs text-text-3 mt-1">{{ t("Please wait while we generate your CSV file") }}</p>
                     </div>
-                    
-                    <!-- Animated progress bar -->
-                    <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div id="export-progress-bar" class="h-full bg-gradient-to-r from-primary-500 to-primary-600 w-0 transition-all" style="transition: width 0.3s ease;"></div>
+
+                    <!-- Indeterminate progress bar — black fill on neutral track. -->
+                    <div class="w-full h-2 bg-surface-3 rounded-full overflow-hidden">
+                        <div id="export-progress-bar" class="h-full bg-text-1 w-0 transition-all" style="transition: width 0.3s ease;"></div>
                     </div>
-                    <p class="text-center mt-3 text-xs text-gray-500 dark:text-gray-400">
+                    <p class="text-center mt-3 text-xs text-text-3">
                         <span id="export-progress-text">{{ t("Preparing export...") }}</span>
                     </p>
                 </div>
 
+                {# Per Minna: only one chromatic accent. The CSV button is the
+                   canonical FreeWise format and gets the yellow stamp; the
+                   alternate-format buttons share the neutral surface-1 pill so
+                   the icon disambiguates target tooling without splintering
+                   the page into a four-color rainbow. #}
                 {% if highlights_count and highlights_count > 0 %}
                 <div class="flex flex-wrap gap-3">
                     <a href="/export/csv"
                        id="export-btn"
                        onclick="showExportProgress(event)"
-                       class="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                       class="inline-flex items-center gap-2 bg-accent text-text-1 border border-text-1 px-6 py-3 rounded-pill font-semibold transition-colors">
                         <i data-lucide="download" class="w-5 h-5"></i>
                         <span>{{ t("Download CSV Export") }}</span>
                     </a>
                     <a href="/export/markdown.zip"
                        title="One Markdown file per book, zipped — Obsidian / Logseq friendly."
-                       class="inline-flex items-center gap-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                       class="inline-flex items-center gap-2 bg-surface-1 hover:bg-surface-2 border text-text-1 px-6 py-3 rounded-pill font-semibold transition-colors">
                         <i data-lucide="file-text" class="w-5 h-5"></i>
                         <span>{{ t("Download Markdown ZIP") }}</span>
                     </a>
                     <a href="/export/atomic-notes.zip"
                        title="One .md per highlight (Zettelkasten-style atomic notes) with rich frontmatter."
-                       class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                       class="inline-flex items-center gap-2 bg-surface-1 hover:bg-surface-2 border text-text-1 px-6 py-3 rounded-pill font-semibold transition-colors">
                         <i data-lucide="notebook-pen" class="w-5 h-5"></i>
                         <span>{{ t("Download Atomic Notes ZIP") }}</span>
                     </a>
                     <a href="/export/notion.zip"
                        title="Notion-flavored Markdown ZIP — bulleted highlights, no YAML frontmatter."
-                       class="inline-flex items-center gap-2 bg-slate-700 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                       class="inline-flex items-center gap-2 bg-surface-1 hover:bg-surface-2 border text-text-1 px-6 py-3 rounded-pill font-semibold transition-colors">
                         <i data-lucide="file-text" class="w-5 h-5"></i>
                         <span>{{ t("Download Notion ZIP") }}</span>
                     </a>
                 </div>
                 {% else %}
                 <button type="button"
-                        class="inline-flex items-center gap-2 bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-6 py-3 rounded-lg font-semibold cursor-not-allowed">
+                        class="inline-flex items-center gap-2 bg-surface-2 text-text-3 border px-6 py-3 rounded-pill font-semibold cursor-not-allowed">
                     <i data-lucide="download" class="w-5 h-5"></i>
                     <span>{{ t("Download CSV Export") }}</span>
                 </button>
-                <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                <p class="mt-3 text-xs text-text-3">
                     {{ t("Add highlights before exporting data.") }}
                 </p>
                 {% endif %}
-                
-                <div class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                    <p class="text-xs text-blue-700 dark:text-blue-300 flex items-start gap-2">
+
+                <div class="mt-4 p-4 bg-surface-2 border rounded-component">
+                    <p class="text-xs text-text-2 flex items-start gap-2">
                         <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
                         <span><strong>Note:</strong> The exported CSV can be imported back into FreeWise or used with other tools. File format is compatible with standard spreadsheet applications.</span>
                     </p>
                 </div>
 
-                <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                    <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                        <i data-lucide="database-backup" class="w-5 h-5 text-primary-600 dark:text-primary-400"></i>
+                <div class="mt-6 pt-6 border-t">
+                    <h4 class="text-base font-semibold text-text-1 mb-2 flex items-center gap-2">
+                        <i data-lucide="database-backup" class="w-5 h-5 text-text-1"></i>
                         {{ t("Database Backup") }}
                     </h4>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                    <p class="text-sm text-text-2 mb-3">
                         {{ t("Download a consistent SQLite snapshot of the entire FreeWise database — useful before risky operations or to keep an off-site backup.") }}
                     </p>
                     <form method="post" action="/settings/backup.db" class="inline">
                         <button type="submit"
-                                class="inline-flex items-center gap-2 bg-gray-700 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors">
+                                class="inline-flex items-center gap-2 bg-surface-1 hover:bg-surface-2 border text-text-1 px-4 py-2 rounded-pill font-medium text-sm transition-colors">
                             <i data-lucide="download" class="w-4 h-4"></i>
                             <span>{{ t("Download .db snapshot") }}</span>
                         </button>
@@ -289,31 +296,34 @@
 </div>
 
 <!-- Danger Zone Section -->
-<div class="mt-12 pt-8 border-t border-gray-200 dark:border-gray-700">
+<div class="mt-12 pt-8 border-t">
     <h3 class="text-2xl font-bold text-text-1 mb-6 inline-flex items-center gap-2"><span class="mn-stamp-bar align-middle"></span>{{ t("Danger zone") }}</h3>
 
-    <div class="bg-white dark:bg-gray-800 rounded-lg border dark:border-red-800 p-8">
+    {# The danger card keeps a 1px border in --error to signal "this section
+       deletes data" without resorting to a full red surface fill (which the
+       brand reserves for the destructive button itself). #}
+    <div class="bg-surface-1 rounded-component border p-8" style="border-color: var(--error);">
         <div class="flex items-start gap-4 mb-6">
             <div class="pt-1">
-                <i data-lucide="trash-2" class="w-6 h-6 text-red-600 dark:text-red-400"></i>
+                <i data-lucide="trash-2" class="w-6 h-6 text-error"></i>
             </div>
             <div class="flex-1">
-                <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <h4 class="text-lg font-semibold text-text-1 mb-2">
                     {{ t("Reset Entire Library") }}
                 </h4>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                <p class="text-sm text-text-2 mb-6">
                     {{ t("Permanently erase all highlights, books, tags, and review history. Application settings will also be reset to their defaults.") }}
                 </p>
 
                 <button type="button"
                     onclick="document.getElementById('reset-modal').classList.remove('hidden')"
-                    class="inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold transition-all hover:shadow-md">
+                    class="inline-flex items-center gap-2 bg-error hover:opacity-90 text-white px-6 py-3 rounded-pill font-semibold transition-colors">
                     <i data-lucide="trash-2" class="w-5 h-5"></i>
                     <span>{{ t("Reset Library") }}</span>
                 </button>
 
-                <div class="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                    <p class="text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
+                <div class="mt-4 p-4 bg-error-bg border rounded-component" style="border-color: var(--error);">
+                    <p class="text-xs text-error flex items-start gap-2">
                         <i data-lucide="triangle-alert" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
                         <span><strong>Warning:</strong> There is no going back. All highlights, books, tags, review history, and settings will be permanently and irreversibly deleted from the database.</span>
                     </p>
@@ -327,18 +337,18 @@
 <div id="reset-modal"
      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
      onclick="if(event.target===this)this.classList.add('hidden')">
-    <div class="bg-white dark:bg-gray-800 rounded-lg border border-red-200 dark:border-red-800 p-8 max-w-md w-full mx-4 shadow-xl">
+    <div class="bg-surface-1 rounded-container border p-8 max-w-md w-full mx-4 shadow-ring" style="border-color: var(--error);">
         <div class="flex items-start gap-4 mb-6">
-            <div class="p-2 bg-red-100 dark:bg-red-900/30 rounded-full flex-shrink-0">
-                <i data-lucide="triangle-alert" class="w-6 h-6 text-red-600 dark:text-red-400"></i>
+            <div class="p-2 bg-error-bg rounded-full flex-shrink-0">
+                <i data-lucide="triangle-alert" class="w-6 h-6 text-error"></i>
             </div>
             <div>
-                <h4 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">{{ t("Are you absolutely sure?") }}</h4>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                <h4 class="text-lg font-semibold text-text-1 mb-2">{{ t("Are you absolutely sure?") }}</h4>
+                <p class="text-sm text-text-2 mb-3">
                     {{ t("This will permanently delete all highlights, books, tags, and review history. There is no going back and no way to recover your data.") }}
                 </p>
-                <p class="text-sm text-gray-700 dark:text-gray-300">
-                    {{ t("Type") }} <code class="font-mono text-red-700 dark:text-red-300">RESET</code> {{ t("below to enable the destroy button.") }}
+                <p class="text-sm text-text-1">
+                    {{ t("Type") }} <code class="font-mono text-error">RESET</code> {{ t("below to enable the destroy button.") }}
                 </p>
             </div>
         </div>
@@ -349,17 +359,17 @@
                 spellcheck="false"
                 placeholder="{{ t('Type RESET to confirm') }}"
                 aria-label="{{ t('Type RESET to confirm') }}"
-                class="w-full px-3 py-2 mb-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent">
+                class="w-full px-3 py-2 mb-4 rounded-input border bg-surface-1 text-text-1 font-mono text-sm focus:outline-none focus:border-error">
             <div class="flex gap-3 justify-end">
                 <button type="button"
                     onclick="document.getElementById('reset-modal').classList.add('hidden'); var i=document.getElementById('reset-confirm-input'); if(i){i.value=''; i.dispatchEvent(new Event('input'));}"
-                    class="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium text-sm transition-colors">
+                    class="px-4 py-2 rounded-pill bg-surface-1 hover:bg-surface-2 border text-text-1 font-medium text-sm transition-colors">
                     {{ t("Cancel") }}
                 </button>
                 <button type="submit"
                     id="reset-confirm-btn"
                     disabled
-                    class="px-4 py-2 rounded-lg bg-red-600 text-white font-medium text-sm transition-colors disabled:bg-gray-300 disabled:dark:bg-gray-600 disabled:text-gray-500 disabled:dark:text-gray-400 disabled:cursor-not-allowed enabled:hover:bg-red-700">
+                    class="px-4 py-2 rounded-pill bg-error text-white font-medium text-sm transition-colors disabled:bg-surface-2 disabled:text-text-3 disabled:cursor-not-allowed enabled:hover:opacity-90">
                     {{ t("Yes, delete everything") }}
                 </button>
             </div>

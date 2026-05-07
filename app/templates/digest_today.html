@@ -6,19 +6,22 @@
 
 {% block content %}
 <div class="max-w-3xl mx-auto px-4">
-    <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">{{ today.strftime('%A, %B %d, %Y') }}</p>
-    <p class="text-xs text-gray-400 dark:text-gray-500 mb-8">
+    <p class="text-sm text-text-3 mb-1">{{ today.strftime('%A, %B %d, %Y') }}</p>
+    <p class="text-xs text-text-3 mb-8">
         Same picks all day. Refresh tomorrow for a fresh set.
     </p>
 
     {% if today_pick %}
     <section class="mb-10">
-        <h2 class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Pick of the day</h2>
-        <article class="rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-6">
+        <h2 class="text-xs uppercase tracking-wide text-text-3 mb-3">Pick of the day</h2>
+        {# The "pick of the day" card is the page's one yellow stamp moment —
+           a pale-lemon tint (--accent-bg) instead of the raw fluorescent
+           accent so a quote can still be read on top without burning out. #}
+        <article class="rounded-component border bg-accent-bg p-6">
             <a href="/highlights/ui/h/{{ today_pick.id }}" class="block hover:opacity-90">
-                <p class="text-lg leading-relaxed text-gray-900 dark:text-gray-100 mb-3">{{ today_pick.text }}</p>
+                <p class="text-lg leading-relaxed text-text-1 mb-3">{{ today_pick.text }}</p>
                 {% if today_pick.book %}
-                <p class="text-sm text-gray-600 dark:text-gray-400">
+                <p class="text-sm text-text-2">
                     — {% if today_pick.book.author %}{{ today_pick.book.author }}, {% endif %}<em>{{ today_pick.book.title }}</em>
                 </p>
                 {% endif %}
@@ -29,14 +32,14 @@
 
     {% if picks %}
     <section class="mb-10">
-        <h2 class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Today's sample ({{ picks|length }})</h2>
+        <h2 class="text-xs uppercase tracking-wide text-text-3 mb-3">Today's sample ({{ picks|length }})</h2>
         <ul class="space-y-4">
             {% for h in picks %}
-            <li class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4">
+            <li class="rounded-component border bg-surface-1 p-4">
                 <a href="/highlights/ui/h/{{ h.id }}" class="block hover:opacity-90">
-                    <p class="text-base leading-relaxed text-gray-900 dark:text-gray-100 mb-2">{{ h.text }}</p>
+                    <p class="text-base leading-relaxed text-text-1 mb-2">{{ h.text }}</p>
                     {% if h.book %}
-                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                    <p class="text-xs text-text-3">
                         — {% if h.book.author %}{{ h.book.author }}, {% endif %}<em>{{ h.book.title }}</em>
                     </p>
                     {% endif %}
@@ -46,22 +49,22 @@
         </ul>
     </section>
     {% else %}
-    <p class="text-gray-500 dark:text-gray-400">No highlights yet — <a href="/import/ui" class="underline">import some</a> to get started.</p>
+    <p class="text-text-3">No highlights yet — <a href="/import/ui" class="underline">import some</a> to get started.</p>
     {% endif %}
 
     {% if on_this_day %}
     <section class="mb-10">
-        <h2 class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">On this day ({{ '%02d-%02d'|format(today.month, today.day) }}, past years)</h2>
+        <h2 class="text-xs uppercase tracking-wide text-text-3 mb-3">On this day ({{ '%02d-%02d'|format(today.month, today.day) }}, past years)</h2>
         <ul class="space-y-3">
             {% for h in on_this_day %}
-            <li class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+            <li class="rounded-component border bg-surface-1 p-3">
                 <a href="/highlights/ui/h/{{ h.id }}" class="block hover:opacity-90">
-                    <p class="text-sm text-gray-900 dark:text-gray-100">
-                        <span class="text-xs text-gray-500 dark:text-gray-400 mr-2">[{{ h.created_at.year if h.created_at else '?' }}]</span>
+                    <p class="text-sm text-text-1">
+                        <span class="text-xs text-text-3 mr-2">[{{ h.created_at.year if h.created_at else '?' }}]</span>
                         {{ h.text }}
                     </p>
                     {% if h.book %}
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    <p class="text-xs text-text-3 mt-1">
                         — {% if h.book.author %}{{ h.book.author }}, {% endif %}<em>{{ h.book.title }}</em>
                     </p>
                     {% endif %}
@@ -72,13 +75,13 @@
     </section>
     {% endif %}
 
-    <section class="text-xs text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 pt-4 flex flex-wrap items-center gap-x-5 gap-y-1">
-        <span><strong class="text-gray-700 dark:text-gray-300">{{ health.active }}</strong> active highlights</span>
+    <section class="text-xs text-text-3 border-t pt-4 flex flex-wrap items-center gap-x-5 gap-y-1">
+        <span><strong class="text-text-1">{{ health.active }}</strong> active highlights</span>
         {% if health.dup_groups %}
-        <span><strong class="text-gray-700 dark:text-gray-300">{{ health.dup_groups }}</strong> duplicate groups</span>
+        <span><strong class="text-text-1">{{ health.dup_groups }}</strong> duplicate groups</span>
         {% endif %}
         {% if health.untagged %}
-        <span><strong class="text-gray-700 dark:text-gray-300">{{ health.untagged }}</strong> untagged</span>
+        <span><strong class="text-text-1">{{ health.untagged }}</strong> untagged</span>
         {% endif %}
     </section>
 </div>

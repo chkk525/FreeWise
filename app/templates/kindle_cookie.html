@@ -4,9 +4,9 @@
 
 {% block content %}
 <div class="max-w-2xl mx-auto p-6">
-  <h1 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Kindle scraper cookie</h1>
+  <h1 class="text-2xl font-bold mb-4 text-text-1">Kindle scraper cookie</h1>
 
-  <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+  <p class="text-sm text-text-2 mb-4">
     The monthly QNAP fallback scraper signs into Amazon using a saved
     <code>storage_state.json</code> (cookies). When that file expires,
     upload a fresh one here.
@@ -22,16 +22,16 @@
         hx-swap="innerHTML"
         class="mt-6 space-y-3">
     <input type="file" name="file" accept=".json,application/json" required
-           class="block text-sm">
+           class="block text-sm text-text-2">
     <button type="submit"
-            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-semibold">
+            class="px-4 py-2 bg-accent text-text-1 border border-text-1 rounded-pill text-sm font-semibold">
       Upload
     </button>
   </form>
 
-  <details class="mt-8 text-sm text-gray-600 dark:text-gray-400">
+  <details class="mt-8 text-sm text-text-2">
     <summary class="cursor-pointer">How to generate this file</summary>
-    <pre class="mt-2 p-2 bg-gray-50 dark:bg-gray-900 rounded text-xs overflow-auto">cd ~/Development/freewise-qnap-kindle
+    <pre class="mt-2 p-2 bg-surface-2 rounded text-xs overflow-auto">cd ~/Development/freewise-qnap-kindle
 make login
 # Browser opens. Log into Amazon.
 # Then upload state/kindle/storage_state.json above.</pre>
