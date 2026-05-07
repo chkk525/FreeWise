@@ -28,10 +28,12 @@ ROOT = Path(__file__).resolve().parent.parent
 OPTIONS = [0.25, 0.5, 1.0, 1.5, 2.0]
 LABELS = ["Much less", "Less", "Normal", "More", "Much more"]
 
-# Marker that appears exclusively in an active button's class attribute
+# Marker that appears exclusively in an active button's class attribute.
+# Tracks the Minna design system's semantic tokens (post round-4 chromatic
+# cleanup): black-on-background fill via `bg-text-1 text-background border-text-1`.
 ACTIVE_MARKER = (
     'class="px-3 py-2 rounded-md border text-xs font-medium '
-    'transition-colors bg-primary-600 text-white border-primary-600"'
+    'transition-colors bg-text-1 text-background border-text-1"'
 )
 
 

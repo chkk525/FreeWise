@@ -1,4 +1,4 @@
-<div class="relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm" id="highlight-{{ highlight.id }}">
+<div class="relative bg-surface-1 border rounded-component" id="highlight-{{ highlight.id }}">
     {# Form wraps the header bar so Save/Cancel are inside the form
        element. Enter from any text/number input triggers native submit;
        Escape triggers the Cancel button via keydown handler below. #}
@@ -8,15 +8,15 @@
           hx-swap="outerHTML"
           onkeydown="if(event.key==='Escape'){event.preventDefault();this.querySelector('[data-edit-cancel]').click();}">
         <!-- Button Bar at Top -->
-        <div class="bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800 px-4 py-3 rounded-t-lg flex items-center justify-between">
-            <span class="text-sm font-medium text-amber-900 dark:text-amber-200 flex items-center gap-2">
+        <div class="bg-surface-2 border-b px-4 py-3 rounded-t-component flex items-center justify-between">
+            <span class="text-sm font-medium text-text-1 flex items-center gap-2">
                 <i data-lucide="pencil" class="w-4 h-4"></i>
                 {{ t("Editing Highlight") }}
             </span>
             <div class="flex gap-2">
                 <button type="button"
                         data-edit-cancel
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg transition-colors text-sm font-medium"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-1 text-text-1 hover:bg-surface-2 border rounded-pill transition-colors text-sm font-medium"
                         hx-get="/highlights/{{ highlight.id }}/view?context={{ context or '' }}"
                         hx-target="#highlight-{{ highlight.id }}"
                         hx-swap="outerHTML"
@@ -25,7 +25,7 @@
                     {{ t("Cancel") }}
                 </button>
                 <button type="submit"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 text-white rounded-lg transition-colors text-sm font-medium"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-accent text-text-1 border border-text-1 rounded-pill transition-colors text-sm font-medium"
                         title="{{ t('Save (Enter)') }}">
                     <i data-lucide="save" class="w-4 h-4"></i>
                     {{ t("Save") }}
@@ -37,45 +37,45 @@
         {% if context %}
         <input type="hidden" name="context" value="{{ context }}">
         {% endif %}
-        
+
         <!-- Book Information (only show for favorites/discarded, not book detail page) -->
         {% if highlight.book and context and context != 'book' %}
-        <div class="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ highlight.book.title }}</h3>
+        <div class="mb-4 pb-4 border-b">
+            <h3 class="text-base font-semibold text-text-1">{{ highlight.book.title }}</h3>
             {% if highlight.book.author %}
-            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ t("by") }} {{ highlight.book.author }}</p>
+            <p class="text-sm text-text-2 mt-1">{{ t("by") }} {{ highlight.book.author }}</p>
             {% endif %}
         </div>
         {% endif %}
-        
+
         <!-- Highlight Text -->
         <div class="mb-4">
             <textarea name="text" required
-                class="w-full p-3 font-serif text-lg border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none overflow-hidden"
+                class="w-full p-3 font-serif text-lg border rounded-input bg-surface-1 text-text-1 focus:outline-none focus:border-text-1 transition-colors resize-none overflow-hidden"
                 rows="1"
                 oninput="this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px'">{{ highlight.text }}</textarea>
         </div>
-        
+
         <!-- Page Number -->
         <div class="mb-3 flex items-center gap-2">
-            <span class="text-sm text-gray-600 dark:text-gray-400">({{ t("Page") }}</span>
+            <span class="text-sm text-text-2">({{ t("Page") }}</span>
             <input type="number" name="location" min="1" placeholder="#"
                 value="{{ highlight.location if highlight.location_type == 'page' and highlight.location else '' }}"
-                class="w-20 px-2 py-1 text-sm text-center border-2 border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors">
-            <span class="text-sm text-gray-600 dark:text-gray-400">)</span>
+                class="w-20 px-2 py-1 text-sm text-center border rounded bg-surface-1 text-text-1 focus:outline-none focus:border-text-1 transition-colors">
+            <span class="text-sm text-text-2">)</span>
         </div>
 
         <!-- Note -->
         <div>
             <textarea name="note" placeholder="{{ t('Add a note...') }}"
-                class="w-full p-3 text-sm italic border-2 border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none overflow-hidden"
+                class="w-full p-3 text-sm italic border rounded-input bg-surface-1 text-text-2 focus:outline-none focus:border-text-1 transition-colors resize-none overflow-hidden"
                 rows="1"
                 oninput="this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px'">{{ highlight.note if highlight.note else '' }}</textarea>
         </div>
 
         <!-- Review Frequency -->
-        <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <p class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">{{ t("Review frequency") }}</p>
+        <div class="mt-4 pt-4 border-t">
+            <p class="text-xs font-medium text-text-2 mb-2">{{ t("Review frequency") }}</p>
             {% set options = [
                 (0.25, "Much less"),
                 (0.5, "Less"),
@@ -88,7 +88,7 @@
             <div class="flex flex-wrap gap-2" id="hw-btns-{{ highlight.id }}">
                 {% for value, label in options %}
                 <button type="button"
-                    class="px-3 py-2 rounded-md border text-xs font-medium transition-colors {% if (current_weight - value)|abs < 0.01 %}bg-primary-600 text-white border-primary-600{% else %}bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600{% endif %}"
+                    class="px-3 py-2 rounded-md border text-xs font-medium transition-colors {% if (current_weight - value)|abs < 0.01 %}bg-text-1 text-background border-text-1{% else %}bg-surface-1 text-text-2 border{% endif %}"
                     onclick="setHW(this, {{ value }}, '{{ highlight.id }}')">{{ label | t }}</button>
                 {% endfor %}
             </div>
@@ -107,9 +107,9 @@
         document.getElementById('hw-' + id).value = value;
         document.getElementById('hw-btns-' + id).querySelectorAll('button').forEach(function(b) {
             if (b === btn) {
-                b.className = 'px-3 py-2 rounded-md border text-xs font-medium transition-colors bg-primary-600 text-white border-primary-600';
+                b.className = 'px-3 py-2 rounded-md border text-xs font-medium transition-colors bg-text-1 text-background border-text-1';
             } else {
-                b.className = 'px-3 py-2 rounded-md border text-xs font-medium transition-colors bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-600';
+                b.className = 'px-3 py-2 rounded-md border text-xs font-medium transition-colors bg-surface-1 text-text-2 border';
             }
         });
     }
