@@ -239,16 +239,16 @@
        actions and other destructive flows. Use window.confirmAction(msg). #}
     <div id="confirm-modal" class="hidden fixed inset-0 z-[80] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
         <div class="absolute inset-0 bg-black/50" data-confirm-cancel></div>
-        <div class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 max-w-md w-full p-6">
-            <h3 id="confirm-modal-title" class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Are you sure?</h3>
-            <p id="confirm-modal-body" class="text-sm text-gray-600 dark:text-gray-400 mb-5"></p>
+        <div class="relative bg-surface-1 rounded-container shadow-ring border max-w-md w-full p-6">
+            <h3 id="confirm-modal-title" class="text-lg font-semibold text-text-1 mb-2">Are you sure?</h3>
+            <p id="confirm-modal-body" class="text-sm text-text-2 mb-5"></p>
             <div class="flex justify-end gap-2">
                 <button type="button" data-confirm-cancel
-                        class="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                        class="px-4 py-2 text-sm font-medium rounded-pill bg-surface-1 hover:bg-surface-2 border text-text-1 transition-colors">
                     Cancel
                 </button>
                 <button type="button" data-confirm-ok
-                        class="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors">
+                        class="px-4 py-2 text-sm font-medium rounded-pill bg-error hover:opacity-90 text-white transition-colors">
                     Confirm
                 </button>
             </div>
@@ -440,10 +440,10 @@
             if (titleEl && opts.title) titleEl.textContent = opts.title;
             else if (titleEl) titleEl.textContent = 'Are you sure?';
             okBtn.textContent = opts.okLabel || 'Confirm';
-            okBtn.className = 'px-4 py-2 text-sm font-medium rounded-lg text-white transition-colors ' +
+            okBtn.className = 'px-4 py-2 text-sm font-medium rounded-pill transition-colors ' +
                 (opts.danger === false
-                    ? 'bg-blue-600 hover:bg-blue-700'
-                    : 'bg-red-600 hover:bg-red-700');
+                    ? 'bg-accent text-text-1 border border-text-1'
+                    : 'bg-error hover:opacity-90 text-white');
             modal.classList.remove('hidden');
             const previouslyFocused = document.activeElement;
             okBtn.focus();

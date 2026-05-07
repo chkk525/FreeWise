@@ -2,9 +2,9 @@
 <div class="space-y-5">
     <!-- Progress Indicator -->
     <div class="text-center mb-4">
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2 title-font">{{ t("Daily Review") }}</h1>
-        <p class="text-lg text-gray-600 dark:text-gray-400">
-            <span class="font-semibold text-primary-600 dark:text-primary-400">{{ current }}</span> {{ t("of") }} <span class="font-semibold">{{ total }}</span>
+        <h1 class="text-2xl font-bold text-text-1 mb-2 title-font">{{ t("Daily Review") }}</h1>
+        <p class="text-lg text-text-2">
+            <span class="font-semibold text-text-1">{{ current }}</span> {{ t("of") }} <span class="font-semibold text-text-1">{{ total }}</span>
         </p>
     </div>
 
@@ -14,45 +14,48 @@
         {% if highlight.book %}
         <div class="mb-6 flex items-start gap-4">
             {% if highlight.book.cover_image_url %}
-            <div class="w-14 h-20 rounded-md overflow-hidden border border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 flex-shrink-0">
+            <div class="w-14 h-20 rounded-md overflow-hidden border bg-surface-2 flex-shrink-0">
                 <img src="{{ highlight.book.cover_image_url }}" alt="Cover for {{ highlight.book.title }}" class="w-full h-full object-cover" />
             </div>
             {% endif %}
             <div>
-                <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ highlight.book.title }}</h2>
+                <h2 class="text-base font-semibold text-text-1">{{ highlight.book.title }}</h2>
                 {% if highlight.book.author %}
-                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ highlight.book.author }}</p>
+                <p class="text-sm text-text-3 mt-1">{{ highlight.book.author }}</p>
                 {% endif %}
             </div>
         </div>
         {% endif %}
 
         <!-- Highlight Text -->
-        <div class="highlight-text leading-relaxed text-gray-900 dark:text-gray-100 mb-6 text-lg sm:text-[1.25rem]">
+        <div class="highlight-text leading-relaxed text-text-1 mb-6 text-lg sm:text-[1.25rem]">
             {{ highlight.text }}
         </div>
 
         <!-- Page Number (if exists) -->
         {% if highlight.location_type == "page" and highlight.location %}
-        <div class="mt-4 text-sm text-gray-500 dark:text-gray-400">
+        <div class="mt-4 text-sm text-text-3">
             ({{ t("Page") }} {{ highlight.location }})
         </div>
         {% endif %}
 
         <!-- Note (if exists) -->
         {% if highlight.note %}
-        <div class="mt-4 text-base text-gray-600 dark:text-gray-400 pl-4 border-l-4 border-gray-300 dark:border-gray-600 whitespace-pre-wrap break-words">
+        <div class="mt-4 text-base text-text-2 pl-4 border-l-4 whitespace-pre-wrap break-words">
             {{ highlight.note | autolink }}
         </div>
         {% endif %}
 
         <!-- Action Buttons (Inside Card - Bottom) -->
-        <div class="flex items-center gap-2 mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+        <div class="flex items-center gap-2 mt-4 pt-3 border-t">
             {# min-h/min-w 44px to meet iOS HIG / Material guidelines for
-               tap targets on mobile, even though visual padding is small. #}
+               tap targets on mobile, even though visual padding is small.
+               The favorite star keeps its yellow tint when active — that
+               is a semantic affordance (matches the standalone star icon
+               used in book stats) not a chromatic accent. #}
             <button
                 id="review-fav-btn"
-                class="p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg transition-all {% if highlight.is_favorited %}text-yellow-600 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/30{% else %}text-gray-400 dark:text-gray-500 hover:text-yellow-500 dark:hover:text-yellow-400 hover:bg-gray-100 dark:hover:bg-gray-700{% endif %}"
+                class="p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg transition-all {% if highlight.is_favorited %}text-warning bg-surface-2 hover:bg-surface-3{% else %}text-text-3 hover:text-warning hover:bg-surface-2{% endif %}"
                 hx-post="/highlights/{{ highlight.id }}/favorite"
                 hx-vals='{"favorite": "{{ "false" if highlight.is_favorited else "true" }}", "context": "review"}'
                 hx-target="#review-container"
@@ -62,10 +65,10 @@
                 aria-pressed="{{ 'true' if highlight.is_favorited else 'false' }}">
                 <i data-lucide="star" class="w-4 h-4 {% if highlight.is_favorited %}fill-current{% endif %}"></i>
             </button>
-            <kbd class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-[10px] text-gray-500 dark:text-gray-400 select-none">f</kbd>
+            <kbd class="px-1.5 py-0.5 rounded border text-[10px] text-text-3 select-none">f</kbd>
             <button
                 id="review-edit-btn"
-                class="p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all"
+                class="p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg text-text-3 hover:text-text-1 hover:bg-surface-2 transition-all"
                 hx-get="/highlights/{{ highlight.id }}/edit?context=review"
                 hx-target="#review-container"
                 hx-swap="innerHTML"
@@ -73,12 +76,12 @@
                 aria-label="{{ t('Edit highlight') }}">
                 <i data-lucide="pencil" class="w-4 h-4"></i>
             </button>
-            <kbd class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-[10px] text-gray-500 dark:text-gray-400 select-none">e</kbd>
+            <kbd class="px-1.5 py-0.5 rounded border text-[10px] text-text-3 select-none">e</kbd>
             <button type="button"
                     onclick="document.getElementById('kbd-help-modal')?.classList.toggle('hidden')"
-                    class="ml-auto text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 inline-flex items-center gap-1 select-none cursor-pointer"
+                    class="ml-auto text-xs text-text-3 hover:text-text-1 inline-flex items-center gap-1 select-none cursor-pointer"
                     aria-label="{{ t('Show keyboard shortcuts') }}">
-                <kbd class="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-[10px]">?</kbd>
+                <kbd class="px-1.5 py-0.5 rounded border text-[10px]">?</kbd>
                 {{ t("shortcuts") }}
             </button>
         </div>
