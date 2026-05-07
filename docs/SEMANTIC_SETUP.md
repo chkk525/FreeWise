@@ -4,6 +4,9 @@ FreeWise's "related highlights" feature uses local embeddings via
 [Ollama](https://ollama.com). This is the one thing Readwise can't do:
 your library never leaves your network, and the model is yours to swap.
 
+For the current QNAP production runbook, see
+[`OLLAMA_OPERATIONS.md`](OLLAMA_OPERATIONS.md).
+
 ## Why Ollama (vs sentence-transformers / fastembed)
 
 - Self-hosted matches FreeWise's privacy ethos.
