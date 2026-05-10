@@ -228,7 +228,7 @@
         <li class="py-2.5 flex items-center gap-3">
             <a href="/library/ui/book/{{ cb.id }}" class="flex-shrink-0 w-8 h-12 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden flex items-center justify-center">
                 {% if cb.cover_image_url %}
-                <img src="{{ cb.cover_image_url }}" alt="" class="w-full h-full object-cover" loading="lazy" />
+                <img src="{{ cb.cover_image_url }}" alt="" class="w-full h-full object-cover" loading="lazy" decoding="async" />
                 {% else %}
                 <i data-lucide="book" class="w-4 h-4 text-gray-400 dark:text-gray-500"></i>
                 {% endif %}

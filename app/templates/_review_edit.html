@@ -50,7 +50,7 @@
             <div class="mb-6 flex items-start gap-4">
                 {% if highlight.book.cover_image_url %}
                 <div class="w-14 h-20 rounded-md overflow-hidden border bg-surface-2 flex-shrink-0">
-                    <img src="{{ highlight.book.cover_image_url }}" alt="Cover for {{ highlight.book.title }}" class="w-full h-full object-cover" />
+                    <img src="{{ highlight.book.cover_image_url }}" alt="Cover for {{ highlight.book.title }}" class="w-full h-full object-cover" decoding="async" />
                 </div>
                 {% endif %}
                 <div>

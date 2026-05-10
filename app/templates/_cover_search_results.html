@@ -7,7 +7,7 @@
     {% for item in results %}
     {% set cover_url = "https://covers.openlibrary.org/b/id/" ~ item.cover_id ~ "-L.jpg" %}
     <div class="flex items-center gap-4 p-3 border rounded-component">
-        <img src="{{ cover_url }}" alt="Cover" class="w-12 h-16 object-cover rounded" />
+        <img src="{{ cover_url }}" alt="Cover" class="w-12 h-16 object-cover rounded" loading="lazy" decoding="async" />
         <div class="flex-1">
             <div class="text-sm font-semibold text-text-1">
                 {{ item.title }}
