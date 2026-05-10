@@ -97,12 +97,30 @@ Production measurements after full backfill:
 - Full semantic duplicate page: about 50 seconds for 23k highlights
 - Repeated semantic duplicate calls with the same library fingerprint are served
   from a process-local cache for 10 minutes by default
+- Semantic duplicate scan results are also materialized in SQLite. Once a scan
+  has completed for the current model/user/threshold/fingerprint, later calls
+  are served from the database even after a container restart.
 
 The duplicate page computes all pairwise similarities, so it is expected to be
 much heavier than related-highlight lookup. The cache key includes the model,
 user, threshold, limit, chunk size, and an active-embedding fingerprint, so new
 imports, new embeddings, discard, and restore actions naturally trigger a fresh
 scan.
+
+To warm the materialized semantic-duplicate cache after a deploy or a large
+import, run:
+
+```bash
+ssh qnap 'export PATH=/share/CACHEDEV1_DATA/.qpkg/container-station/bin:$PATH; docker exec -i freewise python -' <<'PY'
+from sqlmodel import Session
+from app.db import get_engine
+from app.services.embeddings import find_semantic_duplicates
+
+with Session(get_engine()) as s:
+    pairs = find_semantic_duplicates(s, threshold=0.92, limit=100, user_id=1)
+print({"pairs": len(pairs)})
+PY
+```
 
 To tune or disable the cache, set this in QNAP `.env.qnap` and recreate the
 container:

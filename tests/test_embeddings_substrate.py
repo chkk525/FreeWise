@@ -335,7 +335,9 @@ def test_find_semantic_duplicates_caps_at_limit(db, make_highlight):
 def test_find_semantic_duplicates_reuses_cache_for_same_fingerprint(
     db, make_highlight, monkeypatch,
 ):
-    from app.models import Embedding
+    from sqlmodel import select
+
+    from app.models import Embedding, SemanticDuplicateRun
     from app.services.embeddings import (
         clear_semantic_duplicate_cache,
         find_semantic_duplicates,
@@ -352,6 +354,9 @@ def test_find_semantic_duplicates_reuses_cache_for_same_fingerprint(
 
     first = find_semantic_duplicates(db, threshold=0.9, model="m")
     assert len(first) == 1
+    runs = db.exec(select(SemanticDuplicateRun)).all()
+    assert len(runs) == 1
+    assert runs[0].result_count == 1
 
     import numpy as np
 
@@ -359,6 +364,7 @@ def test_find_semantic_duplicates_reuses_cache_for_same_fingerprint(
         raise AssertionError("semantic duplicate cache was not reused")
 
     monkeypatch.setattr(np, "where", fail_if_recomputed)
+    clear_semantic_duplicate_cache()
     second = find_semantic_duplicates(db, threshold=0.9, model="m")
     assert second == first
     assert second is not first

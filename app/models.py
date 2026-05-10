@@ -162,6 +162,35 @@ class Embedding(SQLModel, table=True):
         return f"Embedding(id={self.id}, highlight_id={self.highlight_id}, model={self.model_name!r}, dim={self.dim})"
 
 
+class SemanticDuplicateRun(SQLModel, table=True):
+    """Materialized semantic-duplicate scan metadata.
+
+    Full pairwise duplicate scans are expensive on a 20k+ highlight library.
+    This table records the active-library fingerprint used for one scan so
+    later UI/API calls can reuse the stored pairs until the library changes.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    model_name: str = Field(index=True)
+    user_id: Optional[int] = Field(default=None, index=True)
+    threshold: float = Field(index=True)
+    requested_limit: int
+    fingerprint: str = Field(index=True)
+    result_count: int = Field(default=0)
+    computed_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC).replace(tzinfo=None),
+        index=True,
+    )
+
+
+class SemanticDuplicatePair(SQLModel, table=True):
+    """One materialized semantic-near-duplicate pair for a scan run."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="semanticduplicaterun.id", index=True)
+    a_id: int = Field(foreign_key="highlight.id", index=True)
+    b_id: int = Field(foreign_key="highlight.id", index=True)
+    similarity: float = Field(index=True)
+
+
 class Settings(SQLModel, table=True):
     """Application settings for customizing behavior."""
     id: Optional[int] = Field(default=None, primary_key=True)

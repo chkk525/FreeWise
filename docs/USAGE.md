@@ -100,7 +100,7 @@ Auth header: `Authorization: Token <raw>`.
 | `GET /highlights/today[?salt=…]` | Deterministic daily pick |
 | `GET /highlights/random[?book_id=…]` | Random pick |
 | `GET /highlights/duplicates` | Exact-prefix duplicate groups |
-| `GET /highlights/duplicates/semantic?threshold=0.92` | Heap-bounded matmul over embeddings; repeated calls use a short process-local cache |
+| `GET /highlights/duplicates/semantic?threshold=0.92` | Heap-bounded matmul over embeddings; results are materialized and process-cached |
 | `GET /highlights/{id}/related?limit=10` | Top-K cosine similarity |
 | `GET /highlights/{id}/suggest-tags` | Suggest tags from neighbors |
 | `POST /highlights/{id}/note/append` | Append to note (8191-char cap) |
@@ -148,7 +148,7 @@ Notable additions over upstream:
 | `/highlights/ui/ask` | RAG question form |
 | `/highlights/ui/quick-capture` | Inline highlight create |
 | `/highlights/ui/duplicates` | Exact-prefix dup cleanup |
-| `/highlights/ui/duplicates/semantic` | Embedding-based dup pairs (process-local mutex + short fingerprinted cache) |
+| `/highlights/ui/duplicates/semantic` | Embedding-based dup pairs (materialized scan cache + process-local mutex) |
 | `/highlights/ui/h/{id}` | Permalink page with OG / Twitter Card meta tags for rich link previews |
 | `/highlights/ui/tag/{name}` | Per-tag detail listing |
 | `/highlights/ui/mastered` | Mastered-only listing |

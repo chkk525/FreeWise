@@ -311,6 +311,57 @@ def ensure_schema_migrations(engine=None) -> None:
             "ON embedding (model_name, dim, highlight_id)"
         ))
 
+        # ── Materialized semantic duplicate scan cache ──────────────────
+        # Pairwise semantic duplicate scans are O(N²). These tables let the
+        # UI/API reuse a scan across process restarts as long as the active
+        # embedding fingerprint has not changed.
+        existing_tables = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            ).all()
+        }
+        if "semanticduplicaterun" not in existing_tables:
+            _log.info("migration: creating semantic duplicate cache tables")
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS semanticduplicaterun ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  model_name VARCHAR NOT NULL,"
+                "  user_id INTEGER,"
+                "  threshold FLOAT NOT NULL,"
+                "  requested_limit INTEGER NOT NULL,"
+                "  fingerprint VARCHAR NOT NULL,"
+                "  result_count INTEGER NOT NULL,"
+                "  computed_at TIMESTAMP NOT NULL"
+                ")"
+            ))
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS semanticduplicatepair ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  run_id INTEGER NOT NULL REFERENCES semanticduplicaterun(id),"
+                "  a_id INTEGER NOT NULL REFERENCES highlight(id),"
+                "  b_id INTEGER NOT NULL REFERENCES highlight(id),"
+                "  similarity FLOAT NOT NULL"
+                ")"
+            ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_semduprun_lookup "
+            "ON semanticduplicaterun "
+            "(model_name, user_id, threshold, fingerprint, requested_limit)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_semduppair_run_similarity "
+            "ON semanticduplicatepair (run_id, similarity)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_semduppair_a_id "
+            "ON semanticduplicatepair (a_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_semduppair_b_id "
+            "ON semanticduplicatepair (b_id)"
+        ))
+
         # ── Highlight.is_mastered (A5 mastery flag) ──────────────────────
         # Mastered highlights are excluded from the review queue (the user
         # has internalized them). Distinct from is_discarded — a mastered

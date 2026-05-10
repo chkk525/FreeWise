@@ -23,6 +23,7 @@ import struct
 import threading
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Iterable
 
 import httpx
@@ -537,6 +538,119 @@ def _copy_duplicate_pairs(pairs: list[dict]) -> list[dict]:
     return [dict(pair) for pair in pairs]
 
 
+def _semantic_duplicate_fingerprint_token(
+    fingerprint: _SemanticDuplicateFingerprint,
+) -> str:
+    """Serialize a fingerprint into a stable SQLite key."""
+    return "|".join(str(part) for part in fingerprint)
+
+
+def _load_materialized_semantic_duplicates(
+    session,
+    *,
+    model_name: str,
+    user_id: int | None,
+    threshold: float,
+    limit: int,
+    fingerprint: str,
+) -> list[dict] | None:
+    """Return stored semantic duplicate pairs for this exact library state."""
+    from sqlmodel import select
+
+    from app.models import Highlight, SemanticDuplicatePair, SemanticDuplicateRun
+
+    run = session.exec(
+        select(SemanticDuplicateRun)
+        .where(SemanticDuplicateRun.model_name == model_name)
+        .where(SemanticDuplicateRun.user_id == user_id)
+        .where(SemanticDuplicateRun.threshold == threshold)
+        .where(SemanticDuplicateRun.fingerprint == fingerprint)
+        .where(SemanticDuplicateRun.requested_limit >= limit)
+        .order_by(SemanticDuplicateRun.computed_at.desc())
+        .limit(1)
+    ).first()
+    if run is None:
+        return None
+    pair_rows = session.exec(
+        select(SemanticDuplicatePair)
+        .where(SemanticDuplicatePair.run_id == run.id)
+        .order_by(SemanticDuplicatePair.similarity.desc())
+        .limit(limit)
+    ).all()
+    if not pair_rows:
+        return []
+
+    highlight_ids = {p.a_id for p in pair_rows} | {p.b_id for p in pair_rows}
+    highlights = session.exec(
+        select(Highlight.id, Highlight.text).where(Highlight.id.in_(highlight_ids))
+    ).all()
+    text_by_id = {int(hl_id): text or "" for hl_id, text in highlights}
+    return [
+        {
+            "a_id": p.a_id,
+            "b_id": p.b_id,
+            "similarity": round(float(p.similarity), 4),
+            "a_text": text_by_id.get(p.a_id, ""),
+            "b_text": text_by_id.get(p.b_id, ""),
+        }
+        for p in pair_rows
+    ]
+
+
+def _store_materialized_semantic_duplicates(
+    session,
+    *,
+    model_name: str,
+    user_id: int | None,
+    threshold: float,
+    limit: int,
+    fingerprint: str,
+    pairs: list[dict],
+) -> None:
+    """Persist one semantic duplicate scan and prune older matching scans."""
+    from sqlalchemy import delete
+    from sqlmodel import select
+
+    from app.models import SemanticDuplicatePair, SemanticDuplicateRun
+
+    run = SemanticDuplicateRun(
+        model_name=model_name,
+        user_id=user_id,
+        threshold=threshold,
+        requested_limit=limit,
+        fingerprint=fingerprint,
+        result_count=len(pairs),
+        computed_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    session.add(run)
+    session.flush()
+    for pair in pairs:
+        session.add(SemanticDuplicatePair(
+            run_id=run.id,
+            a_id=int(pair["a_id"]),
+            b_id=int(pair["b_id"]),
+            similarity=float(pair["similarity"]),
+        ))
+
+    old_run_ids = session.exec(
+        select(SemanticDuplicateRun.id)
+        .where(SemanticDuplicateRun.model_name == model_name)
+        .where(SemanticDuplicateRun.user_id == user_id)
+        .where(SemanticDuplicateRun.threshold == threshold)
+        .where(SemanticDuplicateRun.id != run.id)
+    ).all()
+    if old_run_ids:
+        session.exec(
+            delete(SemanticDuplicatePair)
+            .where(SemanticDuplicatePair.run_id.in_(old_run_ids))
+        )
+        session.exec(
+            delete(SemanticDuplicateRun)
+            .where(SemanticDuplicateRun.id.in_(old_run_ids))
+        )
+    session.commit()
+
+
 def _store_semantic_duplicate_cache(
     key: _SemanticDuplicateCacheKey, pairs: list[dict], *, ttl: float,
 ) -> None:
@@ -600,6 +714,18 @@ def find_semantic_duplicates(
     fingerprint = _semantic_duplicate_fingerprint(
         session, model_name=model_name, user_id=user_id,
     )
+    fingerprint_token = _semantic_duplicate_fingerprint_token(fingerprint)
+    materialized = _load_materialized_semantic_duplicates(
+        session,
+        model_name=model_name,
+        user_id=user_id,
+        threshold=threshold,
+        limit=limit,
+        fingerprint=fingerprint_token,
+    )
+    if materialized is not None:
+        return materialized
+
     cache_key: _SemanticDuplicateCacheKey = (
         id(session.get_bind()), model_name, user_id, threshold, limit,
         chunk_size, fingerprint,
@@ -625,6 +751,15 @@ def find_semantic_duplicates(
     if len(rows) < 2:
         if ttl > 0:
             _store_semantic_duplicate_cache(cache_key, [], ttl=ttl)
+        _store_materialized_semantic_duplicates(
+            session,
+            model_name=model_name,
+            user_id=user_id,
+            threshold=threshold,
+            limit=limit,
+            fingerprint=fingerprint_token,
+            pairs=[],
+        )
         return []
 
     n = len(rows)
@@ -689,6 +824,15 @@ def find_semantic_duplicates(
     ]
     if ttl > 0:
         _store_semantic_duplicate_cache(cache_key, pairs, ttl=ttl)
+    _store_materialized_semantic_duplicates(
+        session,
+        model_name=model_name,
+        user_id=user_id,
+        threshold=threshold,
+        limit=limit,
+        fingerprint=fingerprint_token,
+        pairs=pairs,
+    )
     return pairs
 
 

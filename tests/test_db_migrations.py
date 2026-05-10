@@ -93,6 +93,24 @@ def test_migration_adds_embedding_lookup_composite_index() -> None:
     assert "ix_embedding_model_dim_highlight" in _indexes(engine, "embedding")
 
 
+def test_migration_adds_semantic_duplicate_cache_tables() -> None:
+    """Semantic duplicate scans can be materialized across process restarts."""
+    engine = _fresh_engine()
+    SQLModel.metadata.create_all(engine)
+
+    assert "ix_semduprun_lookup" not in _indexes(engine, "semanticduplicaterun")
+    assert "ix_semduppair_run_similarity" not in _indexes(
+        engine, "semanticduplicatepair"
+    )
+
+    ensure_schema_migrations(engine)
+
+    assert "ix_semduprun_lookup" in _indexes(engine, "semanticduplicaterun")
+    assert "ix_semduppair_run_similarity" in _indexes(
+        engine, "semanticduplicatepair"
+    )
+
+
 def test_migration_does_not_overwrite_existing_kindle_asin() -> None:
     """If a row already has kindle_asin set, backfill must not clobber it."""
     engine = _fresh_engine()
