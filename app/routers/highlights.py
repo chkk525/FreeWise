@@ -425,11 +425,13 @@ async def ui_review(
     # the empty state in review.html can render an Import CTA instead of
     # the false-positive "Great job staying on top of things!" message
     # for users who haven't imported anything yet (CX item M11).
-    total_active_highlights = session.exec(
-        select(func.count(Highlight.id)).where(Highlight.is_discarded == False)  # noqa: E712
-    ).one()
-    if isinstance(total_active_highlights, tuple):
-        total_active_highlights = total_active_highlights[0]
+    total_active_highlights = None
+    if highlight is None:
+        total_active_highlights = session.exec(
+            select(func.count(Highlight.id)).where(Highlight.is_discarded == False)  # noqa: E712
+        ).one()
+        if isinstance(total_active_highlights, tuple):
+            total_active_highlights = total_active_highlights[0]
 
     response = templates.TemplateResponse(request, "review.html", {"highlight": highlight,
         "current": current,

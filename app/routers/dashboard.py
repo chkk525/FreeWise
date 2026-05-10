@@ -2,11 +2,12 @@ from dataclasses import asdict
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy import case
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from datetime import datetime, date, UTC
 
-from app.db import get_session, get_settings, get_current_streak
+from app.db import get_session, get_settings
 from app.models import Book, Highlight, Settings, ReviewSession
 from app.services.cold_books import cold_books as compute_cold_books
 from app.services.echoes import get_echoes
@@ -48,21 +49,21 @@ async def ui_dashboard(
     books_count_stmt = select(func.count(Book.id))
     total_books = session.exec(books_count_stmt).one()
     
-    # Get total highlights count
-    highlights_count_stmt = select(func.count(Highlight.id))
-    total_highlights = session.exec(highlights_count_stmt).one()
-    
-    # Get total favorited highlights
-    favorited_stmt = select(func.count(Highlight.id)).where(
-        Highlight.is_favorited == True
-    )
-    total_favorited = session.exec(favorited_stmt).one()
-    
-    # Get total discarded highlights
-    discarded_stmt = select(func.count(Highlight.id)).where(
-        Highlight.is_discarded == True
-    )
-    total_discarded = session.exec(discarded_stmt).one()
+    # Highlight totals in one pass over the table instead of three separate
+    # COUNT queries. Keeps the dashboard cheap on 20k+ row libraries.
+    total_highlights, total_favorited, total_discarded = session.exec(
+        select(
+            func.count(Highlight.id),
+            func.coalesce(
+                func.sum(case((Highlight.is_favorited == True, 1), else_=0)),
+                0,
+            ),
+            func.coalesce(
+                func.sum(case((Highlight.is_discarded == True, 1), else_=0)),
+                0,
+            ),
+        )
+    ).one()
     
     # Calculate active highlights (not discarded)
     active_highlights = total_highlights - total_discarded
@@ -94,8 +95,8 @@ async def ui_dashboard(
     completed_dates = list(session.exec(review_dates_stmt).all())
     review_heatmap_data: Dict[str, int] = {d.isoformat(): 1 for d in completed_dates}
 
-    # Current streak — shared utility (same logic used by the nav middleware)
-    current_streak = get_current_streak(session)
+    # Current streak — already attached by app.main.inject_streak for HTML pages.
+    current_streak = int(getattr(request.state, "streak", 0) or 0)
     longest_streak = 0
 
     if completed_dates:
