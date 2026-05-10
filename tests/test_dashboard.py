@@ -42,9 +42,24 @@ class TestDashboardDeferLoadWiring:
         assert resp.status_code == 200
         assert 'hx-get="/dashboard/ui/health"' in resp.text
         assert 'hx-get="/dashboard/ui/on-this-day"' in resp.text
+        assert 'hx-get="/dashboard/ui/activity"' in resp.text
         # The actual heavy markup should NOT be inline.
         assert "Library health:" not in resp.text
         assert "Tagging coverage:" not in resp.text
+        assert "Review Activity" not in resp.text
+        assert "Highlighting Activity" not in resp.text
+
+    def test_activity_partial_renders_heatmaps_and_streaks(self, client, make_highlight):
+        from datetime import datetime
+
+        make_highlight(text="activity", created_at=datetime(2026, 1, 2, 12, 0))
+        resp = client.get("/dashboard/ui/activity")
+        assert resp.status_code == 200
+        assert "Review Activity" in resp.text
+        assert "Highlighting Activity" in resp.text
+        assert "Current Streak" in resp.text
+        assert 'id="dashboard-heatmap-data"' in resp.text
+        assert 'id="dashboard-review-heatmap-data"' in resp.text
 
 
 class TestDashboardLibraryHealth:

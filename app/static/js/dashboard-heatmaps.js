@@ -271,11 +271,27 @@
         scrollRight('review-heatmap-container');
     }
 
-    onReady(function () {
+    function initDashboardHeatmaps() {
         const heatmapData = readJson('dashboard-heatmap-data');
         if (Object.keys(heatmapData).length > 0) renderHeatmap(heatmapData);
 
         const reviewHeatmapData = readJson('dashboard-review-heatmap-data');
         if (Object.keys(reviewHeatmapData).length > 0) renderReviewHeatmap(reviewHeatmapData);
+    }
+
+    onReady(function () {
+        initDashboardHeatmaps();
+    });
+
+    document.addEventListener('htmx:afterSwap', function (event) {
+        const target = event.target;
+        if (!target) return;
+        if (
+            target.id === 'dashboard-activity'
+            || Boolean(target.querySelector && target.querySelector('#dashboard-heatmap-data'))
+            || Boolean(target.querySelector && target.querySelector('#dashboard-review-heatmap-data'))
+        ) {
+            initDashboardHeatmaps();
+        }
     });
 })();

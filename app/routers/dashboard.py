@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select, func
 from datetime import datetime, date, UTC
 
-from app.db import get_session, get_settings
+from app.db import get_current_streak, get_session, get_settings
 from app.models import Book, Highlight, Settings, ReviewSession
 from app.services.cold_books import cold_books as compute_cold_books
 from app.services.echoes import get_echoes
@@ -18,6 +18,22 @@ from app.template_filters import make_templates
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 templates = make_templates()
+
+
+def _longest_streak(completed_dates: list[date]) -> int:
+    if not completed_dates:
+        return 0
+
+    longest = 1
+    current = 1
+    for i in range(1, len(completed_dates)):
+        days_diff = (completed_dates[i] - completed_dates[i - 1]).days
+        if days_diff == 1:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 1
+    return longest
 
 
 
@@ -73,44 +89,6 @@ async def ui_dashboard(
     discarded_percentage = (total_discarded / total_highlights * 100) if total_highlights > 0 else 0
     active_percentage = (active_highlights / total_highlights * 100) if total_highlights > 0 else 0
     
-    # Generate heatmap data via SQL GROUP BY — no full table scan
-    heatmap_stmt = (
-        select(func.date(Highlight.created_at), func.count(Highlight.id))
-        .where(Highlight.created_at != None)
-        .group_by(func.date(Highlight.created_at))
-    )
-    heatmap_data: Dict[str, int] = {
-        str(row[0]): row[1] for row in session.exec(heatmap_stmt).all()
-    }
-    
-    # Review activity heatmap: aggregate distinct review-days SQL-side instead
-    # of hydrating every ReviewSession row into Python (perf H3). Binary 1/0
-    # per day is preserved by collapsing the per-row count to "exists".
-    review_dates_stmt = (
-        select(ReviewSession.session_date)
-        .where(ReviewSession.is_completed == True)  # noqa: E712
-        .distinct()
-        .order_by(ReviewSession.session_date.asc())
-    )
-    completed_dates = list(session.exec(review_dates_stmt).all())
-    review_heatmap_data: Dict[str, int] = {d.isoformat(): 1 for d in completed_dates}
-
-    # Current streak — already attached by app.main.inject_streak for HTML pages.
-    current_streak = int(getattr(request.state, "streak", 0) or 0)
-    longest_streak = 0
-
-    if completed_dates:
-        # Longest-ever streak from the already-distinct sorted list.
-        temp_streak = 1
-        longest_streak = 1
-        for i in range(1, len(completed_dates)):
-            days_diff = (completed_dates[i] - completed_dates[i - 1]).days
-            if days_diff == 1:
-                temp_streak += 1
-                longest_streak = max(longest_streak, temp_streak)
-            else:
-                temp_streak = 1
-
     kindle_status = get_kindle_status(session)
 
     # Embedding coverage (C2) — what fraction of active highlights have a
@@ -206,10 +184,6 @@ async def ui_dashboard(
         "favorited_percentage": favorited_percentage,
         "discarded_percentage": discarded_percentage,
         "active_percentage": active_percentage,
-        "heatmap_data": heatmap_data,
-        "review_heatmap_data": review_heatmap_data,
-        "current_streak": current_streak,
-        "longest_streak": longest_streak,
         "tag_cloud": tag_cloud,
         "embedding_coverage": embedding_coverage,
         "kindle_status": kindle_status,
@@ -224,6 +198,43 @@ async def ui_dashboard(
 def kindle_status(session: Session = Depends(get_session)) -> Dict[str, Any]:
     """Return JSON snapshot of Kindle import state for dashboards / probes."""
     return asdict(get_kindle_status(session))
+
+
+@router.get("/ui/activity", response_class=HTMLResponse)
+async def ui_dashboard_activity(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    """Defer-loaded activity partial: heatmaps + streak summary."""
+    heatmap_stmt = (
+        select(func.date(Highlight.created_at), func.count(Highlight.id))
+        .where(Highlight.created_at != None)
+        .group_by(func.date(Highlight.created_at))
+    )
+    heatmap_data: Dict[str, int] = {
+        str(row[0]): row[1] for row in session.exec(heatmap_stmt).all()
+    }
+
+    review_dates_stmt = (
+        select(ReviewSession.session_date)
+        .where(ReviewSession.is_completed == True)  # noqa: E712
+        .distinct()
+        .order_by(ReviewSession.session_date.asc())
+    )
+    completed_dates = list(session.exec(review_dates_stmt).all())
+    review_heatmap_data: Dict[str, int] = {d.isoformat(): 1 for d in completed_dates}
+
+    return templates.TemplateResponse(
+        request,
+        "_dashboard_activity.html",
+        {
+            "settings": get_settings(session),
+            "heatmap_data": heatmap_data,
+            "review_heatmap_data": review_heatmap_data,
+            "current_streak": get_current_streak(session),
+            "longest_streak": _longest_streak(completed_dates),
+        },
+    )
 
 
 @router.get("/kindle/scrape-status", response_class=HTMLResponse)

@@ -81,7 +81,7 @@ def test_post_settings_rejects_unknown_language(client, db):
 
 
 def test_dashboard_renders_japanese_when_language_is_ja(client, db):
-    """End-to-end: setting language=ja flips the nav + dashboard cards."""
+    """End-to-end: setting language=ja flips nav + deferred dashboard cards."""
     s = db.exec(select(Settings)).first()
     s.language = "ja"
     db.add(s)
@@ -90,8 +90,12 @@ def test_dashboard_renders_japanese_when_language_is_ja(client, db):
     assert resp.status_code == 200
     # Nav link
     assert "ライブラリ" in resp.text
-    # Streak card label
-    assert "現在の連続記録" in resp.text
+    # Streak cards are lazy-loaded, so the dashboard shell carries the HTMX hook.
+    assert 'hx-get="/dashboard/ui/activity"' in resp.text
+
+    partial = client.get("/dashboard/ui/activity")
+    assert partial.status_code == 200
+    assert "現在の連続記録" in partial.text
 
 
 def test_html_lang_attribute_reflects_setting(client, db):

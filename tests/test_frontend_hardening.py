@@ -95,10 +95,12 @@ def test_keyboard_shortcuts_js_contains_review_actions():
 
 def test_dashboard_heatmap_logic_is_static_asset():
     html = (ROOT / "app/templates/dashboard.html").read_text()
+    partial = (ROOT / "app/templates/_dashboard_activity.html").read_text()
     js = (ROOT / "app/static/js/dashboard-heatmaps.js").read_text()
 
     assert '<script src="/static/js/dashboard-heatmaps.js" defer></script>' in html
-    assert 'id="dashboard-heatmap-data"' in html
-    assert 'id="dashboard-review-heatmap-data"' in html
+    assert 'id="dashboard-heatmap-data"' in partial
+    assert 'id="dashboard-review-heatmap-data"' in partial
     assert "function renderHeatmap" not in html
     assert "function renderHeatmap" in js
+    assert "htmx:afterSwap" in js
