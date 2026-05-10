@@ -49,7 +49,6 @@ venv.bak/
 
 # Local agent/workflow artifacts
 .tmp/
-handsoff.md
 
 # Testing
 .pytest_cache/
